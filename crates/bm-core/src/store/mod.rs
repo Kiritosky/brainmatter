@@ -90,6 +90,10 @@ impl Db {
         &self.conn
     }
 
+    pub fn into_conn(self) -> Connection {
+        self.conn
+    }
+
     pub fn schema_version(&self) -> Result<u32, StoreError> {
         Ok(self.conn.query_row("PRAGMA user_version", [], |r| r.get(0))?)
     }

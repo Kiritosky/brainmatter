@@ -4,9 +4,13 @@ use rusqlite::Connection;
 
 use super::StoreError;
 
-/// Index `i` migrates the schema from version `i` to `i + 1`. Never edit a
-/// released migration; append a new one instead.
-const MIGRATIONS: &[&str] = &[V1];
+type DataStep = fn(&Connection) -> rusqlite::Result<()>;
+
+/// Index `i` migrates the schema from version `i` to `i + 1`: DDL, then an
+/// optional Rust step for data that SQL cannot compute. Never edit a released
+/// migration; append a new one instead.
+const MIGRATIONS: &[(&str, Option<DataStep>)] =
+    &[(V1, None), (V2, Some(backfill_wikilink_refs)), (V3, None)];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     let current: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
@@ -14,9 +18,12 @@ pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     if current > latest {
         return Err(StoreError::SchemaTooNew { found: current, supported: latest });
     }
-    for (i, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
+    for (i, (sql, data)) in MIGRATIONS.iter().enumerate().skip(current as usize) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        if let Some(step) = data {
+            step(&tx)?;
+        }
         tx.pragma_update(None, "user_version", i as u32 + 1)?;
         tx.commit()?;
     }
@@ -216,4 +223,35 @@ CREATE TRIGGER node_tags_fts_ad AFTER DELETE ON node_tags BEGIN
        SET tags = coalesce((SELECT group_concat(tag, ' ') FROM node_tags WHERE node_id = old.node_id), '')
      WHERE rowid = (SELECT seq FROM nodes WHERE id = old.node_id);
 END;
+"#;
+
+// Every `[[target]]` per node (lowercased), resolved or not, so creating a node
+// can find the entries that already link to its title via an index lookup.
+const V2: &str = r#"
+CREATE TABLE wikilink_refs (
+    src    TEXT NOT NULL REFERENCES nodes(id),
+    target TEXT NOT NULL,
+    PRIMARY KEY (target, src)
+) WITHOUT ROWID;
+CREATE INDEX wikilink_refs_src_idx ON wikilink_refs(src);
+"#;
+
+fn backfill_wikilink_refs(conn: &Connection) -> rusqlite::Result<()> {
+    let mut select = conn.prepare("SELECT id, body FROM nodes WHERE deleted_at IS NULL")?;
+    let mut insert =
+        conn.prepare("INSERT OR IGNORE INTO wikilink_refs (src, target) VALUES (?1, ?2)")?;
+    let rows: Vec<(String, String)> =
+        select.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+    for (id, body) in rows {
+        for target in crate::wikilinks::targets(&body) {
+            insert.execute(rusqlite::params![id, target.to_lowercase()])?;
+        }
+    }
+    Ok(())
+}
+
+// Built-in FTS5 `rank` with our column weights (title 5×, body 1×, tags 2×), so
+// `ORDER BY rank LIMIT n` can rank without an extra bm25() call per row.
+const V3: &str = r#"
+INSERT INTO nodes_fts(nodes_fts, rank) VALUES ('rank', 'bm25(5.0, 1.0, 2.0)');
 "#;

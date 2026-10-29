@@ -17,8 +17,9 @@ Rust-Kern, natives Mac-Fenster, schönes und schnell navigierbares UI.
 | Apple Dev Account | **Nein**, deshalb ein selbstsigniertes Code-Signing-Zertifikat und Touch ID über LocalAuthentication (siehe §5) |
 | Projekte | **Mehrfach-Zugehörigkeit**: Ein Eintrag kann in mehreren Projekten sein, Projekte sind verschachtelbar, Links über Projektgrenzen sind erlaubt |
 | MVP-Extras | Semantische Suche + Auto-Links, Versionshistorie + Undo, verschlüsselte Anhänge |
-| Vorlagen & Prompts | Bibliothek aus Markdown-Vorlagen und Standard-Prompts, global oder pro Projekt, mit `{{Platzhaltern}}`. KIs laden sie bei Bedarf über **MCP-Prompts** (in Claude Code als Slash-Commands) oder über Tools (§7a) |
-| Datei-Verknüpfungen | Einträge können auf lokale Dateien und Ordner verweisen. macOS-Bookmarks halten den Link auch nach Umbenennen oder Verschieben. Die KI sieht den Pfad und darf optional verknüpfte Dateien lesen (§7b) |
+| Projekt-Doku *(nach Hauptplan)* | Handbuch pro Projekt mit Lese-Ansicht, gespiegelten Doku-Ordnern und abschnittsweisem Laden für KIs (§7c) |
+| Vorlagen & Prompts *(nach Hauptplan)* | Bibliothek aus Markdown-Vorlagen und Standard-Prompts, global oder pro Projekt, mit `{{Platzhaltern}}`. KIs laden sie bei Bedarf über **MCP-Prompts** (in Claude Code als Slash-Commands) oder über Tools (§7a) |
+| Datei-Verknüpfungen *(nach Hauptplan)* | Einträge können auf lokale Dateien und Ordner verweisen. macOS-Bookmarks halten den Link auch nach Umbenennen oder Verschieben. Die KI sieht den Pfad und darf optional verknüpfte Dateien lesen (§7b) |
 | Später | Obsidian/Markdown-Import und -Export, Cloud-KIs, Sync, iOS |
 
 Annahmen, die ich ohne Rückfrage getroffen habe. Jede davon lässt sich ändern:
@@ -194,8 +195,14 @@ Touch-ID-Key (Keychain) ──────────────────�
 - Der BK liegt als Generic-Password-Item in der Login-Keychain, die ACL ist an die Code-Signatur gebunden.
 - Ablauf beim Entsperren: Zuerst `LAContext.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)`,
   bei Erfolg wird der BK gelesen und der DEK entpackt.
-- **Selbstsigniertes Code-Signing-Zertifikat** (Schlüsselbundverwaltung → Zertifikatsassistent). Jeder Build wird
-  damit signiert. Mit Ad-hoc-Signatur würde die Keychain nach jedem Update wieder nach Erlaubnis fragen.
+- **Keychain ohne Team ID** (in Spike 4 gemessen): macOS bindet Keychain-Einträge an den **cdhash** des Binaries,
+  auch bei stabilem selbstsigniertem Zertifikat. Ein Update kann den alten Eintrag also nicht mehr lesen.
+  Deshalb laufen alle Keychain-Zugriffe **ohne UI** (`SecKeychainSetUserInteractionAllowed(false)`). Statt eines Dialogs
+  kommt sofort `NotAccessible`. Die App löscht dann den alten Eintrag (das geht ohne Rückfrage), entsperrt einmal per Passwort
+  und richtet Touch ID still neu ein, mit neuem zufälligem Account-Namen aus dem Vault-Header.
+  UX: **Nach jedem Update einmal das Passwort eingeben**, wie bei vielen Passwort-Managern.
+- Das selbstsignierte Zertifikat „Brainmatter Dev“ (`scripts/create-signing-cert.sh`) bleibt trotzdem sinnvoll.
+  Es sorgt für stabile TCC-Rechte (Dateizugriff, Mitteilungen) über Builds hinweg.
 - Ehrlich gesagt: Das ist ein Software-Gate. Ein Prozess, der als du läuft und auf das Keychain-Item zugreifen darf,
   könnte Touch ID umgehen. Die kryptografische Wurzel bleibt das Passwort. Mit Dev-Account lässt sich später
   auf `kSecAccessControlBiometryCurrentSet` und die Secure Enclave upgraden.
@@ -287,7 +294,7 @@ lieber erweitern. Ein Gedanke pro Eintrag. Großzügig verlinken, mit dem Relati
 
 Getestet wird manuell mit dem MCP Inspector und automatisiert mit Snapshot-Tests (insta) der Tool-Ausgaben.
 
-### 7a. Vorlagen- & Prompt-Bibliothek
+### 7a. Vorlagen- & Prompt-Bibliothek *(Erweiterung nach dem Hauptplan)*
 - Eine Vorlage ist ein Markdown-Eintrag (`kind = template`) mit `{{platzhaltern}}` und optionalen Argument-Definitionen.
   Beispiele: „Code-Review-Checkliste“, „Projekt-Kickoff“, „Bug-Report“, „Meeting-Notiz“, „System-Prompt für Projekt X“.
 - **Geltungsbereich**: Globale Vorlagen sind überall sichtbar. Projekt-Vorlagen sieht nur, wer Zugriff auf das Projekt hat,
@@ -300,7 +307,7 @@ Getestet wird manuell mit dem MCP Inspector und automatisiert mit Snapshot-Tests
 - **UI**: Abschnitt „Bibliothek“ in der Sidebar mit Editor, Live-Vorschau der Platzhalter, „Mit Werten kopieren“
   und Verwendungsstatistik (welche KI hat die Vorlage wann geladen).
 
-### 7b. Verknüpfungen zu lokalen Dateien
+### 7b. Verknüpfungen zu lokalen Dateien *(Erweiterung nach dem Hauptplan)*
 - In der UI zieht man Dateien oder Ordner aus dem Finder auf einen Eintrag, in Markdown schreibt man `[Spec](file:///…)`,
   über MCP nutzt man `link_file`. Gespeichert werden Pfad und **macOS-Bookmark**
   (`NSURL bookmarkData`). Wurde die Datei verschoben, wird das Bookmark aufgelöst und der Pfad aktualisiert.
@@ -311,6 +318,18 @@ Getestet wird manuell mit dem MCP Inspector und automatisiert mit Snapshot-Tests
 - **Sicherheit**: `read_linked_file` liest **nur verknüpfte Dateien**, niemals beliebige Pfade. Wenn eine KI selbst einen Link anlegt,
   ist dieser erst nach deiner Bestätigung im UI für `read_linked_file` freigegeben (`approved_for_ai`). Sonst könnte eine KI
   per `link_file` + `read_linked_file` beliebige Dateien lesen. Die Datei-Inhalte selbst landen nie in der DB, nur der Verweis.
+
+### 7c. Projekt-Dokumentation *(Erweiterung nach dem Hauptplan)*
+- **Handbuch pro Projekt**: Doku-Seiten (`kind = doc`) als Baum mit Kapiteln, Unterseiten und manueller Reihenfolge
+  (eigene Tabelle `doc_pages(node_id, project_id, parent_id, sort, source_path, source_hash)`).
+- **Lese-Ansicht**: Typografie wie ein Buch, Inhaltsverzeichnis aus den Überschriften, Vor/Zurück und Suche innerhalb der Doku.
+  Zum Bearbeiten wechselt man in den Editor.
+- **Zwei Quellen**:
+  1. In Brainmatter geschriebene Seiten (von dir oder der KI).
+  2. **Verknüpfte Doku-Ordner** (z. B. `docs/` oder `README.md` eines Repos). Sie werden schreibgeschützt gespiegelt, indexiert und per FSEvents aktuell gehalten.
+     Die Quelle bleibt die Datei. Brainmatter speichert verschlüsselt eine Kopie für Suche und Embeddings.
+- **Für KIs**: `list_docs {project}` liefert das Inhaltsverzeichnis mit Abschnitts-IDs. `read_doc {ref, section?}` liefert **nur den gewünschten Abschnitt**
+  und spart so Tokens. Semantische Suche läuft auf Abschnittsebene. `write_doc` legt Seiten an oder ändert sie (nicht bei gespiegelten Quellen).
 
 ---
 
@@ -417,8 +436,6 @@ die DB-Datei ohne Schlüssel nicht lesbar ist und Manipulation erkannt wird.
 - Alle Tools, Resources, Prompts und Server-Instructions
 - Token-Verwaltung mit Scopes und Projekt-Scopes, Origin/Host-Prüfung, Connect-Snippets, stdio-Bridge
 - Activity-Feed mit Revert, Herkunfts-Badges, Filter „Ungeprüft“, Lock → Touch-ID-Prompt
-- Vorlagen-Bibliothek als MCP-Prompts + Tools, UI-Abschnitt „Bibliothek“
-- Datei-Verknüpfungen (Bookmarks, Drag & Drop aus dem Finder, `read_linked_file` mit Freigabe)
 
 *Fertig, wenn* Claude Code, Claude Desktop und Cursor lesen und schreiben, KI-Änderungen live erscheinen, sich zurücknehmen lassen
 und eine Test-Session („Erfasse das Wissen aus Repo X als Projekt“) einen sauberen Graph ergibt.
@@ -435,6 +452,11 @@ und eine Test-Session („Erfasse das Wissen aus Repo X als Projekt“) einen sa
 - Performance-Tuning bis zu den Zielwerten, .app-Bundle + Signierung + DMG
 
 *Fertig, wenn* die Performance-Ziele auf dem 50k-Vault erreicht sind und die App per DMG installierbar ist. **= v1.0**
+
+**Erweiterungen nach dem Hauptplan** (Wünsche vom 2026-10-29; erst wenn v1.0 steht)
+1. **Vorlagen- & Prompt-Bibliothek** (§7a): Vorlagen werden zu MCP-Prompts und Tools, dazu der UI-Abschnitt „Bibliothek“.
+2. **Datei-Verknüpfungen** (§7b): Bookmarks, Drag & Drop aus dem Finder, `read_linked_file` mit Freigabe.
+3. **Projekt-Dokumentation** (§7c): ein Handbuch pro Projekt mit Lese-Ansicht, gespiegelten Doku-Ordnern und abschnittsweisem Laden für KIs.
 
 **Danach (v1.x+)**
 Obsidian/Markdown-Import und -Export, Cloud-KIs (OAuth 2.1 + Tailscale Funnel oder Cloudflare Tunnel), mehrere Vaults (Privat/Arbeit),
@@ -466,8 +488,38 @@ Secure-Enclave-Touch-ID mit Dev-Account.
 | 1 · SQLCipher + FTS5 | ✅ DB, WAL und FTS-Index sind verschlüsselt (keine Klartext-Bytes auf der Platte), ein falscher Schlüssel wird abgelehnt. Umlaute werden gefaltet („nebenlaufigkeit“ findet „Nebenläufigkeit“), Präfix- und Tag-Suche funktionieren, Soft-Delete wird aus dem Index entfernt. Auf macOS nutzt SQLCipher **CommonCrypto** (`Security.framework`), OpenSSL ist nicht nötig. Build ~1,5 min kalt | `rusqlite` + `bundled-sqlcipher`, Test `crates/bm-core/tests/spike_sqlcipher.rs` |
 | 2 · MCP über HTTP | ✅ `rmcp` 3.8 Streamable HTTP mit Bearer-Auth (401) und Ablehnung von Browser-Origins (403). Tool-Roundtrip **p50 0,3 ms / p95 0,5 ms**. **Echter Claude-Code-Client verbunden** und `ping` aufgerufen | rmcp prüft Host und Origin schon selbst (`enforce_origin_validation`). Die stdio-Bridge kommt in Phase 3 |
 | 3 · Graph-Rendering | ✅ Sigma 4 in WKWebView: 10k mit Live-FA2 bei 60 fps; **50k/150k bei 59 fps (p95 18 ms)**; 100k/300k bei 51 fps. 60 fps ist die Obergrenze des Displays | Ziel erreicht. Offen: Messung auf Retina (dpr 2) und das kalte erste Rendern (2,8 s, Shader) |
-| 4 · Touch ID + Keychain | ✅ Touch ID wird erkannt, Keychain-Round-Trip funktioniert. ⏳ Finger-Prompt und ACL über Rebuilds hinweg brauchen den User (Zertifikat via `scripts/create-signing-cert.sh`) | `objc2-local-authentication` + `security-framework` |
+| 4 · Touch ID + Keychain | ✅ Touch ID wird erkannt, der **Finger-Prompt funktioniert**, Keychain-Round-Trip ok. Das Zertifikat „Brainmatter Dev“ ist angelegt. ⚠️ Die Keychain-ACL hängt am **cdhash**, ein Rebuild kann alte Einträge also nicht mehr lesen. Mit abgeschalteter Keychain-UI kommt statt eines Dialogs nach 0,6 s ein Fehler, und das Löschen geht ohne Rückfrage | `objc2-local-authentication` + `security-framework`. Nach jedem Update einmal das Passwort, dann wird Touch ID still neu eingerichtet (§5) |
 | 5 · Embeddings | ONNX Runtime (fastembed): e5-small bei 1,8 GB RSS (Spitze 3,7 GB), 15 ms pro Query, braucht einen `clang_rt`-Link-Workaround. EmbeddingGemma: beste Qualität (13/13), aber 80 ms und >10 GB. **candle + Metal f32 mit e5-small: 0,3 s Laden, 4,7 ms pro Query, 1,4 ms pro Notiz, ~0,9 GB Spitze, 11/13 korrekt (auch DE↔EN)**. f16 zerstört die Qualität (1/13) | **candle + Metal, f32, `multilingual-e5-small`**. Lazy laden und nach Inaktivität entladen |
 
 Nebenbei aufgefallen: `tauri` 3 ist noch Alpha, also bleibt es bei Tauri 2. SvelteKit 3 hat `svelte.config.js` abgeschafft und `$lib` durch `#lib` ersetzt.
 TypeScript 7 ist mit SvelteKit noch inkompatibel.
+
+## 14. Stand Phase 1: Kern & Tresor (2026-10-29)
+
+**Fertig** (`crates/bm-core`, 21 Tests grün):
+- **Tresor**: Header mit Slots für Passwort (Argon2id), Recovery-Key (36 Zeichen Crockford-Base32 mit Prüfsumme) und Keychain.
+  Der DEK wird per XChaCha20-Poly1305 gewrappt, die AAD bindet jeden Slot an Vault und Slot-Typ. Subkeys entstehen per HKDF.
+  Der Header wird atomar geschrieben (0600). Passwortwechsel, Recovery-Rotation und Touch-ID-Enrollment sind fertig. Manipulation führt zur Ablehnung.
+- **Engine**: ein Writer (IMMEDIATE-Transaktion pro Aktion) plus Read-Pool (WAL), Events per `broadcast` nach dem Commit.
+  - CRUD für Einträge, Kanten, Projekte und Mitgliedschaften
+  - `capture` legt einen Subgraph atomar an, mit lokalen Keys und Duplikat-Hinweisen
+  - Wikilinks erzeugen und entfernen `mentions`-Kanten, inklusive Backlinks auf später angelegte Titel (`wikilink_refs`, Migration V2)
+  - Referenzen über Titel, Kurz-ID (`#a1b2c3d4`) oder UUID, mit Kandidaten bei Mehrdeutigkeit und Vorschlägen bei „nicht gefunden“
+- **Historie**: Jede Aktion ist ein Change-Set mit Snapshots. Revert läuft als neues Change-Set, auch Revert-of-Revert (Redo).
+  Die Konfliktprüfung vergleicht Inhalte. Einträge, die eine KI anlegt oder ändert, landen als „ungeprüft“.
+- **Suche**: FTS5 mit gewichtetem `rank` (Migration V3), zweistufig (Top-N, dann Snippets), Stoppwörter DE/EN,
+  Filter für Projekt-Teilbaum, Typ und Tag per korreliertem `EXISTS`.
+
+**Benchmark** (`cargo run --release -p bm-core --example bench_engine`, 50k Einträge, Zipf-Korpus mit 60 Wörtern pro Notiz):
+
+| Operation | Ergebnis | Ziel |
+|---|---|---|
+| Insert über `capture` | ~3.000 Einträge/s (inkl. 2 Links pro Eintrag, Revisionen, FTS) | – |
+| Suche | p50 7 ms, **p95 13 ms** | < 25 ms ✅ |
+| Suche + Projekt + Tag | p50 10 ms, **p95 24 ms** | < 25 ms ✅ |
+| Worst Case: 2 Begriffe, die in jedem Eintrag vorkommen | ~105 ms | ⚠️ Dynamisches Ausfiltern über die Dokumentfrequenz in Phase 4 |
+| `node_detail` / Titel auflösen / Update | 80 µs / 16 µs / 0,85 ms (p95) | ✅ |
+| DB-Größe | 294 MB | Revisionen später mit zstd komprimieren (Format-Byte ist schon vorgesehen) |
+
+**Offen für Phase 1**: In-Memory-Graph (petgraph) für `explore` und `find_path`. Er kommt zusammen mit den MCP-Tools in Phase 3,
+bis dahin reichen die indizierten SQL-Nachbarschaftsabfragen (80 µs). Unicode-Groß/Klein beim Titelvergleich (SQLite `NOCASE` faltet nur ASCII).
