@@ -24,17 +24,17 @@ fn main() {
             keychain::store_secret(SERVICE, ACCOUNT, &secret()).expect("store");
             println!("stored");
         }
-        "--load" => {
-            let loaded = keychain::load_secret(SERVICE, ACCOUNT).expect("load");
-            println!("loaded matches: {}", loaded.as_deref() == Some(&secret()[..]));
-        }
-        "--delete" => {
-            keychain::delete_secret(SERVICE, ACCOUNT).expect("delete");
-            println!("deleted");
-        }
+        "--load" => match keychain::load_secret(SERVICE, ACCOUNT) {
+            Ok(loaded) => println!("loaded matches: {}", loaded.as_deref() == Some(&secret()[..])),
+            Err(e) => println!("load failed: {e:?}"),
+        },
+        "--delete" => println!("delete: {:?}", keychain::delete_secret(SERVICE, ACCOUNT)),
         "--prompt" => {
             println!("waiting for Touch ID…");
-            println!("prompt: {:?}", biometrics::authenticate("Brainmatter entsperren (Spike-Test)"));
+            println!(
+                "prompt: {:?}",
+                biometrics::authenticate("Brainmatter entsperren (Spike-Test)")
+            );
         }
         _ => {
             println!("biometry: {:?}", biometrics::available());
