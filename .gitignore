@@ -1,0 +1,50 @@
+# Rust
+/target
+**/*.rs.bk
+*.profraw
+*.pdb
+
+# Frontend
+node_modules/
+.svelte-kit/
+app/build/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Tauri
+app/src-tauri/target/
+app/src-tauri/gen/
+
+# Local data — never commit vaults, keys or models
+*.db
+*.db-wal
+*.db-shm
+vault.header
+*.bmvault
+.fastembed_cache/
+*.onnx
+*.safetensors
+spike-results/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+.claude/settings.local.json
+
+# Build artefacts
+*.dmg
+*.app
+coverage/
+*.log
+
+# Editors & OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
