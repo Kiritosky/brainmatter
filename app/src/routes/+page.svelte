@@ -21,7 +21,7 @@
 </script>
 
 {#if !status}
-  <div class="h-full" data-tauri-drag-region></div>
+  <div class="aurora h-full" data-tauri-drag-region></div>
 {:else if onboarding}
   <Onboarding {status} ondone={async () => ((status = await api.status()), (onboarding = false))} />
 {:else if status.state === 'unlocked'}

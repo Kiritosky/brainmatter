@@ -30,9 +30,9 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${nam
   await page.locator('input[type=password]').nth(1).fill('Korrekt-Pferd-9!');
   await shot(page, '01-onboarding');
   await page.getByRole('button', { name: 'Tresor erstellen' }).click();
-  await page.getByText('Wiederherstellungsschlüssel').first().waitFor();
+  await page.getByText('Dein Wiederherstellungsschlüssel').waitFor();
   await shot(page, '02-recovery-key');
-  await page.getByRole('checkbox').check();
+  await page.getByText('Ich habe den Schlüssel').click();
   await page.getByRole('button', { name: 'Weiter' }).click();
   await page.getByRole('button', { name: 'Später' }).click();
   await page.getByText('Dein Graph ist noch leer').waitFor();
@@ -43,7 +43,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${nam
 // Lock screen: the mock's Touch ID "cancels", so the password form stays.
 const page = await open('/');
 try {
-  await page.getByText('Brainmatter ist gesperrt').waitFor();
+  await page.getByText('Gesperrt').waitFor();
   await page.waitForTimeout(300);
   await shot(page, '04-lock-screen');
   await page.getByPlaceholder('Master-Passwort').fill('falsch');
@@ -84,11 +84,21 @@ try {
 
   await page.getByTitle('Aktivität').click();
   await page.getByText('Demo-Daten angelegt').waitFor();
+  await page.waitForTimeout(500);
   await shot(page, '10-activity');
+  await page.getByRole('radio', { name: 'KI' }).click();
+  await page.waitForTimeout(400);
+  await page.locator('article').first().hover();
+  await page.waitForTimeout(250);
+  await shot(page, '10b-activity-ai');
 
   await page.keyboard.press('Meta+,');
-  await page.getByText('Automatisch sperren nach').waitFor();
+  await page.getByText('Automatisch sperren', { exact: true }).waitFor();
+  await page.waitForTimeout(300);
   await shot(page, '11-settings');
+  await page.getByRole('button', { name: 'Automatisch sperren nach' }).click();
+  await page.waitForTimeout(250);
+  await shot(page, '12-settings-select');
 } catch (e) {
   await shot(page, 'zz-failure');
   errors.push(`step failed: ${(e as Error).message.split('\n')[0]}`);

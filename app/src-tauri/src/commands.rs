@@ -193,6 +193,12 @@ pub fn change_sets(session: S<'_>, limit: usize) -> ApiResult<Vec<ChangeSetInfo>
 }
 
 #[tauri::command(async)]
+pub fn recent_changes(session: S<'_>, limit: usize) -> ApiResult<Vec<RecentChange>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.recent_changes(limit, None)?)
+}
+
+#[tauri::command(async)]
 pub fn node_history(session: S<'_>, id: NodeId) -> ApiResult<Vec<NodeRevision>> {
     let (engine, _) = session.engine()?;
     Ok(engine.node_history(&id)?)

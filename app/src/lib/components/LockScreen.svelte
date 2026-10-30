@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Fingerprint, Lock } from '@lucide/svelte';
+  import { ArrowRight, Fingerprint } from '@lucide/svelte';
   import { api, errorMessage, isApiError, type Status } from '#lib/api.ts';
+  import { pop } from '#lib/ui/motion.ts';
 
   let { status }: { status: Status } = $props();
 
@@ -9,86 +10,97 @@
   let recovery = $state('');
   let useRecovery = $state(false);
   let busy = $state(false);
+  let waitingForFinger = $state(false);
   let error = $state<string | null>(null);
+  let shake = $state(false);
   let attempts = 0;
   let input: HTMLInputElement | undefined = $state();
 
   const canTouchId = $derived(status.touch_id_enrolled && status.biometry_available);
 
-  async function run(action: () => Promise<void>) {
+  function fail(e: unknown) {
+    error = errorMessage(e);
+    shake = false;
+    requestAnimationFrame(() => (shake = true));
+  }
+
+  async function touchId() {
+    waitingForFinger = true;
+    error = null;
+    try {
+      await api.unlockTouchId();
+    } catch (e) {
+      // Dismissing the prompt is not an error worth showing.
+      if (!(isApiError(e) && e.code === 'touch_id_cancelled')) fail(e);
+      input?.focus();
+    } finally {
+      waitingForFinger = false;
+    }
+  }
+
+  async function submit(e: SubmitEvent) {
+    e.preventDefault();
     busy = true;
     error = null;
     try {
-      await action();
-    } catch (e) {
-      error = errorMessage(e);
-      if (isApiError(e) && e.code === 'wrong_password') {
+      await (useRecovery ? api.unlockRecovery(recovery) : api.unlockPassword(password));
+    } catch (err) {
+      fail(err);
+      if (isApiError(err) && err.code === 'wrong_password') {
         // Growing delay against guessing at the keyboard.
         attempts++;
         await new Promise((r) => setTimeout(r, Math.min(8000, 250 * 2 ** attempts)));
       }
-      input?.focus();
+      input?.select();
     } finally {
       busy = false;
     }
   }
-
-  const touchId = () => run(() => api.unlockTouchId());
-  const submit = (e: SubmitEvent) => {
-    e.preventDefault();
-    run(() => (useRecovery ? api.unlockRecovery(recovery) : api.unlockPassword(password)));
-  };
 
   onMount(() => {
     if (canTouchId) touchId();
   });
 </script>
 
-<div class="flex h-full items-center justify-center" data-tauri-drag-region>
-  <div class="flex w-[340px] flex-col items-center gap-5">
-    <div class="flex h-16 w-16 items-center justify-center rounded-2xl border border-line bg-panel">
-      <Lock class="text-muted" size={28} />
-    </div>
-    <div class="text-center">
-      <h1 class="text-lg font-semibold">Brainmatter ist gesperrt</h1>
-      <p class="text-muted">Entsperre deinen Wissensspeicher.</p>
-    </div>
+<div class="aurora flex h-full items-center justify-center" data-tauri-drag-region>
+  <div class="flex w-[320px] flex-col items-center" in:pop={{ duration: 320, y: 10 }}>
+    <img src="/icon.png" alt="" class="mb-5 h-20 w-20 drop-shadow-[0_12px_24px_rgba(0,0,0,0.45)]" draggable="false" />
+    <h1 class="text-xl font-semibold tracking-tight">Brainmatter</h1>
+    <p class="mt-1 mb-7 text-muted">{waitingForFinger ? 'Leg deinen Finger auf den Sensor' : 'Gesperrt'}</p>
 
     {#if canTouchId && !useRecovery}
-      <button class="btn-primary w-full" disabled={busy} onclick={touchId}>
-        <Fingerprint size={16} /> Mit Touch ID entsperren
+      <button
+        class="mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-accent/40 bg-accent/10 text-accent transition-[background-color,scale] duration-150 hover:bg-accent/20 active:scale-95 {waitingForFinger ? 'pulse' : ''}"
+        aria-label="Mit Touch ID entsperren"
+        onclick={touchId}>
+        <Fingerprint size={26} />
       </button>
-      <div class="text-xs text-faint">oder</div>
     {/if}
 
-    <form class="flex w-full flex-col gap-2" onsubmit={submit}>
-      {#if useRecovery}
-        <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-        <input
-          bind:this={input}
-          class="field font-mono"
-          bind:value={recovery}
-          placeholder="XXXX-XXXX-…"
-          autofocus />
-      {:else}
-        <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-        <input
-          bind:this={input}
-          class="field"
-          type="password"
-          bind:value={password}
-          placeholder="Master-Passwort"
-          autocomplete="current-password"
-          autofocus={!canTouchId} />
-      {/if}
-      {#if error}<p class="text-center text-danger">{error}</p>{/if}
-      <button class="btn-ghost" disabled={busy || (useRecovery ? !recovery : !password)}>
-        {busy ? 'Entsperre …' : 'Entsperren'}
-      </button>
+    <form class="w-full" class:shake onsubmit={submit} onanimationend={() => (shake = false)}>
+      <div class="relative">
+        {#if useRecovery}
+          <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
+          <input bind:this={input} class="field w-full pr-11 font-mono" bind:value={recovery} placeholder="XXXX-XXXX-…" autofocus />
+        {:else}
+          <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
+          <input bind:this={input} class="field w-full pr-11" type="password" bind:value={password}
+            placeholder="Master-Passwort" autocomplete="current-password" autofocus={!canTouchId} />
+        {/if}
+        <button class="icon-btn absolute top-1 right-1 !text-accent disabled:opacity-30"
+          aria-label="Entsperren" disabled={busy || (useRecovery ? !recovery : !password)}>
+          <ArrowRight size={16} class={busy ? 'animate-pulse' : ''} />
+        </button>
+      </div>
     </form>
 
-    <button class="text-xs text-faint hover:text-muted" onclick={() => ((useRecovery = !useRecovery), (error = null))}>
-      {useRecovery ? 'Doch mit Passwort' : 'Passwort vergessen? Wiederherstellungsschlüssel verwenden'}
+    <div class="mt-3 h-5 text-center text-danger">
+      {#if error}<span transition:pop={{ duration: 160, y: -3 }}>{error}</span>{/if}
+    </div>
+
+    <button class="mt-3 text-xs text-faint transition-colors hover:text-muted"
+      onclick={() => ((useRecovery = !useRecovery), (error = null))}>
+      {useRecovery ? 'Doch mit Passwort entsperren' : 'Passwort vergessen?'}
     </button>
   </div>
 </div>

@@ -1,49 +1,71 @@
 @import 'tailwindcss';
 
-/* Design tokens. Dark is the default; light follows the system setting. */
-@theme {
+/* ------------------------------------------------------------ tokens --- */
+/* Dark is the default; light follows the system setting. */
+@theme static {
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
   --font-mono: 'SF Mono', ui-monospace, Menlo, monospace;
 
-  --color-bg: #0f1218;
-  --color-panel: #151a23;
-  --color-elevated: #1b212c;
-  --color-line: #262d3a;
-  --color-text: #dfe4ee;
-  --color-muted: #8a93a6;
-  --color-faint: #5a6275;
-  --color-accent: #7c9cff;
-  --color-accent-strong: #5f82ff;
+  --color-bg: #0c0f14;
+  --color-panel: #12161e;
+  --color-elevated: #1a1f2a;
+  --color-raised: #212735;
+  --color-line: #252c39;
+  --color-line-soft: #1c222d;
+  --color-text: #e4e8f1;
+  --color-muted: #9099ad;
+  --color-faint: #5d6579;
+  --color-accent: #7f9dff;
+  --color-accent-strong: #6386ff;
   --color-ok: #5fd3a5;
   --color-warn: #f5c451;
   --color-danger: #ff7a7a;
   --color-ai: #c38bff;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    --color-bg: #f6f7fa;
+    --color-bg: #f5f6f9;
     --color-panel: #ffffff;
-    --color-elevated: #ffffff;
-    --color-line: #e3e6ec;
-    --color-text: #1c2230;
-    --color-muted: #5d6678;
-    --color-faint: #9aa2b1;
+    --color-elevated: #f7f8fb;
+    --color-raised: #eef0f5;
+    --color-line: #e2e5ec;
+    --color-line-soft: #eceef3;
+    --color-text: #191e2a;
+    --color-muted: #5b6477;
+    --color-faint: #9aa2b2;
   }
 }
 
+/* ------------------------------------------------------------- base --- */
 html,
 body {
   margin: 0;
   height: 100%;
   overflow: hidden;
   background: var(--color-bg);
+}
+
+/* Base text size on body, not html: rem must stay 16px or Tailwind's whole
+   spacing scale shrinks with it. */
+body {
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: 13px;
+  letter-spacing: -0.003em;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Inside Tauri the window is transparent so the sidebar can show macOS
+   vibrancy; everything else paints its own background. */
+html.tauri,
+html.tauri body {
+  background: transparent;
 }
 
 input,
@@ -54,51 +76,179 @@ textarea,
   -webkit-user-select: text;
 }
 
+button {
+  cursor: default;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
-/* Markdown preview */
+/* In a layer, so utilities like outline-none can still override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 65%, transparent);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  [contenteditable]:focus-visible {
+    outline: none;
+  }
+}
+
+/* Thin, overlay-style scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------- components --- */
+@layer components {
+  .field {
+    @apply h-9 rounded-lg border border-line bg-elevated px-3 text-text outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-faint hover:border-faint/60;
+  }
+  .field:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  .btn-primary {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg px-4 font-medium text-white transition-[filter,scale,opacity] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 92%, white) 0%, var(--color-accent-strong) 100%);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.18) inset,
+      0 6px 16px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.08);
+  }
+  .btn-ghost {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-line bg-elevated/40 px-3 text-text transition-[background-color,border-color,scale] duration-150 hover:border-faint/70 hover:bg-elevated active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-danger {
+    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-danger/15 px-3 text-danger transition-colors duration-150 hover:bg-danger/25 active:scale-[0.98];
+  }
+  .icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-[background-color,color,scale] duration-150 hover:bg-elevated hover:text-text active:scale-90;
+  }
+  .chip {
+    @apply inline-flex h-6 items-center gap-1 rounded-md border border-line-soft bg-elevated px-2 text-xs text-muted;
+  }
+  .kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded border border-line bg-elevated px-1 font-sans text-[10.5px] text-muted;
+  }
+  .section-title {
+    @apply mb-2 text-[10.5px] font-semibold tracking-[0.06em] text-faint uppercase;
+  }
+  .nav-row {
+    @apply flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-muted transition-colors duration-150 hover:bg-elevated/70 hover:text-text;
+  }
+  .nav-row.active {
+    @apply bg-accent/12 text-text;
+  }
+  .glass-pill {
+    @apply flex items-center rounded-xl border border-line-soft bg-panel/80 p-0.5 shadow-lg shadow-black/25 backdrop-blur-md;
+  }
+  .card {
+    @apply rounded-xl border border-line-soft bg-elevated/50;
+  }
+  .row {
+    @apply flex min-h-12 items-center gap-4 px-4 py-2.5;
+  }
+  .row + .row {
+    border-top: 1px solid var(--color-line-soft);
+  }
+  .surface {
+    background: var(--color-panel);
+    box-shadow:
+      0 0 0 1px var(--color-line),
+      0 24px 60px -12px rgb(0 0 0 / 0.55);
+  }
+}
+
+/* Sidebar: real macOS vibrancy inside Tauri, solid in a plain browser. */
+.sidebar-glass {
+  background: var(--color-panel);
+}
+html.tauri .sidebar-glass {
+  background: color-mix(in srgb, var(--color-panel) 55%, transparent);
+}
+
+/* Dotted canvas behind the graph. */
+.canvas-dots {
+  background-color: var(--color-bg);
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-faint) 22%, transparent) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+/* Soft glow used on the lock and onboarding screens. */
+.aurora {
+  background:
+    radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 70%),
+    radial-gradient(40% 40% at 85% 90%, color-mix(in srgb, var(--color-ai) 10%, transparent), transparent 70%),
+    var(--color-bg);
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+.pulse {
+  animation: pulse-ring 1.4s var(--ease-out-soft) infinite;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.shake {
+  animation: shake 0.4s ease;
+}
+
+/* ---------------------------------------------------------- markdown --- */
 .prose-bm {
-  line-height: 1.6;
+  line-height: 1.65;
   font-size: 13.5px;
+  color: color-mix(in srgb, var(--color-text) 92%, var(--color-muted));
   user-select: text;
   -webkit-user-select: text;
 }
-.prose-bm h1 { font-size: 1.5em; font-weight: 650; margin: 0.8em 0 0.4em; }
-.prose-bm h2 { font-size: 1.25em; font-weight: 650; margin: 0.8em 0 0.4em; }
-.prose-bm h3 { font-size: 1.1em; font-weight: 600; margin: 0.8em 0 0.3em; }
-.prose-bm p { margin: 0.5em 0; }
-.prose-bm ul, .prose-bm ol { padding-left: 1.4em; margin: 0.4em 0; }
+.prose-bm h1 { font-size: 1.45em; font-weight: 650; margin: 1em 0 0.4em; color: var(--color-text); }
+.prose-bm h2 { font-size: 1.2em; font-weight: 650; margin: 1em 0 0.4em; color: var(--color-text); }
+.prose-bm h3 { font-size: 1.05em; font-weight: 600; margin: 0.9em 0 0.3em; color: var(--color-text); }
+.prose-bm p { margin: 0.55em 0; }
+.prose-bm ul, .prose-bm ol { padding-left: 1.3em; margin: 0.45em 0; }
 .prose-bm ul { list-style: disc; }
 .prose-bm ol { list-style: decimal; }
-.prose-bm code { font-family: var(--font-mono); font-size: 0.9em; background: var(--color-elevated); padding: 0.1em 0.35em; border-radius: 4px; }
-.prose-bm pre { background: var(--color-elevated); padding: 0.8em; border-radius: 8px; overflow-x: auto; }
+.prose-bm li::marker { color: var(--color-faint); }
+.prose-bm strong { color: var(--color-text); font-weight: 620; }
+.prose-bm code { font-family: var(--font-mono); font-size: 0.88em; background: var(--color-raised); padding: 0.12em 0.38em; border-radius: 5px; }
+.prose-bm pre { background: var(--color-raised); padding: 0.85em 1em; border-radius: 10px; overflow-x: auto; border: 1px solid var(--color-line-soft); }
 .prose-bm pre code { background: none; padding: 0; }
-.prose-bm blockquote { border-left: 3px solid var(--color-line); padding-left: 0.8em; color: var(--color-muted); }
-.prose-bm a { color: var(--color-accent); }
-.prose-bm .wikilink { color: var(--color-accent); cursor: pointer; border-bottom: 1px dashed currentColor; }
-.prose-bm .wikilink.missing { color: var(--color-faint); }
-.prose-bm table { border-collapse: collapse; }
-.prose-bm th, .prose-bm td { border: 1px solid var(--color-line); padding: 0.3em 0.6em; }
-
-@layer components {
-  .field {
-    @apply rounded-lg border border-line bg-elevated px-3 py-2 text-text outline-none placeholder:text-faint focus:border-accent;
-  }
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 font-medium text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-40;
-  }
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 transition-colors hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-40;
-  }
-  .icon-btn {
-    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-text;
-  }
-  .chip {
-    @apply inline-flex items-center gap-1 rounded-md border border-line bg-elevated px-1.5 py-0.5 text-xs text-muted;
-  }
-  .section-title {
-    @apply mb-1.5 text-[11px] font-semibold tracking-wide text-faint uppercase;
-  }
+.prose-bm blockquote { border-left: 2px solid var(--color-accent); padding-left: 0.9em; color: var(--color-muted); margin: 0.6em 0; }
+.prose-bm a { color: var(--color-accent); text-decoration: none; }
+.prose-bm a:hover { text-decoration: underline; }
+.prose-bm hr { border: 0; border-top: 1px solid var(--color-line); margin: 1.2em 0; }
+.prose-bm .wikilink {
+  color: var(--color-accent);
+  cursor: pointer;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border-radius: 4px;
+  padding: 0 0.25em;
+  transition: background-color 120ms ease;
 }
+.prose-bm .wikilink:hover { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+.prose-bm .wikilink.missing { color: var(--color-faint); background: transparent; border-bottom: 1px dashed currentColor; border-radius: 0; }
+.prose-bm table { border-collapse: collapse; }
+.prose-bm th, .prose-bm td { border: 1px solid var(--color-line); padding: 0.35em 0.65em; }

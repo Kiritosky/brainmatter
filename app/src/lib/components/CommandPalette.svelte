@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { Plus, FileText, Link2 } from '@lucide/svelte';
+  import { CornerDownLeft, Link2, Plus, Search } from '@lucide/svelte';
   import { api, errorMessage, type SearchHit } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
+  import Select from '#lib/ui/Select.svelte';
+  import { fadeQuick, pop } from '#lib/ui/motion.ts';
 
   const mode = $derived(ws.palette!);
   let text = $state('');
@@ -27,6 +29,31 @@
       }
     }, 60);
     return () => clearTimeout(timer);
+  });
+
+  const RELATIONS = [
+    { value: 'related_to', label: 'verwandt mit' },
+    { value: 'part_of', label: 'Teil von' },
+    { value: 'depends_on', label: 'hängt ab von' },
+    { value: 'example_of', label: 'Beispiel für' },
+    { value: 'supports', label: 'stützt' },
+    { value: 'contradicts', label: 'widerspricht' },
+    { value: 'derived_from', label: 'abgeleitet von' },
+  ];
+
+  const KIND_COLORS: Record<string, string> = {
+    note: '#8f9bb3',
+    concept: '#5fd3a5',
+    task: '#f5c451',
+    person: '#ff6fb5',
+    source: '#4cc9f0',
+    decision: '#ffa24c',
+    snippet: '#c38bff',
+  };
+
+  let list: HTMLDivElement | undefined = $state();
+  $effect(() => {
+    list?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' });
   });
 
   function close() {
@@ -55,6 +82,8 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    // An open relation picker handles its own keys first.
+    if (e.defaultPrevented) return;
     if (e.key === 'Escape') close();
     else if (e.key === 'ArrowDown') (active = Math.min(options.length - 1, active + 1)), e.preventDefault();
     else if (e.key === 'ArrowUp') (active = Math.max(0, active - 1)), e.preventDefault();
@@ -62,49 +91,60 @@
   }
 
   // Snippets mark matches with **…**; render them as <mark> safely.
-  const parts = (s: string) => s.split('**').map((p, i) => ({ text: p, mark: i % 2 === 1 }));
+  const parts = (s: string) =>
+    s.replace(/\[\[|\]\]/g, '').split('**').map((p, i) => ({ text: p, mark: i % 2 === 1 }));
 </script>
 
-<div class="fixed inset-0 z-50 flex justify-center bg-black/40 pt-[12vh]" role="presentation" onclick={close}>
-  <div class="h-fit w-[620px] overflow-hidden rounded-xl border border-line bg-panel shadow-2xl" role="dialog" tabindex="-1"
-    onclick={(e) => e.stopPropagation()} onkeydown={onkeydown}>
-    <div class="flex items-center gap-2 border-b border-line px-4">
-      {#if mode === 'link'}<Link2 size={15} class="text-accent" />{/if}
+<div class="fixed inset-0 z-50 flex justify-center bg-black/45 pt-[13vh] backdrop-blur-[2px]" role="presentation" transition:fadeQuick onclick={close}>
+  <div class="surface h-fit w-[640px] rounded-2xl" role="dialog" aria-label="Suche" tabindex="-1"
+    transition:pop onclick={(e) => e.stopPropagation()} {onkeydown}>
+    <div class="flex items-center gap-3 border-b border-line-soft px-4">
+      {#if mode === 'link'}<Link2 size={17} class="shrink-0 text-accent" />{:else}<Search size={17} class="shrink-0 text-faint" />{/if}
       <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
       <input
-        class="flex-1 bg-transparent py-3.5 text-[15px] outline-none placeholder:text-faint"
+        class="h-13 min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-faint"
         placeholder={mode === 'link' ? 'Verbinden mit …' : 'Suchen oder neuen Eintrag anlegen …'}
         bind:value={text}
         autofocus />
       {#if mode === 'link'}
-        <input class="w-32 rounded-md border border-line bg-elevated px-2 py-1 text-xs outline-none" bind:value={relation} title="Art der Beziehung" />
+        <Select bind:value={relation} options={RELATIONS} label="Art der Beziehung" />
       {/if}
     </div>
-    <div class="max-h-[50vh] overflow-y-auto p-1.5">
+    <div class="max-h-[48vh] overflow-y-auto p-1.5" bind:this={list}>
       {#each options as opt, i}
         <button
-          class="flex w-full items-start gap-2.5 rounded-lg px-3 py-2 text-left {i === active ? 'bg-elevated' : ''}"
+          data-index={i}
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-100 {i === active ? 'bg-accent/12' : ''}"
           onmouseenter={() => (active = i)}
           onclick={() => choose(i)}>
           {#if opt.kind === 'hit'}
-            <FileText size={15} class="mt-0.5 shrink-0 text-faint" />
+            <span class="h-2 w-2 shrink-0 rounded-full" style="background: {KIND_COLORS[opt.hit.node.kind] ?? KIND_COLORS.note}"></span>
             <div class="min-w-0 flex-1">
-              <div class="truncate">{opt.hit.node.title} <span class="text-xs text-faint">{opt.hit.node.kind}</span></div>
+              <div class="flex items-baseline gap-2">
+                <span class="truncate font-medium">{opt.hit.node.title}</span>
+                <span class="shrink-0 text-[11px] text-faint">{opt.hit.node.kind}</span>
+              </div>
               {#if opt.hit.snippet}
-                <div class="truncate text-xs text-muted">
-                  {#each parts(opt.hit.snippet) as p}{#if p.mark}<mark class="bg-transparent text-accent">{p.text}</mark>{:else}{p.text}{/if}{/each}
+                <div class="mt-0.5 truncate text-xs text-muted">
+                  {#each parts(opt.hit.snippet) as p}{#if p.mark}<mark class="bg-transparent font-medium text-accent">{p.text}</mark>{:else}{p.text}{/if}{/each}
                 </div>
               {/if}
             </div>
+            {#if i === active}<CornerDownLeft size={13} class="shrink-0 text-faint" />{/if}
           {:else}
-            <Plus size={15} class="mt-0.5 shrink-0 text-accent" />
-            <div class="flex-1">„{text.trim()}“ {mode === 'link' ? 'anlegen und verbinden' : 'als neuen Eintrag anlegen'}</div>
-            <span class="text-[11px] text-faint">⌘↵</span>
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-accent/15 text-accent"><Plus size={13} /></span>
+            <div class="min-w-0 flex-1 truncate">„<span class="font-medium">{text.trim()}</span>“ {mode === 'link' ? 'anlegen und verbinden' : 'neu anlegen'}</div>
+            <span class="kbd shrink-0">⌘↵</span>
           {/if}
         </button>
       {:else}
-        <div class="px-3 py-6 text-center text-faint">Tippe, um zu suchen.</div>
+        <div class="px-3 py-10 text-center text-faint">Noch keine Einträge. Tippe einen Titel, um den ersten anzulegen.</div>
       {/each}
     </div>
+    <footer class="flex items-center gap-4 border-t border-line-soft px-4 py-2 text-[11px] text-faint">
+      <span class="flex items-center gap-1.5"><span class="kbd">↑</span><span class="kbd">↓</span> Auswählen</span>
+      <span class="flex items-center gap-1.5"><span class="kbd">↵</span> {mode === 'link' ? 'Verbinden' : 'Öffnen'}</span>
+      <span class="ml-auto flex items-center gap-1.5"><span class="kbd">esc</span> Schließen</span>
+    </footer>
   </div>
 </div>

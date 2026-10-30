@@ -118,6 +118,11 @@ export interface ChangeSetInfo {
   revisions: number;
 }
 
+export interface RecentChange {
+  change_set: ChangeSetInfo;
+  nodes: NodeBrief[];
+}
+
 export interface NodeRevision {
   change_set: Id;
   actor_name: string;
@@ -239,6 +244,7 @@ export const api = {
   unlink: (src: Id, dst: Id, relation?: string) =>
     call<Edge[]>('unlink', { src, dst, relation: relation ?? null }),
   changeSets: (limit = 50) => call<ChangeSetInfo[]>('change_sets', { limit }),
+  recentChanges: (limit = 100) => call<RecentChange[]>('recent_changes', { limit }),
   nodeHistory: (id: Id) => call<NodeRevision[]>('node_history', { id }),
   revert: (changeSet: Id) => call<unknown>('revert', { changeSet }),
 };

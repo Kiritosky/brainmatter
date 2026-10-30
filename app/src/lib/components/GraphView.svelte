@@ -4,6 +4,7 @@
   import Sigma, { DEFAULT_STYLES } from 'sigma';
   import forceAtlas2 from 'graphology-layout-forceatlas2';
   import FA2Layout from 'graphology-layout-forceatlas2/worker';
+  import { Maximize, Minus, Plus } from '@lucide/svelte';
   import { api, type GraphSnapshot, type Id } from '#lib/api.ts';
 
   let {
@@ -28,12 +29,17 @@
   let layoutTimer: ReturnType<typeof setTimeout> | undefined;
   let currentView: string | null = null;
   let hovered: string | null = null;
+  let resizeObserver: ResizeObserver | undefined;
   const graph = new Graph({ type: 'directed', multi: true });
 
-  const DIM_NODE = '#2a3140';
-  const DIM_LABEL = '#4a5263';
-  const EDGE = '#343c4c';
-  const EDGE_ACTIVE = '#8a93a6';
+  // WebGL needs concrete colours: read them from the theme once.
+  const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const DIM_NODE = css('--color-line');
+  const DIM_LABEL = css('--color-faint');
+  const LABEL = css('--color-text');
+  const EDGE = css('--color-line');
+  const EDGE_DIM = css('--color-line-soft');
+  const EDGE_ACTIVE = css('--color-muted');
 
   const sizeFor = (degree: number) => Math.min(18, 3.5 + Math.sqrt(degree) * 2.2);
 
@@ -187,7 +193,7 @@
           {
             color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? DIM_NODE : (a.color as string)),
             labelColor: (a, s, gs) =>
-              gs.hasHighlighted && !s.isHighlighted ? DIM_LABEL : a.reviewed === false ? '#d3b0ff' : '#c9cfdb',
+              gs.hasHighlighted && !s.isHighlighted ? DIM_LABEL : a.reviewed === false ? '#d3b0ff' : LABEL,
             labelFont: '-apple-system, BlinkMacSystemFont, sans-serif',
             labelSize: 12,
             labelVisibility: (_a, s) => (s.isHighlighted || s.isHovered ? 'visible' : 'auto'),
@@ -196,7 +202,7 @@
         edges: [
           DEFAULT_STYLES.edges,
           {
-            color: (_a, s, gs) => (s.isHighlighted ? EDGE_ACTIVE : gs.hasHighlighted ? '#1f2530' : EDGE),
+            color: (_a, s, gs) => (s.isHighlighted ? EDGE_ACTIVE : gs.hasHighlighted ? EDGE_DIM : EDGE),
             size: (_a, s) => (s.isHighlighted ? 1.5 : 0.6),
           },
         ],
@@ -223,10 +229,18 @@
       saveLayout();
     });
 
+    // Sigma only reacts to window resizes; panels also change the container.
+    resizeObserver = new ResizeObserver(() => {
+      renderer?.resize();
+      renderer?.refresh();
+    });
+    resizeObserver.observe(container);
+
     if (snapshot) sync(snapshot);
   });
 
   onDestroy(() => {
+    resizeObserver?.disconnect();
     stopLayout(false);
     renderer?.kill();
   });
@@ -248,3 +262,12 @@
 </script>
 
 <div class="absolute inset-0" bind:this={container}></div>
+
+{#if snapshot && snapshot.nodes.length > 0}
+  <div class="glass-pill absolute right-4 bottom-4 z-10">
+    <button class="icon-btn" aria-label="Vergrößern" title="Vergrößern" onclick={() => renderer?.getCamera().zoomIn({ duration: 180 })}><Plus size={15} /></button>
+    <button class="icon-btn" aria-label="Verkleinern" title="Verkleinern" onclick={() => renderer?.getCamera().zoomOut({ duration: 180 })}><Minus size={15} /></button>
+    <span class="mx-0.5 h-4 w-px bg-line"></span>
+    <button class="icon-btn" aria-label="Alles zeigen" title="Alles zeigen" onclick={() => renderer?.getCamera().reset({ duration: 300 })}><Maximize size={14} /></button>
+  </div>
+{/if}

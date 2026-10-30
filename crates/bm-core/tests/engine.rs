@@ -542,7 +542,7 @@ fn traversal_paths_and_project_overview() {
     };
     // a → b → c → d, plus e isolated
     let d = mk("D", "", "note");
-    let c = mk("C", "[[D]]", "task");
+    let _c = mk("C", "[[D]]", "task");
     let b = mk("B", "[[C]]", "note");
     let a = mk("A", "[[B]]", "concept");
     let e = mk("E", "", "note");

@@ -126,6 +126,7 @@ pub fn run() {
             commands::link,
             commands::unlink,
             commands::change_sets,
+            commands::recent_changes,
             commands::node_history,
             commands::revert,
         ])

@@ -30,6 +30,7 @@ const projects = new Map<string, Project>();
 const members = new Set<string>(); // `${project}|${node}`
 const layouts = new Map<string, { x: number; y: number; pinned: boolean }>(); // `${view}|${node}`
 const changeSets: ChangeSetInfo[] = [];
+const touched = new Map<string, string[]>(); // change set → node ids
 
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
@@ -52,8 +53,30 @@ function notify(...events: DomainEvent[]) {
   setTimeout(() => events.forEach((e) => emit('bm:event', e)), 30);
 }
 
-function record(summary: string) {
-  changeSets.unshift({ id: id(), actor: USER, actor_name: userName, client: null, tool: 'app', summary, at: now(), reverted_by: null, revisions: 1 });
+function record(
+  summary: string,
+  nodeIds: string[] = [],
+  opts: { actor?: string; client?: string; ago?: number; reverted?: boolean } = {},
+) {
+  // Like the engine: repeated edits of one entry are one change set.
+  const last = changeSets[0];
+  if (last && !opts.ago && !last.reverted_by && last.summary === summary && summary.endsWith('bearbeitet') && last.client === (opts.client ?? null)) {
+    last.at = now();
+    return;
+  }
+  const cs: ChangeSetInfo = {
+    id: id(),
+    actor: opts.actor ? `actor-${opts.actor}` : USER,
+    actor_name: opts.actor ?? userName,
+    client: opts.client ?? null,
+    tool: opts.client ? 'capture' : 'app',
+    summary,
+    at: now() - (opts.ago ?? 0),
+    reverted_by: opts.reverted ? 'reverted' : null,
+    revisions: Math.max(1, nodeIds.length),
+  };
+  changeSets.unshift(cs);
+  touched.set(cs.id, nodeIds);
 }
 
 const live = (nid: string) => {
@@ -211,7 +234,18 @@ function seed() {
   const ids = [...nodes.values()];
   addEdge(ids[3].id, ids[1].id, 'depends_on');
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
-  record('Demo-Daten angelegt');
+  const H = 3_600_000;
+  const byTitle = (t: string) => ids.find((x) => x.title === t)!.id;
+  record('Demo-Daten angelegt', [], { ago: 72 * H });
+  record('„Marathon-Plan“ erstellt', [byTitle('Marathon-Plan')], { ago: 50 * H });
+  record('5 Einträge, 4 Verbindungen erfasst', ['Brainmatter', 'SQLCipher', 'Argon2id', 'Tresor', 'Touch ID'].map(byTitle),
+    { actor: 'Claude Code', client: 'claude-code', ago: 27 * H });
+  record('„Roggenbrot“ bearbeitet', [byTitle('Roggenbrot')], { ago: 26 * H, reverted: true });
+  record('Projekt „Privat“ erstellt', [], { ago: 5 * H });
+  record('„Hybrid-Suche“ erstellt', [byTitle('Hybrid-Suche')], { actor: 'Cursor', client: 'cursor', ago: 3 * H });
+  record('„Sauerteig“ gelöscht', [byTitle('Sauerteig')], { actor: 'Codex', client: 'codex', ago: 2 * H, reverted: true });
+  record('Verbindung erstellt', [], { actor: 'Claude Code', client: 'claude-code', ago: 40 * 60_000 });
+  record('„Tresor“ bearbeitet', [byTitle('Tresor')], { actor: 'Claude Code', client: 'claude-code', ago: 6 * 60_000 });
 }
 
 const handlers: Record<string, (a: Args) => unknown> = {
@@ -274,7 +308,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   search: (a) => search(a.query),
   create_node: (a) => {
     const n = createNode(a.input);
-    record(`„${n.title}“ erstellt`);
+    record(`„${n.title}“ erstellt`, [n.id]);
     notify({ type: 'node_upserted', id: n.id });
     return n;
   },
@@ -290,7 +324,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     n.rev++;
     n.updated_at = now();
     syncWikilinks(n);
-    record(`„${n.title}“ bearbeitet`);
+    record(`„${n.title}“ bearbeitet`, [n.id]);
     notify({ type: 'node_upserted', id: n.id });
     return n;
   },
@@ -298,7 +332,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     const n = live(a.id);
     n.deleted_at = now();
     for (const e of edges.values()) if (e.src === n.id || e.dst === n.id) e.deleted_at ??= now();
-    record(`„${n.title}“ gelöscht`);
+    record(`„${n.title}“ gelöscht`, [n.id]);
     notify({ type: 'node_deleted', id: n.id });
   },
   link: (a) => {
@@ -315,11 +349,25 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return found;
   },
   change_sets: (a) => changeSets.slice(0, a.limit ?? 50),
+  recent_changes: (a) =>
+    changeSets.slice(0, a.limit ?? 50).map((change_set) => ({
+      change_set,
+      nodes: (touched.get(change_set.id) ?? [])
+        .map((nid) => nodes.get(nid))
+        .filter((n): n is Node => !!n)
+        .map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
+    })),
   node_history: (a) => {
     const n = live(a.id);
     return [{ change_set: changeSets.at(-1)!.id, actor_name: userName, at: n.created_at, rev: 1, before: null, after: n }];
   },
-  revert: () => fail('conflict', 'Revert ist im Mock nicht verfügbar.'),
+  revert: (a) => {
+    const cs = changeSets.find((c) => c.id === a.changeSet);
+    if (!cs) fail('not_found', 'Änderung nicht gefunden');
+    cs.reverted_by = 'reverted';
+    record('Änderung rückgängig gemacht');
+    notify({ type: 'change_set_committed', id: cs.id, actor: USER, summary: cs.summary });
+  },
 };
 
 export function install() {
