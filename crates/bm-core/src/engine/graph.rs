@@ -1,14 +1,17 @@
 //! Whole-view graph snapshots for rendering, and persisted layouts.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use rusqlite::{Connection, params};
 
-use super::{projects, rows::EDGE_COLS, rows::edge_from_row};
+use super::{edges, projects, rows, rows::EDGE_COLS, rows::edge_from_row};
 use crate::{
     error::Result,
     ids::{NodeId, ProjectId},
-    model::{GraphEdge, GraphNode, GraphSnapshot, LayoutPosition},
+    model::{
+        GraphEdge, GraphNode, GraphSnapshot, LayoutPosition, NodeBrief, PathStep, ProjectBrief,
+        ProjectOverview, Subgraph,
+    },
 };
 
 pub(crate) const ALL_VIEW: &str = "all";
@@ -112,4 +115,160 @@ pub(crate) fn save_layout(
         }
     }
     Ok(())
+}
+
+/// Breadth-first traversal over live edges in both directions.
+pub(crate) fn neighborhood(
+    conn: &Connection,
+    root: &NodeId,
+    depth: usize,
+    limit: usize,
+) -> Result<Subgraph> {
+    let root_brief = rows::live_node(conn, root).map(|n| NodeBrief {
+        id: n.id,
+        title: n.title,
+        kind: n.kind,
+    })?;
+    let mut seen: HashMap<NodeId, usize> = HashMap::from([(root.clone(), 0)]);
+    let mut order = vec![(root_brief, 0)];
+    let mut queue = VecDeque::from([(root.clone(), 0usize)]);
+    let mut truncated = false;
+
+    'bfs: while let Some((id, d)) = queue.pop_front() {
+        if d >= depth {
+            continue;
+        }
+        for e in edges::active_edges_of(conn, &id)? {
+            let other = if e.src == id { e.dst } else { e.src };
+            if seen.contains_key(&other) {
+                continue;
+            }
+            if order.len() >= limit {
+                truncated = true;
+                break 'bfs;
+            }
+            if let Some(b) = rows::brief(conn, &other)? {
+                seen.insert(other.clone(), d + 1);
+                order.push((b, d + 1));
+                queue.push_back((other, d + 1));
+            }
+        }
+    }
+
+    let mut found = Vec::new();
+    let mut edge_ids = HashSet::new();
+    for (b, _) in &order {
+        for e in edges::active_edges_from(conn, &b.id)? {
+            if seen.contains_key(&e.dst) && edge_ids.insert(e.id.clone()) {
+                found.push(e);
+            }
+        }
+    }
+    Ok(Subgraph { root: root.clone(), nodes: order, edges: found, truncated })
+}
+
+/// Shortest path (fewest hops, any edge direction), or `None` if the nodes
+/// are not connected within `max_depth` hops.
+pub(crate) fn shortest_path(
+    conn: &Connection,
+    from: &NodeId,
+    to: &NodeId,
+    max_depth: usize,
+) -> Result<Option<Vec<PathStep>>> {
+    rows::live_node(conn, from)?;
+    rows::live_node(conn, to)?;
+    let mut parent: HashMap<NodeId, Option<(NodeId, crate::model::Edge)>> =
+        HashMap::from([(from.clone(), None)]);
+    let mut queue = VecDeque::from([(from.clone(), 0usize)]);
+    while let Some((id, d)) = queue.pop_front() {
+        if &id == to {
+            break;
+        }
+        if d >= max_depth {
+            continue;
+        }
+        for e in edges::active_edges_of(conn, &id)? {
+            let other = if e.src == id { e.dst.clone() } else { e.src.clone() };
+            if !parent.contains_key(&other) {
+                parent.insert(other.clone(), Some((id.clone(), e)));
+                queue.push_back((other, d + 1));
+            }
+        }
+    }
+    if !parent.contains_key(to) {
+        return Ok(None);
+    }
+    let mut steps = Vec::new();
+    let mut cur = to.clone();
+    loop {
+        let via = parent.get(&cur).cloned().flatten();
+        let node = rows::brief(conn, &cur)?.expect("visited nodes exist");
+        let prev = via.as_ref().map(|(p, _)| p.clone());
+        steps.push(PathStep { node, via: via.map(|(_, e)| e) });
+        match prev {
+            Some(p) => cur = p,
+            None => break,
+        }
+    }
+    steps.reverse();
+    Ok(Some(steps))
+}
+
+pub(crate) fn project_overview(conn: &Connection, id: &ProjectId) -> Result<ProjectOverview> {
+    let project = rows::live_project(conn, id)?;
+    let all = projects::list(conn)?;
+
+    let mut path = Vec::new();
+    let mut cur = project.parent_id.clone();
+    while let Some(pid) = cur {
+        let Some(p) = all.iter().find(|s| s.project.id == pid) else { break };
+        path.insert(0, ProjectBrief { id: p.project.id.clone(), name: p.project.name.clone() });
+        cur = p.project.parent_id.clone();
+    }
+    let subprojects =
+        all.iter().filter(|s| s.project.parent_id.as_ref() == Some(id)).cloned().collect();
+
+    let snap = snapshot(conn, Some(id))?;
+    let mut hubs: Vec<(NodeBrief, i64)> = snap
+        .nodes
+        .iter()
+        .filter(|n| n.degree > 0)
+        .map(|n| {
+            (NodeBrief { id: n.id.clone(), title: n.title.clone(), kind: n.kind.clone() }, n.degree)
+        })
+        .collect();
+    hubs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.title.cmp(&b.0.title)));
+    hubs.truncate(10);
+
+    let mut by_recency: Vec<_> = snap.nodes.iter().collect();
+    by_recency.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let brief = |n: &GraphNode| NodeBrief {
+        id: n.id.clone(),
+        title: n.title.clone(),
+        kind: n.kind.clone(),
+    };
+    let recent = by_recency.iter().take(10).map(|n| brief(n)).collect();
+
+    let mut kinds: HashMap<String, usize> = HashMap::new();
+    for n in &snap.nodes {
+        *kinds.entry(n.kind.clone()).or_default() += 1;
+    }
+    let mut kinds: Vec<(String, usize)> = kinds.into_iter().collect();
+    kinds.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    let tasks = snap.nodes.iter().filter(|n| n.kind == "task").take(20).map(brief).collect();
+    let unreviewed = snap.nodes.iter().filter(|n| !n.reviewed).count();
+
+    Ok(ProjectOverview {
+        project,
+        path,
+        subprojects,
+        node_count: snap.nodes.len(),
+        edge_count: snap.edges.len(),
+        hubs,
+        recent,
+        kinds,
+        tasks,
+        unreviewed,
+    })
 }

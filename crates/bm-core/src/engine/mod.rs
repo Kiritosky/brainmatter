@@ -292,7 +292,57 @@ impl Engine {
         Ok(())
     }
 
+    /// Neighbourhood up to `depth` hops, at most `limit` nodes.
+    pub fn neighborhood(&self, root: &NodeId, depth: usize, limit: usize) -> Result<Subgraph> {
+        self.read(|c| graph::neighborhood(c, root, depth.clamp(1, 4), limit.clamp(1, 500)))
+    }
+
+    pub fn shortest_path(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        max_depth: usize,
+    ) -> Result<Option<Vec<PathStep>>> {
+        self.read(|c| graph::shortest_path(c, from, to, max_depth.clamp(1, 8)))
+    }
+
+    pub fn project_overview(&self, project: &ProjectId) -> Result<ProjectOverview> {
+        self.read(|c| graph::project_overview(c, project))
+    }
+
     // ----------------------------------------------------------- history ---
+
+    /// Latest change sets with the entries each one touched.
+    pub fn recent_changes(&self, limit: usize, since: Option<i64>) -> Result<Vec<RecentChange>> {
+        self.read(|c| {
+            history::list(c, limit.clamp(1, 200), None)?
+                .into_iter()
+                .filter(|cs| since.is_none_or(|t| cs.at >= t))
+                .map(|cs| {
+                    Ok(RecentChange { nodes: history::touched_nodes(c, &cs.id)?, change_set: cs })
+                })
+                .collect()
+        })
+    }
+
+    /// Records an MCP tool call (never its content) for the activity view.
+    pub fn log_activity(
+        &self,
+        actor: &ActorId,
+        tool: &str,
+        args_summary: &str,
+        duration_ms: i64,
+    ) -> Result<()> {
+        self.writer.lock().execute(
+            "INSERT INTO activity_log (actor_id, tool, args_summary, duration_ms, at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![actor, tool, args_summary, duration_ms, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn change_set(&self, id: &ChangeSetId) -> Result<Option<ChangeSetInfo>> {
+        self.read(|c| history::get(c, id))
+    }
 
     pub fn change_sets(&self, limit: usize, actor: Option<&ActorId>) -> Result<Vec<ChangeSetInfo>> {
         self.read(|c| history::list(c, limit, actor))

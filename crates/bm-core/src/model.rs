@@ -179,6 +179,49 @@ pub struct LayoutPosition {
     pub pinned: bool,
 }
 
+/// Breadth-first neighbourhood of a node (edges in both directions).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Subgraph {
+    pub root: NodeId,
+    /// Nodes with their hop distance from the root (root first).
+    pub nodes: Vec<(NodeBrief, usize)>,
+    /// Live edges between the returned nodes.
+    pub edges: Vec<Edge>,
+    /// True if `limit` cut the traversal short.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PathStep {
+    pub node: NodeBrief,
+    /// Edge that leads here from the previous step (None for the start).
+    pub via: Option<Edge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectOverview {
+    pub project: Project,
+    /// Ancestors, root first.
+    pub path: Vec<ProjectBrief>,
+    pub subprojects: Vec<ProjectSummary>,
+    /// Live nodes in the project and its subprojects.
+    pub node_count: usize,
+    pub edge_count: usize,
+    /// Most connected entries, with their degree inside the project.
+    pub hubs: Vec<(NodeBrief, i64)>,
+    pub recent: Vec<NodeBrief>,
+    pub kinds: Vec<(String, usize)>,
+    pub tasks: Vec<NodeBrief>,
+    pub unreviewed: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecentChange {
+    pub change_set: ChangeSetInfo,
+    /// Entries the change set touched (live or not).
+    pub nodes: Vec<NodeBrief>,
+}
+
 // ---------------------------------------------------------------- inputs ---
 
 /// Who is acting, recorded on every change set.

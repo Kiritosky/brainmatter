@@ -520,3 +520,57 @@ fn consecutive_edits_coalesce_into_one_change_set() {
     f.engine.revert(&f.user, &user_edit).unwrap();
     assert_eq!(f.engine.node(&n.id).unwrap().unwrap().body, "a");
 }
+
+#[test]
+fn traversal_paths_and_project_overview() {
+    let f = setup();
+    let p = f
+        .engine
+        .create_project(&f.user, NewProject { name: "P".into(), ..Default::default() })
+        .unwrap();
+    let mk = |title: &str, body: &str, kind: &str| {
+        f.engine
+            .create_node(
+                &f.user,
+                NewNode {
+                    kind: Some(kind.into()),
+                    projects: vec![p.id.clone()],
+                    ..note(title, body)
+                },
+            )
+            .unwrap()
+    };
+    // a → b → c → d, plus e isolated
+    let d = mk("D", "", "note");
+    let c = mk("C", "[[D]]", "task");
+    let b = mk("B", "[[C]]", "note");
+    let a = mk("A", "[[B]]", "concept");
+    let e = mk("E", "", "note");
+
+    let one = f.engine.neighborhood(&b.id, 1, 50).unwrap();
+    let mut titles: Vec<_> = one.nodes.iter().map(|(n, d)| (n.title.as_str(), *d)).collect();
+    titles.sort();
+    assert_eq!(titles, [("A", 1), ("B", 0), ("C", 1)]);
+    assert_eq!(one.edges.len(), 2);
+    let capped = f.engine.neighborhood(&a.id, 3, 2).unwrap();
+    assert!(capped.truncated && capped.nodes.len() == 2);
+
+    // Paths ignore edge direction.
+    let path = f.engine.shortest_path(&d.id, &a.id, 5).unwrap().unwrap();
+    let names: Vec<_> = path.iter().map(|s| s.node.title.as_str()).collect();
+    assert_eq!(names, ["D", "C", "B", "A"]);
+    assert!(path[0].via.is_none() && path[1].via.is_some());
+    assert!(f.engine.shortest_path(&a.id, &e.id, 5).unwrap().is_none());
+    assert!(f.engine.shortest_path(&d.id, &a.id, 2).unwrap().is_none(), "beyond max depth");
+
+    let o = f.engine.project_overview(&p.id).unwrap();
+    assert_eq!((o.node_count, o.edge_count), (5, 3));
+    assert_eq!(o.hubs.len(), 4);
+    assert_eq!(o.hubs[0].1, 2);
+    assert_eq!(o.tasks.len(), 1);
+    assert_eq!(o.recent[0].title, "E");
+
+    let recent = f.engine.recent_changes(3, None).unwrap();
+    assert_eq!(recent[0].nodes[0].title, "E");
+    assert!(f.engine.change_set(&recent[0].change_set.id).unwrap().is_some());
+}

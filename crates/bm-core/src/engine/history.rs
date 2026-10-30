@@ -17,34 +17,42 @@ use crate::{
     model::{ChangeSetInfo, Edge, Node, NodeRevision, Project},
 };
 
+const CHANGE_SET_SELECT: &str = "SELECT c.id, c.actor_id, a.name, c.client_name, c.tool, c.summary,
+        c.at, c.reverted_by, (SELECT count(*) FROM revisions r WHERE r.change_set_id = c.id)
+     FROM change_sets c JOIN actors a ON a.id = c.actor_id";
+
+fn change_set_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ChangeSetInfo> {
+    Ok(ChangeSetInfo {
+        id: r.get(0)?,
+        actor: r.get(1)?,
+        actor_name: r.get(2)?,
+        client: r.get(3)?,
+        tool: r.get(4)?,
+        summary: r.get(5)?,
+        at: r.get(6)?,
+        reverted_by: r.get(7)?,
+        revisions: r.get(8)?,
+    })
+}
+
 pub(crate) fn list(
     conn: &Connection,
     limit: usize,
     actor: Option<&ActorId>,
 ) -> Result<Vec<ChangeSetInfo>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT c.id, c.actor_id, a.name, c.client_name, c.tool, c.summary, c.at, c.reverted_by,
-                (SELECT count(*) FROM revisions r WHERE r.change_set_id = c.id)
-         FROM change_sets c JOIN actors a ON a.id = c.actor_id
-         WHERE ?1 IS NULL OR c.actor_id = ?1
-         ORDER BY c.at DESC, c.id DESC LIMIT ?2",
-    )?;
+    let sql = format!(
+        "{CHANGE_SET_SELECT} WHERE ?1 IS NULL OR c.actor_id = ?1 ORDER BY c.at DESC, c.id DESC LIMIT ?2"
+    );
+    let mut stmt = conn.prepare_cached(&sql)?;
     let rows = stmt
-        .query_map(params![actor, limit as i64], |r| {
-            Ok(ChangeSetInfo {
-                id: r.get(0)?,
-                actor: r.get(1)?,
-                actor_name: r.get(2)?,
-                client: r.get(3)?,
-                tool: r.get(4)?,
-                summary: r.get(5)?,
-                at: r.get(6)?,
-                reverted_by: r.get(7)?,
-                revisions: r.get(8)?,
-            })
-        })?
+        .query_map(params![actor, limit as i64], change_set_from_row)?
         .collect::<rusqlite::Result<_>>()?;
     Ok(rows)
+}
+
+pub(crate) fn get(conn: &Connection, id: &ChangeSetId) -> Result<Option<ChangeSetInfo>> {
+    let sql = format!("{CHANGE_SET_SELECT} WHERE c.id = ?1");
+    Ok(conn.query_row(&sql, [id], change_set_from_row).optional()?)
 }
 
 pub(crate) fn node_revisions(conn: &Connection, node: &NodeId) -> Result<Vec<NodeRevision>> {
@@ -306,4 +314,18 @@ fn revert_membership(w: &mut Writer<'_>, rev: &RawRevision, check: bool) -> Resu
         _ => {}
     }
     Ok(())
+}
+
+/// Entries touched by a change set, in first-touch order.
+pub(crate) fn touched_nodes(
+    conn: &Connection,
+    cs: &ChangeSetId,
+) -> Result<Vec<crate::model::NodeBrief>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT n.id, n.title, n.kind FROM revisions r JOIN nodes n ON n.id = r.entity_id
+         WHERE r.change_set_id = ?1 AND r.entity_type = 'node'
+         GROUP BY n.id ORDER BY min(r.id)",
+    )?;
+    let rows = stmt.query_map([cs], rows::brief_from_row)?.collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
 }

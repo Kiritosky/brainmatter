@@ -462,15 +462,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.23.1",
+ "bm-core",
+ "getrandom 0.4.3",
+ "parking_lot 0.13.0",
  "reqwest 0.12.28",
  "rmcp",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
