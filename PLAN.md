@@ -564,6 +564,10 @@ bis dahin reichen die indizierten SQL-Nachbarschaftsabfragen (80 µs). Unicode-G
 - **UI**: Einstellungen → KI-Verbindungen mit Presets, Rechten, Projekt-Beschränkung und fertigen Konfigurations-Snippets; das Token wird nur einmal angezeigt.
 - **`brainmatter-mcp`** (`crates/bm-cli`): stdio-Bridge für Claude Desktop und Codex.
 
+- **Automatisch einrichten** (`integrations.rs`): Die App erkennt Claude Code, Claude Desktop, Cursor und Codex und trägt sich selbst ein; das Token wird dabei nie angezeigt.
+  Andere Einträge und TOML-Kommentare bleiben erhalten, kaputte Dateien werden nicht angefasst, die erste Änderung legt eine Sicherung `*.brainmatter-backup` an, Schreiben ist atomar mit 0600.
+  Claude Code läuft über dessen offizielle CLI, weil es `~/.claude.json` selbst ständig umschreibt. Beim Trennen wird der Eintrag wieder entfernt. Debug-Builds tragen sich als `brainmatter-dev` ein.
+
 **Geprüft**: 3 MCP-Integrationstests mit echtem rmcp-Client. Ein echter Claude-Code-Client über HTTP und über die stdio-Bridge, gegen `bm-mcp --example dev_server`
 (Wegwerf-Tresor, `StaticHub`).
 
@@ -572,7 +576,8 @@ Das Token steht damit im Klartext in der Client-Konfiguration; es gilt aber nur 
 
 **Offen**:
 - Noch nicht in der echten App geprüft: MCP über `SessionHub`, Touch-ID-Prompt bei KI-Zugriff, Vibrancy, Menüleisten-Icon.
-- Bridge ins `.app`-Bundle (`externalBin`) kommt mit Phase 5; im Dev-Build `cargo build -p bm-cli`.
+- Bridge ins `.app`-Bundle (`externalBin`) kommt mit Phase 5. Bis dahin fehlt sie im Release-Build, Claude Desktop und Codex lassen sich dort nicht einrichten. `tauri dev` baut sie automatisch.
+- Automatisches Einrichten ist nur gegen Wegwerf-Verzeichnisse getestet (Claude Code mit echter CLI), noch nicht an den echten Konfigurationen.
 - `resources` und `prompts` aus §7 fehlen noch. Die Tools decken die Funktion ab.
 - `merge` kommt mit der Duplikat-Erkennung in Phase 4.
 - `app/scripts/screens.ts` ist ein Durchklick-Skript gegen das Mock, noch keine Test-Suite in CI.

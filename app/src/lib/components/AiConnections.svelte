@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { ArrowLeft, Bot, Check, Copy, Plus, Trash2 } from '@lucide/svelte';
-  import { api, errorMessage, type AiClient, type McpInfo, type Scope } from '#lib/api.ts';
+  import { ArrowLeft, Bot, Check, Copy, Plus, Sparkles, Trash2 } from '@lucide/svelte';
+  import { api, errorMessage, type AiClient, type Integration, type McpInfo, type Scope } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import Checkbox from '#lib/ui/Checkbox.svelte';
@@ -10,13 +10,7 @@
   import { avatarStyle, tint } from '#lib/ui/tint.ts';
 
   type Preset = 'Claude Code' | 'Claude Desktop' | 'Cursor' | 'Codex' | 'Andere';
-  const PRESETS: { name: Preset; hint: string }[] = [
-    { name: 'Claude Code', hint: 'Terminal' },
-    { name: 'Claude Desktop', hint: 'App' },
-    { name: 'Cursor', hint: 'Editor' },
-    { name: 'Codex', hint: 'Terminal' },
-    { name: 'Andere', hint: 'Eigene' },
-  ];
+  const PRESETS: Preset[] = ['Claude Code', 'Claude Desktop', 'Cursor', 'Codex', 'Andere'];
   const SCOPES: { scope: Scope; label: string; hint: string }[] = [
     { scope: 'read', label: 'Lesen', hint: 'Suchen und Einträge lesen' },
     { scope: 'write', label: 'Schreiben', hint: 'Einträge und Verbindungen anlegen und ändern' },
@@ -25,7 +19,8 @@
   const SCOPE_LABEL: Record<Scope, string> = { read: 'Lesen', write: 'Schreiben', delete: 'Löschen' };
 
   let info = $state<McpInfo | null>(null);
-  let view = $state<'list' | 'new' | 'created'>('list');
+  let integrations = $state<Integration[]>([]);
+  let view = $state<'list' | 'new' | 'created' | 'connected'>('list');
   let error = $state<string | null>(null);
   let busy = $state(false);
   let confirmRevoke = $state<string | null>(null);
@@ -49,9 +44,22 @@
     }
   }
 
-  function start() {
-    preset = 'Claude Code';
-    name = uniqueName('Claude Code');
+  const integration = $derived(integrations.find((i) => i.name === preset));
+  const invalid = $derived(!Object.values(scopes).some(Boolean) || (limitProjects && !projects.length));
+
+  function presetHint(p: Preset) {
+    if (p === 'Andere') return 'Manuell';
+    const i = integrations.find((x) => x.name === p);
+    if (i?.configured) return 'Verbunden';
+    return i?.installed ? 'Erkannt' : 'Nicht gefunden';
+  }
+
+  async function start() {
+    integrations = await api.integrations().catch(() => []);
+    // Start with what is actually here, preferring what is not connected yet.
+    const first =
+      integrations.find((i) => i.available && !i.configured) ?? integrations.find((i) => i.available);
+    choose((first?.name as Preset) ?? 'Claude Code');
     scopes = { read: true, write: true, delete: false };
     limitProjects = false;
     projects = [];
@@ -69,6 +77,23 @@
   function choose(p: Preset) {
     preset = p;
     name = p === 'Andere' ? '' : uniqueName(p);
+  }
+
+  async function connect() {
+    if (!integration) return;
+    busy = true;
+    error = null;
+    try {
+      const chosen = (Object.keys(scopes) as Scope[]).filter((s) => scopes[s]);
+      await api.connectIntegration(integration.target, chosen, limitProjects ? projects : []);
+      name = integration.name;
+      await load();
+      view = 'connected';
+    } catch (err) {
+      error = errorMessage(err);
+    } finally {
+      busy = false;
+    }
   }
 
   async function create(e: SubmitEvent) {
@@ -200,17 +225,28 @@
   <form onsubmit={create}>
     <div class="section-title">Welche KI?</div>
     <div class="mb-3 grid grid-cols-5 gap-1.5">
-      {#each PRESETS as p (p.name)}
+      {#each PRESETS as p (p)}
+        {@const hint = presetHint(p)}
         <button type="button"
-          class="flex h-16 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 text-center transition-[background-color,border-color,scale] duration-150 active:scale-[0.97] {preset === p.name ? 'border-accent bg-accent/12' : 'border-line-soft bg-elevated/50 hover:border-line hover:bg-elevated'}"
-          aria-pressed={preset === p.name}
-          onclick={() => choose(p.name)}>
-          <span class="text-xs leading-tight font-medium">{p.name}</span>
-          <span class="text-[10.5px] text-faint">{p.hint}</span>
+          class="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-center transition-[background-color,border-color,scale] duration-150 active:scale-[0.97] {preset === p ? 'border-accent bg-accent/12' : 'border-line-soft bg-elevated/50 hover:border-line hover:bg-elevated'}"
+          aria-pressed={preset === p}
+          onclick={() => choose(p)}>
+          <span class="text-xs leading-tight font-medium">{p}</span>
+          <span class="flex items-center gap-1 text-[10.5px] {hint === 'Nicht gefunden' ? 'text-faint' : 'text-muted'}">
+            {#if hint === 'Erkannt' || hint === 'Verbunden'}<span class="h-1.5 w-1.5 rounded-full {hint === 'Verbunden' ? 'bg-accent' : 'bg-ok'}"></span>{/if}{hint}
+          </span>
         </button>
       {/each}
     </div>
-    <input class="field mb-5 w-full" placeholder="Name" aria-label="Name" bind:value={name} />
+    {#if !integration?.available}
+      <input class="field mb-2 w-full" placeholder="Name" aria-label="Name" bind:value={name} />
+    {/if}
+    {#if integration?.configured}
+      <p class="mb-2 text-xs text-muted" in:pop={{ duration: 140, y: -3 }}>Schon verbunden. Neu einrichten ersetzt das alte Token.</p>
+    {:else if integration && !integration.available}
+      <p class="mb-2 text-xs text-muted" in:pop={{ duration: 140, y: -3 }}>{integration.unavailable_reason} Du kannst die Verbindung trotzdem manuell einrichten.</p>
+    {/if}
+    <div class="mb-5"></div>
 
     <div class="section-title">Was darf sie?</div>
     <div class="card mb-5">
@@ -245,11 +281,27 @@
       {/if}
     </div>
 
-    {#if error}<p class="mb-3 text-danger" in:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
-    <button class="btn-primary" disabled={busy || !name.trim() || !Object.values(scopes).some(Boolean) || (limitProjects && !projects.length)}>
-      Token erstellen
-    </button>
+    {#if error}<p class="mb-3 leading-relaxed text-danger" in:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
+    <div class="flex items-center gap-2">
+      {#if integration?.available}
+        <button type="button" class="btn-primary" disabled={busy || invalid} onclick={connect}>
+          <Sparkles size={15} /> {busy ? 'Wird eingerichtet …' : 'Automatisch einrichten'}
+        </button>
+        <button class="btn-ghost" disabled={busy || invalid}>Manuell einrichten</button>
+      {:else}
+        <button class="btn-primary" disabled={busy || invalid || !name.trim()}>Token erstellen</button>
+      {/if}
+    </div>
   </form>
+{:else if view === 'connected'}
+  <div class="flex flex-col items-center pt-12 text-center" in:pop={{ duration: 280, y: 8 }}>
+    <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-ok/15 text-ok"><Check size={28} /></div>
+    <h2 class="text-lg font-semibold">{name} ist verbunden</h2>
+    <p class="mt-2 mb-6 max-w-sm leading-relaxed text-muted">
+      Starte {name} einmal neu, dann steht Brainmatter dort zur Verfügung. Ist die App gesperrt, fragt Touch ID nach, bevor die KI zugreifen darf.
+    </p>
+    <button class="btn-primary" onclick={() => (view = 'list')}>Fertig</button>
+  </div>
 {:else}
   <h2 class="mb-1 text-lg font-semibold">{name} verbinden</h2>
   <p class="mb-5 text-muted"><strong class="font-medium text-warn">Nur jetzt sichtbar.</strong> Das Token wird nicht gespeichert und lässt sich später nicht mehr anzeigen.</p>

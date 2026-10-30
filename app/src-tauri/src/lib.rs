@@ -3,6 +3,7 @@
 
 mod commands;
 pub mod error;
+pub mod integrations;
 pub mod session;
 
 use std::{sync::Arc, time::Duration};
@@ -164,6 +165,8 @@ pub fn run() {
             commands::mcp_info,
             commands::create_client,
             commands::revoke_client,
+            commands::integrations,
+            commands::connect_integration,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Brainmatter");

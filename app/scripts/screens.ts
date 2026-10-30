@@ -137,13 +137,22 @@ try {
   await page.waitForTimeout(300);
   await shot(page, '13-ai-clients');
   await page.getByRole('button', { name: 'KI verbinden' }).click();
-  await page.getByRole('button', { name: 'Claude Desktop' }).click();
+  await page.getByRole('button', { name: /Claude Desktop/ }).click();
   await page.waitForTimeout(300);
   await shot(page, '14-ai-new');
+  await page.getByRole('button', { name: 'Automatisch einrichten' }).click();
+  await page.getByText('Claude Desktop ist verbunden').waitFor();
+  await page.waitForTimeout(350);
+  await shot(page, '15-ai-connected');
+  await page.getByRole('button', { name: 'Fertig' }).click();
+  await page.getByRole('button', { name: 'KI verbinden' }).click();
+  await page.getByRole('button', { name: /Codex/ }).click();
+  await page.waitForTimeout(250);
+  await shot(page, '16-ai-not-installed');
   await page.getByRole('button', { name: 'Token erstellen' }).click();
   await page.getByText('Nur jetzt sichtbar').waitFor();
   await page.waitForTimeout(300);
-  await shot(page, '15-ai-token');
+  await shot(page, '17-ai-token');
 } catch (e) {
   await shot(page, 'zz-failure');
   errors.push(`step failed: ${(e as Error).message.split('\n')[0]}`);

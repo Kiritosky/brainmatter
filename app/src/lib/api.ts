@@ -172,6 +172,17 @@ export interface McpInfo {
   clients: AiClient[];
 }
 
+export type IntegrationTarget = 'claude_code' | 'claude_desktop' | 'cursor' | 'codex';
+
+export interface Integration {
+  target: IntegrationTarget;
+  name: string;
+  installed: boolean;
+  configured: boolean;
+  available: boolean;
+  unavailable_reason: string | null;
+}
+
 export type BodyEdit = { mode: 'replace' | 'append' | 'prepend'; text: string };
 
 export interface NewNode {
@@ -240,6 +251,9 @@ export const api = {
   createClient: (name: string, scopes: Scope[], projects: Id[]) =>
     call<{ client: AiClient; token: string }>('create_client', { name, scopes, projects }),
   revokeClient: (id: Id) => call<void>('revoke_client', { id }),
+  integrations: () => call<Integration[]>('integrations'),
+  connectIntegration: (target: IntegrationTarget, scopes: Scope[], projects: Id[]) =>
+    call<AiClient>('connect_integration', { target, scopes, projects }),
 
   // data
   projects: () => call<ProjectSummary[]>('projects'),

@@ -14,6 +14,7 @@ use tauri::State;
 use crate::{
     McpStatus,
     error::{ApiError, ApiResult},
+    integrations::{self as setup, Integrations, Target},
     session::{Session, Settings, Status},
 };
 
@@ -231,6 +232,24 @@ fn require_unlocked(session: &Session) -> ApiResult<()> {
     if session.is_unlocked() { Ok(()) } else { Err(ApiError::locked()) }
 }
 
+fn bridge_path() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("brainmatter-mcp")))
+        .unwrap_or_default()
+}
+
+fn local_integrations(status: &McpStatus) -> ApiResult<Integrations> {
+    let home = std::env::var_os("HOME").ok_or_else(|| ApiError::internal("HOME is not set"))?;
+    Ok(Integrations {
+        home: home.into(),
+        applications: "/Applications".into(),
+        url: format!("http://{}/mcp", status.addr),
+        bridge: bridge_path(),
+        claude_config_dir: None,
+    })
+}
+
 #[derive(Serialize)]
 pub struct McpInfo {
     url: String,
@@ -249,10 +268,7 @@ pub fn mcp_info(
     status: State<'_, Arc<McpStatus>>,
 ) -> ApiResult<McpInfo> {
     require_unlocked(&session)?;
-    let bridge = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("brainmatter-mcp")))
-        .unwrap_or_default();
+    let bridge = bridge_path();
     let error = status.error.lock().clone();
     Ok(McpInfo {
         url: format!("http://{}/mcp", status.addr),
@@ -262,6 +278,49 @@ pub fn mcp_info(
         bridge_path: bridge.display().to_string(),
         clients: registry.list(),
     })
+}
+
+#[tauri::command(async)]
+pub fn integrations(
+    session: S<'_>,
+    status: State<'_, Arc<McpStatus>>,
+) -> ApiResult<Vec<setup::Status>> {
+    require_unlocked(&session)?;
+    let local = local_integrations(&status)?;
+    Ok(Target::ALL.into_iter().map(|t| local.status(t)).collect())
+}
+
+/// Sets up an installed AI tool in one step. The token goes straight into its
+/// configuration and is never shown. An existing connection of the same tool
+/// keeps working until the new one is in place.
+#[tauri::command(async)]
+pub fn connect_integration(
+    session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
+    status: State<'_, Arc<McpStatus>>,
+    target: Target,
+    scopes: Vec<Scope>,
+    projects: Vec<ProjectId>,
+) -> ApiResult<Client> {
+    require_unlocked(&session)?;
+    let local = local_integrations(&status)?;
+    let name = target.name();
+    let pending = format!("{name} (wird eingerichtet)");
+
+    // A leftover from an interrupted attempt must not block this one.
+    if let Some(stale) = registry.list().into_iter().find(|c| c.name == pending) {
+        registry.revoke(&stale.id).map_err(registry_error)?;
+    }
+    let (client, token) = registry.create(&pending, &scopes, &projects).map_err(registry_error)?;
+    if let Err(e) = local.configure(target, &token) {
+        let _ = registry.revoke(&client.id);
+        return Err(ApiError::new("setup_failed", e.to_string()));
+    }
+    if let Some(old) = registry.list().into_iter().find(|c| c.name == name) {
+        registry.revoke(&old.id).map_err(registry_error)?;
+    }
+    registry.rename(&client.id, name).map_err(registry_error)?;
+    Ok(Client { name: name.to_string(), ..client })
 }
 
 #[derive(Serialize)]
@@ -288,8 +347,18 @@ pub fn create_client(
 pub fn revoke_client(
     session: S<'_>,
     registry: State<'_, Arc<ClientRegistry>>,
+    status: State<'_, Arc<McpStatus>>,
     id: String,
 ) -> ApiResult<()> {
     require_unlocked(&session)?;
-    registry.revoke(&id).map_err(registry_error)
+    let name = registry.list().into_iter().find(|c| c.id == id).map(|c| c.name);
+    registry.revoke(&id).map_err(registry_error)?;
+    // The token is dead either way; a leftover entry would only cause errors
+    // in that tool. Failing to tidy up must not fail the disconnect.
+    if let Some(target) = name.as_deref().and_then(Target::from_name)
+        && let Err(e) = local_integrations(&status)?.remove(target)
+    {
+        tracing::warn!("could not remove {} configuration: {e}", target.name());
+    }
+    Ok(())
 }

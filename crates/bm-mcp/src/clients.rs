@@ -173,6 +173,19 @@ impl ClientRegistry {
         self.save()
     }
 
+    /// Renames a client. Also the name of its actor in the graph.
+    pub fn rename(&self, id: &str, name: &str) -> Result<(), RegistryError> {
+        {
+            let mut clients = self.clients.write();
+            if clients.iter().any(|c| c.id != id && c.name.eq_ignore_ascii_case(name)) {
+                return Err(RegistryError::DuplicateName(name.to_string()));
+            }
+            clients.iter_mut().find(|c| c.id == id).ok_or(RegistryError::NotFound)?.name =
+                name.to_string();
+        }
+        self.save()
+    }
+
     /// The client owning `token`, recording it as seen.
     pub fn authenticate(&self, token: &str) -> Option<Client> {
         let h = hash(token);

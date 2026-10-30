@@ -269,6 +269,25 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return { client, token: 'bm_mock_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg' };
   },
   revoke_client: (a) => void clients.splice(clients.findIndex((c) => c.id === a.id), 1),
+  integrations: () =>
+    ([['claude_code', 'Claude Code', true], ['claude_desktop', 'Claude Desktop', true], ['cursor', 'Cursor', true], ['codex', 'Codex', false]] as const).map(
+      ([target, name, installed]) => ({
+        target,
+        name,
+        installed,
+        configured: clients.some((c) => c.name === name),
+        available: installed,
+        unavailable_reason: installed ? null : `${name} ist auf diesem Mac nicht installiert.`,
+      }),
+    ),
+  connect_integration: (a) => {
+    const name = ({ claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', cursor: 'Cursor', codex: 'Codex' } as Record<string, string>)[a.target];
+    const old = clients.findIndex((c) => c.name === name);
+    if (old >= 0) clients.splice(old, 1);
+    const client: AiClient = { id: id(), name, scopes: a.scopes, projects: a.projects, created_at: now(), last_seen_at: null };
+    clients.push(client);
+    return client;
+  },
   session_status: () => status(),
   create_vault: (a) => {
     if (String(a.password).length < 8) fail('invalid', 'Das Passwort braucht mindestens 8 Zeichen.');
