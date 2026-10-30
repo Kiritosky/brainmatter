@@ -152,6 +152,26 @@ export interface ApiError {
   candidates?: NodeBrief[];
 }
 
+export type Scope = 'read' | 'write' | 'delete';
+
+export interface AiClient {
+  id: Id;
+  name: string;
+  scopes: Scope[];
+  projects: Id[];
+  created_at: number;
+  last_seen_at: number | null;
+}
+
+export interface McpInfo {
+  url: string;
+  running: boolean;
+  error: string | null;
+  bridge_path: string;
+  bridge_exists: boolean;
+  clients: AiClient[];
+}
+
 export type BodyEdit = { mode: 'replace' | 'append' | 'prepend'; text: string };
 
 export interface NewNode {
@@ -214,6 +234,12 @@ export const api = {
   getSettings: () => call<Settings>('get_settings'),
   updateSettings: (settings: Settings) => call<Settings>('update_settings', { settings }),
   touch: () => call<void>('touch'),
+
+  // AI clients
+  mcpInfo: () => call<McpInfo>('mcp_info'),
+  createClient: (name: string, scopes: Scope[], projects: Id[]) =>
+    call<{ client: AiClient; token: string }>('create_client', { name, scopes, projects }),
+  revokeClient: (id: Id) => call<void>('revoke_client', { id }),
 
   // data
   projects: () => call<ProjectSummary[]>('projects'),

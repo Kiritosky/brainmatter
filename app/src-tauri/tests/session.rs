@@ -155,3 +155,18 @@ fn emits_session_and_domain_events() {
     assert!(events.iter().any(|e| e == "bm:event"), "{events:?}");
     assert_eq!(events.last().map(String::as_str), Some("bm:session"), "lock is announced");
 }
+
+#[test]
+fn ai_access_follows_the_lock_state_without_counting_as_activity() {
+    let f = fixture();
+    let session = Arc::new(session_in(f.dir.path(), &f.events));
+    session.create("lang-genug", "Lasse").unwrap();
+    assert!(session.engine_for_client("Claude Code").is_ok());
+
+    session.lock();
+    // Without Touch ID there is nothing to prompt with: a clear error, at once.
+    let started = std::time::Instant::now();
+    let err = session.engine_for_client("Claude Code").err().expect("locked");
+    assert!(err.contains("locked"), "{err}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}

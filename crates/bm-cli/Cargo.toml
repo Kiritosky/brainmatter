@@ -1,0 +1,16 @@
+[package]
+name = "bm-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "brainmatter-mcp"
+path = "src/main.rs"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["stream"] }
+tokio = { workspace = true }
+futures-util = "0.3"
+serde_json.workspace = true

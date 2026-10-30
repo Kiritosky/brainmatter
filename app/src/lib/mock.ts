@@ -4,6 +4,7 @@
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { emit } from '@tauri-apps/api/event';
 import type {
+  AiClient,
   ChangeSetInfo,
   DomainEvent,
   Edge,
@@ -31,6 +32,7 @@ const members = new Set<string>(); // `${project}|${node}`
 const layouts = new Map<string, { x: number; y: number; pinned: boolean }>(); // `${view}|${node}`
 const changeSets: ChangeSetInfo[] = [];
 const touched = new Map<string, string[]>(); // change set → node ids
+const clients: AiClient[] = [];
 
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
@@ -236,6 +238,8 @@ function seed() {
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
   const H = 3_600_000;
   const byTitle = (t: string) => ids.find((x) => x.title === t)!.id;
+  clients.push({ id: id(), name: 'Claude Code', scopes: ['read', 'write'], projects: [], created_at: now() - 72 * H, last_seen_at: now() - 6 * 60_000 });
+  clients.push({ id: id(), name: 'Cursor', scopes: ['read'], projects: [core.id], created_at: now() - 50 * H, last_seen_at: null });
   record('Demo-Daten angelegt', [], { ago: 72 * H });
   record('„Marathon-Plan“ erstellt', [byTitle('Marathon-Plan')], { ago: 50 * H });
   record('5 Einträge, 4 Verbindungen erfasst', ['Brainmatter', 'SQLCipher', 'Argon2id', 'Tresor', 'Touch ID'].map(byTitle),
@@ -249,6 +253,22 @@ function seed() {
 }
 
 const handlers: Record<string, (a: Args) => unknown> = {
+  mcp_info: () => ({
+    url: 'http://127.0.0.1:47474/mcp',
+    running: true,
+    error: null,
+    bridge_path: '/Applications/Brainmatter.app/Contents/MacOS/brainmatter-mcp',
+    bridge_exists: true,
+    clients,
+  }),
+  create_client: (a) => {
+    if (!String(a.name).trim()) fail('invalid', 'Bitte einen Namen angeben.');
+    if (clients.some((c) => c.name.toLowerCase() === a.name.trim().toLowerCase())) fail('invalid', `Es gibt schon eine Verbindung namens „${a.name}“.`);
+    const client: AiClient = { id: id(), name: a.name.trim(), scopes: a.scopes, projects: a.projects, created_at: now(), last_seen_at: null };
+    clients.push(client);
+    return { client, token: 'bm_mock_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg' };
+  },
+  revoke_client: (a) => void clients.splice(clients.findIndex((c) => c.id === a.id), 1),
   session_status: () => status(),
   create_vault: (a) => {
     if (String(a.password).length < 8) fail('invalid', 'Das Passwort braucht mindestens 8 Zeichen.');

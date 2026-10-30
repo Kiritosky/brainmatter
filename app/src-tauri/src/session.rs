@@ -5,11 +5,13 @@
 //! an [`Emit`] callback, which keeps it testable without a running app.
 
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicI64, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use bm_core::{
@@ -30,6 +32,10 @@ const KEYCHAIN_SERVICE: &str =
 const READERS: usize = 4;
 const SETTINGS_FILE: &str = "settings.json";
 const MIN_PASSWORD: usize = 8;
+/// How long an AI request waits for the user to answer the Touch ID prompt.
+const UNLOCK_WAIT: Duration = Duration::from_secs(30);
+/// After a dismissed prompt, this client does not trigger another one for a while.
+const PROMPT_COOLDOWN_MS: i64 = 5 * 60 * 1000;
 
 /// Sends a named event with a JSON payload to the UI.
 pub type Emit = Arc<dyn Fn(&'static str, serde_json::Value) + Send + Sync>;
@@ -98,6 +104,10 @@ pub struct Session {
     state: Mutex<State>,
     settings: Mutex<Settings>,
     last_activity: AtomicI64,
+    /// A Touch ID prompt for an AI client is on screen.
+    prompting: AtomicBool,
+    /// Client name → no new prompt before this time (ms).
+    prompt_blocked_until: Mutex<HashMap<String, i64>>,
 }
 
 impl Session {
@@ -113,6 +123,8 @@ impl Session {
             state: Mutex::new(state),
             settings: Mutex::new(settings),
             last_activity: AtomicI64::new(now_ms()),
+            prompting: AtomicBool::new(false),
+            prompt_blocked_until: Mutex::new(HashMap::new()),
         }
     }
 
@@ -260,6 +272,59 @@ impl Session {
         let State::Unlocked(u) = &*state else { return Err(ApiError::locked()) };
         self.last_activity.store(now_ms(), Ordering::Relaxed);
         Ok((u.engine.clone(), u.ctx.clone()))
+    }
+
+    /// The open engine for an AI client. Deliberately does not count as user
+    /// activity: a busy AI must not keep an unattended vault unlocked.
+    fn open_engine(&self) -> Option<Arc<Engine>> {
+        match &*self.state.lock() {
+            State::Unlocked(u) => Some(u.engine.clone()),
+            _ => None,
+        }
+    }
+
+    /// Like [`Self::open_engine`], but if the vault is locked, asks the user
+    /// with a Touch ID prompt naming the client. Blocks up to [`UNLOCK_WAIT`].
+    /// Only one prompt is ever open; a dismissed prompt silences that client
+    /// for [`PROMPT_COOLDOWN_MS`]. The error text is shown to the AI.
+    pub fn engine_for_client(self: &Arc<Self>, client: &str) -> Result<Arc<Engine>, String> {
+        const LOCKED: &str =
+            "Brainmatter is locked. Ask the user to unlock it in the app, then retry.";
+        if let Some(engine) = self.open_engine() {
+            return Ok(engine);
+        }
+        if !self.status().touch_id_enrolled {
+            return Err(LOCKED.into());
+        }
+        let blocked = self.prompt_blocked_until.lock().get(client).is_some_and(|t| *t > now_ms());
+        if blocked {
+            return Err(LOCKED.into());
+        }
+
+        if !self.prompting.swap(true, Ordering::SeqCst) {
+            let session = self.clone();
+            let name = client.to_string();
+            std::thread::spawn(move || {
+                let reason = format!("„{name}“ möchte auf Brainmatter zugreifen");
+                if let Err(e) = session.unlock_touch_id(&reason) {
+                    tracing::info!("unlock for {name} refused: {}", e.code);
+                    session.prompt_blocked_until.lock().insert(name, now_ms() + PROMPT_COOLDOWN_MS);
+                }
+                session.prompting.store(false, Ordering::SeqCst);
+            });
+        }
+
+        let deadline = Instant::now() + UNLOCK_WAIT;
+        while Instant::now() < deadline {
+            if let Some(engine) = self.open_engine() {
+                return Ok(engine);
+            }
+            if !self.prompting.load(Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        Err(LOCKED.into())
     }
 
     pub fn settings(&self) -> Settings {

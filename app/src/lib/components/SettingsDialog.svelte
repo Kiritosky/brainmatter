@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { X, Copy, Check, ShieldCheck, KeyRound, Lock } from '@lucide/svelte';
+  import { Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock } from '@lucide/svelte';
   import { api, errorMessage, type Settings, type Status } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import Select from '#lib/ui/Select.svelte';
   import { fadeQuick, pop } from '#lib/ui/motion.ts';
+  import AiConnections from './AiConnections.svelte';
 
-  type Tab = 'security' | 'password';
+  type Tab = 'security' | 'password' | 'ai';
   let tab = $state<Tab>('security');
   let status = $state<Status | null>(null);
   let settings = $state<Settings | null>(null);
@@ -29,6 +30,7 @@
   const tabs: { id: Tab; label: string; icon: typeof Lock }[] = [
     { id: 'security', label: 'Sperren', icon: Lock },
     { id: 'password', label: 'Passwort & Schlüssel', icon: KeyRound },
+    { id: 'ai', label: 'KI-Verbindungen', icon: Bot },
   ];
 
   onMount(async () => {
@@ -149,6 +151,8 @@
                 <Toggle checked={status.touch_id_enrolled} disabled={busy || !status.biometry_available} label="Touch ID" onchange={toggleTouchId} />
               </div>
             </div>
+          {:else if tab === 'ai'}
+            <AiConnections />
           {:else}
             <h2 class="mb-1 text-lg font-semibold">Passwort & Schlüssel</h2>
             <p class="mb-5 text-muted">Beide Aktionen verlangen dein aktuelles Passwort.</p>

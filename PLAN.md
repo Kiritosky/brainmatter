@@ -550,3 +550,29 @@ bis dahin reichen die indizierten SQL-Nachbarschaftsabfragen (80 µs). Unicode-G
 - **Session testbar ohne Tauri**: Sie emittiert über einen Callback, der Code liegt in `lib.rs`. 5 Integrationstests in `app/src-tauri/tests`.
 
 **Offen**: Messung auf Retina, Kaltstart des Graph-Renderers.
+
+## 16. Stand Phase 3: MCP-Hub (2026-10-30)
+
+**Fertig**:
+- **`bm-mcp`**: 16 Tools (`search`, `get`, `explore`, `capture`, `update`, `link`, `unlink`, `list_projects`, `project_overview`, `create_project`,
+  `add_to_project`, `remove_from_project`, `recent_changes`, `find_path`, `delete`, `revert`), Server-Instructions, kompaktes Markdown,
+  handlungsleitende Fehler.
+- **Zugriff**: Pro Client ein Token (nur SHA-256 in `clients.json` neben dem Tresor, damit auch gesperrt prüfbar), Scopes Lesen/Schreiben/Löschen,
+  Projekt-Scopes blenden alles außerhalb aus. Eine KI kann nur eigene Change-Sets zurücknehmen.
+- **App**: Der Server startet mit der App (Release 47474, Debug 47475). KI-Aufrufe zählen nicht als Aktivität, Auto-Lock greift also trotzdem.
+  Gesperrt: Touch-ID-Prompt mit Client-Name, höchstens einer gleichzeitig, 30 s Wartezeit, nach Ablehnung 5 min Ruhe für diesen Client.
+- **UI**: Einstellungen → KI-Verbindungen mit Presets, Rechten, Projekt-Beschränkung und fertigen Konfigurations-Snippets; das Token wird nur einmal angezeigt.
+- **`brainmatter-mcp`** (`crates/bm-cli`): stdio-Bridge für Claude Desktop und Codex.
+
+**Geprüft**: 3 MCP-Integrationstests mit echtem rmcp-Client. Ein echter Claude-Code-Client über HTTP und über die stdio-Bridge, gegen `bm-mcp --example dev_server`
+(Wegwerf-Tresor, `StaticHub`).
+
+**Abweichung vom Plan**: Die Bridge liest das Token aus der Umgebung statt aus der Keychain. Ein anderes Binary kann die Einträge der App nicht lesen (cdhash, siehe §5).
+Das Token steht damit im Klartext in der Client-Konfiguration; es gilt aber nur lokal und ist einzeln widerrufbar.
+
+**Offen**:
+- Noch nicht in der echten App geprüft: MCP über `SessionHub`, Touch-ID-Prompt bei KI-Zugriff, Vibrancy, Menüleisten-Icon.
+- Bridge ins `.app`-Bundle (`externalBin`) kommt mit Phase 5; im Dev-Build `cargo build -p bm-cli`.
+- `resources` und `prompts` aus §7 fehlen noch. Die Tools decken die Funktion ab.
+- `merge` kommt mit der Duplikat-Erkennung in Phase 4.
+- `app/scripts/screens.ts` ist ein Durchklick-Skript gegen das Mock, noch keine Test-Suite in CI.

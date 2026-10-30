@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
   import { ArrowLeft, ArrowRight, Crosshair, Link2, Trash2, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
   import { api, errorMessage, type EdgeView, type NodeRevision } from '#lib/api.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
@@ -22,23 +23,28 @@
   let showHistory = $state(false);
   let history = $state<NodeRevision[]>([]);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
-  let loadedId = '';
+
+  // The workspace creates one Inspector per entry ({#key}). Saving must not
+  // read `node`: a pending save can run after ws.detail moved to another entry,
+  // and would write this draft there.
+  const nodeId = untrack(() => node.id);
+  let saved = { title: '', body: '' };
+
+  untrack(() => {
+    editing = node.body.trim() === '';
+  });
 
   $effect(() => {
     const n = node;
-    if (n.id !== loadedId) {
-      clearTimeout(saveTimer);
-      loadedId = n.id;
-      dirty = false;
-      editing = n.body.trim() === '';
-      confirmDelete = false;
-      showHistory = false;
-    }
+    saved = { title: n.title, body: n.body };
     if (!dirty) {
       draftTitle = n.title;
       draftBody = n.body;
     }
   });
+
+  // Leaving the entry within the autosave delay must not lose the last edit.
+  onDestroy(save);
 
   const knownTitles = $derived(new Set(detail.outgoing.map((e) => e.other.title.toLowerCase())));
   const html = $derived(renderMarkdown(node.body, (t) => knownTitles.has(t.toLowerCase())));
@@ -81,15 +87,15 @@
   async function save() {
     clearTimeout(saveTimer);
     if (!dirty) return;
-    const id = node.id;
     const patch: Parameters<typeof api.updateNode>[1] = {};
-    if (draftTitle.trim() && draftTitle !== node.title) patch.title = draftTitle;
-    if (draftBody !== node.body) patch.body = { mode: 'replace', text: draftBody };
+    if (draftTitle.trim() && draftTitle !== saved.title) patch.title = draftTitle;
+    if (draftBody !== saved.body) patch.body = { mode: 'replace', text: draftBody };
     dirty = false;
     if (!patch.title && !patch.body) return;
+    saved = { title: patch.title ?? saved.title, body: patch.body?.text ?? saved.body };
     saving = true;
     try {
-      await api.updateNode(id, patch);
+      await api.updateNode(nodeId, patch);
     } catch (e) {
       ws.notify(errorMessage(e));
     } finally {
@@ -150,7 +156,7 @@
     <button class="icon-btn" aria-label="Verbinden" title="Verbinden (⌘L)" onclick={() => (ws.palette = 'link')}><Link2 size={15} /></button>
     <button class="icon-btn {showHistory ? '!bg-accent/15 !text-accent' : ''}" aria-label="Verlauf" title="Verlauf" onclick={openHistory}><History size={15} /></button>
     {#if confirmDelete}
-      <button class="btn-danger !h-7" in:pop={{ duration: 120, y: 0 }} onclick={() => act(() => api.deleteNode(node.id))} onblur={() => (confirmDelete = false)}>Löschen?</button>
+      <button class="btn-danger !h-7" in:pop={{ duration: 120, y: 0 }} onclick={() => ((dirty = false), act(() => api.deleteNode(nodeId)))} onblur={() => (confirmDelete = false)}>Löschen?</button>
     {:else}
       <button class="icon-btn hover:!text-danger" aria-label="In den Papierkorb" title="In den Papierkorb" onclick={() => (confirmDelete = true)}><Trash2 size={15} /></button>
     {/if}

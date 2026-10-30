@@ -44,3 +44,19 @@ pub fn router(
         .nest_service("/mcp", service)
         .layer(axum::middleware::from_fn_with_state(registry, auth::require_bearer))
 }
+
+/// Binds `addr` and serves until `shutdown` fires. Returns once bound failed
+/// or the server stopped.
+pub async fn serve(
+    addr: &str,
+    registry: Arc<ClientRegistry>,
+    hub: Arc<dyn Hub>,
+    shutdown: CancellationToken,
+) -> std::io::Result<()> {
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    tracing::info!("MCP listening on http://{}/mcp", listener.local_addr()?);
+    let app = router(registry, hub, shutdown.child_token());
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move { shutdown.cancelled_owned().await })
+        .await
+}

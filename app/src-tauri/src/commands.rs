@@ -7,9 +7,12 @@ use bm_core::{
     ids::{ChangeSetId, NodeId, ProjectId},
     model::*,
 };
+use bm_mcp::{Client, ClientRegistry, RegistryError, Scope};
+use serde::Serialize;
 use tauri::State;
 
 use crate::{
+    McpStatus,
     error::{ApiError, ApiResult},
     session::{Session, Settings, Status},
 };
@@ -208,4 +211,85 @@ pub fn node_history(session: S<'_>, id: NodeId) -> ApiResult<Vec<NodeRevision>> 
 pub fn revert(session: S<'_>, change_set: ChangeSetId) -> ApiResult<RevertReport> {
     let (engine, ctx) = session.engine()?;
     Ok(engine.revert(&ctx, &change_set)?)
+}
+
+// ---------------------------------------------------------- AI clients ---
+
+fn registry_error(e: RegistryError) -> ApiError {
+    match e {
+        RegistryError::DuplicateName(name) => {
+            ApiError::new("invalid", format!("Es gibt schon eine Verbindung namens „{name}“."))
+        }
+        RegistryError::EmptyName => ApiError::new("invalid", "Bitte einen Namen angeben."),
+        RegistryError::NotFound => ApiError::new("not_found", "Verbindung nicht gefunden."),
+        other => ApiError::internal(other),
+    }
+}
+
+/// Managing access needs an unlocked vault, not just a running app.
+fn require_unlocked(session: &Session) -> ApiResult<()> {
+    if session.is_unlocked() { Ok(()) } else { Err(ApiError::locked()) }
+}
+
+#[derive(Serialize)]
+pub struct McpInfo {
+    url: String,
+    running: bool,
+    error: Option<String>,
+    /// Path of the stdio bridge for clients without HTTP support.
+    bridge_path: String,
+    bridge_exists: bool,
+    clients: Vec<Client>,
+}
+
+#[tauri::command(async)]
+pub fn mcp_info(
+    session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
+    status: State<'_, Arc<McpStatus>>,
+) -> ApiResult<McpInfo> {
+    require_unlocked(&session)?;
+    let bridge = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("brainmatter-mcp")))
+        .unwrap_or_default();
+    let error = status.error.lock().clone();
+    Ok(McpInfo {
+        url: format!("http://{}/mcp", status.addr),
+        running: error.is_none(),
+        error,
+        bridge_exists: bridge.is_file(),
+        bridge_path: bridge.display().to_string(),
+        clients: registry.list(),
+    })
+}
+
+#[derive(Serialize)]
+pub struct CreatedClient {
+    client: Client,
+    /// Shown exactly once; only its hash is stored.
+    token: String,
+}
+
+#[tauri::command(async)]
+pub fn create_client(
+    session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
+    name: String,
+    scopes: Vec<Scope>,
+    projects: Vec<ProjectId>,
+) -> ApiResult<CreatedClient> {
+    require_unlocked(&session)?;
+    let (client, token) = registry.create(&name, &scopes, &projects).map_err(registry_error)?;
+    Ok(CreatedClient { client, token })
+}
+
+#[tauri::command(async)]
+pub fn revoke_client(
+    session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
+    id: String,
+) -> ApiResult<()> {
+    require_unlocked(&session)?;
+    registry.revoke(&id).map_err(registry_error)
 }

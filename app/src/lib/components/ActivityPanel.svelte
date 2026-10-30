@@ -16,6 +16,7 @@
   import { api, errorMessage, isApiError, type ChangeSetInfo, type RecentChange } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
+  import { avatarStyle, tint } from '#lib/ui/tint.ts';
   import { pop } from '#lib/ui/motion.ts';
 
   let { userName }: { userName: string | null } = $props();
@@ -124,15 +125,6 @@
     return m ? { before: m[1], title: m[2], after: m[3] } : { before: summary, title: null, after: '' };
   }
 
-  /** Stable tint per AI client, so different AIs are easy to tell apart.
-   * No green or red: those read as success and failure here. */
-  const AI_TINTS = ['#c38bff', '#4cc9f0', '#ff6fb5', '#ffa24c', '#8fa8ff', '#e6c64f', '#b6a4ff'];
-  function tint(name: string) {
-    let hash = 2166136261;
-    for (const ch of name) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
-    return AI_TINTS[hash % AI_TINTS.length];
-  }
-
   const FILTERS: { value: Filter; label: string }[] = [
     { value: 'all', label: 'Alle' },
     { value: 'ai', label: 'KI' },
@@ -170,9 +162,7 @@
             <div class="relative h-7.5 w-7.5 shrink-0 {c.reverted_by ? 'opacity-45' : ''}">
               <div
                 class="flex h-full w-full items-center justify-center rounded-full text-[11px] font-semibold"
-                style={ai
-                  ? `color: ${tint(c.actor_name)}; background: color-mix(in srgb, ${tint(c.actor_name)} 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, ${tint(c.actor_name)} 30%, transparent)`
-                  : 'color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent)'}>
+                style={avatarStyle(ai ? tint(c.actor_name) : 'var(--color-accent)')}>
                 {#if ai}<Bot size={15} />{:else}{c.actor_name.slice(0, 1).toUpperCase()}{/if}
               </div>
               <span

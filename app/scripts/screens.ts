@@ -78,6 +78,37 @@ try {
   await page.waitForTimeout(500);
   await shot(page, '08-editor-autocomplete');
 
+  // Regression: switching entries within the autosave delay must save the
+  // edit to the entry it was made in, not to the next one.
+  const openEntry = async (title: string) => {
+    await page.keyboard.press('Meta+k');
+    await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill(title);
+    await page.waitForTimeout(150);
+    await page.keyboard.press('Enter');
+    await page.locator('input[aria-label="Titel"]').and(page.locator(`[value="${title}"]`)).or(page.getByLabel('Titel')).first().waitFor();
+    await page.waitForTimeout(200);
+  };
+  await openEntry('Marathon-Plan');
+  await page.getByLabel('Bearbeiten').click();
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.keyboard.type(' ZZMARKER');
+  await page.keyboard.press('Meta+k');
+  await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill('Roggenbrot');
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1500);
+  const bodies = await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    const hits: any[] = await invoke('search', { query: { text: '', kinds: [], tags: [], limit: 50, include_subprojects: true } });
+    const body = async (title: string) => (await invoke('node_detail', { id: hits.find((h) => h.node.title === title).node.id })).node.body as string;
+    return { edited: await body('Marathon-Plan'), other: await body('Roggenbrot') };
+  });
+  if (!bodies.edited.includes('ZZMARKER')) errors.push(`edit lost: ${bodies.edited}`);
+  if (bodies.other.includes('ZZMARKER')) errors.push(`edit landed in the wrong entry: ${bodies.other}`);
+  console.log('autosave on switch: ok =', bodies.edited.includes('ZZMARKER') && !bodies.other.includes('ZZMARKER'));
+  await page.getByLabel('Schließen').first().click();
+
   await page.getByRole('button', { name: /Kern/ }).first().click();
   await page.waitForTimeout(2500);
   await shot(page, '09-project-view');
@@ -99,6 +130,20 @@ try {
   await page.getByRole('button', { name: 'Automatisch sperren nach' }).click();
   await page.waitForTimeout(250);
   await shot(page, '12-settings-select');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: 'KI-Verbindungen' }).click();
+  await page.getByText('Server läuft').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '13-ai-clients');
+  await page.getByRole('button', { name: 'KI verbinden' }).click();
+  await page.getByRole('button', { name: 'Claude Desktop' }).click();
+  await page.waitForTimeout(300);
+  await shot(page, '14-ai-new');
+  await page.getByRole('button', { name: 'Token erstellen' }).click();
+  await page.getByText('Nur jetzt sichtbar').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '15-ai-token');
 } catch (e) {
   await shot(page, 'zz-failure');
   errors.push(`step failed: ${(e as Error).message.split('\n')[0]}`);

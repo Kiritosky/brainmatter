@@ -7,7 +7,9 @@ pub mod session;
 
 use std::{sync::Arc, time::Duration};
 
-use bm_core::vault::KdfParams;
+use bm_core::{Engine, vault::KdfParams};
+use bm_mcp::{Client, ClientRegistry, Hub};
+use parking_lot::Mutex;
 use session::{Emit, Session};
 use tauri::{
     AppHandle, Emitter, Manager, RunEvent, WindowEvent,
@@ -18,6 +20,24 @@ use tauri::{
 
 /// Debug builds use a separate vault so development never touches real data.
 const VAULT_DIR: &str = if cfg!(debug_assertions) { "vault-dev" } else { "vault" };
+/// ...and a separate port, so a dev build can run next to the installed app.
+const MCP_ADDR: &str =
+    if cfg!(debug_assertions) { "127.0.0.1:47475" } else { bm_mcp::DEFAULT_ADDR };
+
+/// State of the MCP server, for the settings page.
+pub struct McpStatus {
+    pub addr: &'static str,
+    pub error: Mutex<Option<String>>,
+}
+
+/// Gives MCP tools the engine of the lock session.
+struct SessionHub(Arc<Session>);
+
+impl Hub for SessionHub {
+    fn engine(&self, client: &Client) -> Result<Arc<Engine>, String> {
+        self.0.engine_for_client(&client.name)
+    }
+}
 
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -71,8 +91,20 @@ pub fn run() {
             let emit: Emit = Arc::new(move |name, payload| {
                 let _ = handle.emit(name, payload);
             });
+            let registry = Arc::new(ClientRegistry::open(&dir.join("clients.json")));
             let session = Arc::new(Session::new(dir, emit, KdfParams::recommended()));
+            let mcp_status = Arc::new(McpStatus { addr: MCP_ADDR, error: Mutex::new(None) });
             app.manage(session.clone());
+            app.manage(registry.clone());
+            app.manage(mcp_status.clone());
+
+            let hub: Arc<dyn Hub> = Arc::new(SessionHub(session.clone()));
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = bm_mcp::serve(MCP_ADDR, registry, hub, Default::default()).await {
+                    tracing::error!("MCP server failed: {e}");
+                    *mcp_status.error.lock() = Some(e.to_string());
+                }
+            });
 
             // Lives as long as the app; observers fire on the main thread.
             let observed = session.clone();
@@ -129,6 +161,9 @@ pub fn run() {
             commands::recent_changes,
             commands::node_history,
             commands::revert,
+            commands::mcp_info,
+            commands::create_client,
+            commands::revoke_client,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Brainmatter");

@@ -1,11 +1,19 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  let { checked = $bindable(false), children }: { checked?: boolean; children?: Snippet } = $props();
+  let {
+    checked = $bindable(false),
+    onchange,
+    children,
+  }: {
+    checked?: boolean;
+    onchange?: (checked: boolean) => void;
+    children?: Snippet;
+  } = $props();
 </script>
 
 <label class="group flex cursor-pointer items-center gap-2.5">
-  <input type="checkbox" class="peer sr-only" bind:checked />
+  <input type="checkbox" class="peer sr-only" bind:checked onchange={() => onchange?.(checked)} />
   <span class="box" class:on={checked} aria-hidden="true">
     <svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg>
   </span>

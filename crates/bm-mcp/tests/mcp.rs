@@ -242,8 +242,10 @@ async fn scopes_limit_what_a_client_can_do_and_see() {
     let (t, err) = call(&r, "delete", json!({"entry": "Quartalsplan"})).await;
     assert!(err && t.contains("may not delete"), "{t}");
 
-    let (_, worker) =
-        s.registry.create("Work AI", &[Scope::Read, Scope::Write], std::slice::from_ref(&work.id)).unwrap();
+    let (_, worker) = s
+        .registry
+        .create("Work AI", &[Scope::Read, Scope::Write], std::slice::from_ref(&work.id))
+        .unwrap();
     let w = connect(&s.url, &worker).await;
     let (t, _) = call(&w, "search", json!({"query": "quartal"})).await;
     assert!(t.contains("Quartalsplan") && !t.contains("Tagebuch"), "{t}");
