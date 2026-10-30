@@ -8,7 +8,8 @@ publish.workspace = true
 [dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSError"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWorkspace", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSNotification", "NSDistributedNotificationCenter", "NSOperation", "block2"] }
 objc2-local-authentication = { version = "0.3", features = ["LAContext", "LAError", "LABiometryType", "block2"] }
 security-framework = "3"
 thiserror.workspace = true

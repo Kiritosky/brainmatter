@@ -35,6 +35,8 @@ use crate::{
 use writer::Writer;
 
 const EVENT_BUFFER: usize = 1024;
+/// Edits of the same entry closer together than this share one change set.
+const COALESCE_WINDOW_MS: i64 = 5 * 60 * 1000;
 
 pub struct Engine {
     writer: Mutex<Connection>,
@@ -141,7 +143,12 @@ impl Engine {
 
     pub fn update_node(&self, ctx: &Ctx, id: &NodeId, patch: NodePatch) -> Result<Node> {
         let title = self.read(|c| Ok(rows::live_node(c, id)?.title))?;
-        Ok(self.write(ctx, format!("„{title}“ bearbeitet"), |w| nodes::update(w, id, patch))?.0)
+        let key = format!("update:{id}");
+        Ok(self
+            .write_coalesced(ctx, format!("„{title}“ bearbeitet"), Some(&key), |w| {
+                nodes::update(w, id, patch)
+            })?
+            .0)
     }
 
     pub fn delete_node(&self, ctx: &Ctx, id: &NodeId) -> Result<()> {
@@ -334,6 +341,19 @@ impl Engine {
         summary: impl Into<String>,
         f: impl FnOnce(&mut Writer<'_>) -> Result<T>,
     ) -> Result<(T, Option<ChangeSetId>)> {
+        self.write_coalesced(ctx, summary, None, f)
+    }
+
+    /// Like [`Self::write`], but continues the most recent change set if it
+    /// has the same `coalesce` key, actor and client, is not reverted and is
+    /// younger than [`COALESCE_WINDOW_MS`].
+    fn write_coalesced<T>(
+        &self,
+        ctx: &Ctx,
+        summary: impl Into<String>,
+        coalesce: Option<&str>,
+        f: impl FnOnce(&mut Writer<'_>) -> Result<T>,
+    ) -> Result<(T, Option<ChangeSetId>)> {
         let summary = summary.into();
         let mut conn = self.writer.lock();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -350,20 +370,46 @@ impl Engine {
             None => return Err(CoreError::not_found("actor", ctx.actor.as_str())),
         };
 
-        let cs = ChangeSetId::new();
         let now = now_ms();
-        tx.execute(
-            "INSERT INTO change_sets (id, actor_id, client_name, tool, summary, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![cs, ctx.actor, ctx.client, ctx.tool, summary, now],
-        )?;
+        let reused: Option<ChangeSetId> = match coalesce {
+            Some(key) => tx
+                .query_row(
+                    "SELECT id FROM (SELECT id, actor_id, client_name, coalesce_key, at, reverted_by
+                                     FROM change_sets ORDER BY at DESC, id DESC LIMIT 1)
+                     WHERE coalesce_key = ?1 AND actor_id = ?2 AND client_name IS ?3
+                       AND reverted_by IS NULL AND at >= ?4",
+                    params![key, ctx.actor, ctx.client, now - COALESCE_WINDOW_MS],
+                    |r| r.get(0),
+                )
+                .optional()?,
+            None => None,
+        };
+        let is_new = reused.is_none();
+        let cs = match reused {
+            Some(id) => {
+                tx.execute("UPDATE change_sets SET at = ?2 WHERE id = ?1", params![id, now])?;
+                id
+            }
+            None => {
+                let id = ChangeSetId::new();
+                tx.execute(
+                    "INSERT INTO change_sets (id, actor_id, client_name, tool, summary, at, coalesce_key)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![id, ctx.actor, ctx.client, ctx.tool, summary, now, coalesce],
+                )?;
+                id
+            }
+        };
 
         let mut w = Writer::new(&tx, cs.clone(), ctx.actor.clone(), actor_is_ai, now);
         let out = f(&mut w)?;
         let (revisions, events) = w.finish();
 
-        let committed = if revisions == 0 {
+        let committed = if revisions == 0 && is_new {
             tx.execute("DELETE FROM change_sets WHERE id = ?1", [&cs])?;
+            None
+        } else if revisions == 0 {
+            // Nothing changed this time; the earlier change set stands as is.
             None
         } else {
             Some(cs)

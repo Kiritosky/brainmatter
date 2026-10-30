@@ -476,3 +476,47 @@ fn graph_snapshot_scopes_to_project_and_keeps_layout() {
         None
     );
 }
+
+#[test]
+fn consecutive_edits_coalesce_into_one_change_set() {
+    let f = setup();
+    let n = f.engine.create_node(&f.user, note("Notiz", "a")).unwrap();
+    for body in ["ab", "abc", "abcd"] {
+        f.engine
+            .update_node(
+                &f.user,
+                &n.id,
+                NodePatch { body: Some(BodyEdit::Replace(body.into())), ..Default::default() },
+            )
+            .unwrap();
+    }
+    let sets = f.engine.change_sets(10, None).unwrap();
+    assert_eq!(sets.len(), 2, "create + one coalesced edit: {sets:?}");
+    assert_eq!(sets[0].revisions, 3);
+
+    // Another actor (or any other change in between) starts a new change set.
+    f.engine
+        .update_node(
+            &f.ai,
+            &n.id,
+            NodePatch { body: Some(BodyEdit::Append("KI".into())), ..Default::default() },
+        )
+        .unwrap();
+    f.engine
+        .update_node(
+            &f.user,
+            &n.id,
+            NodePatch { title: Some("Notiz 2".into()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(f.engine.change_sets(10, None).unwrap().len(), 4);
+
+    // Undoing the coalesced user edit restores the state before all of it.
+    let user_edit = sets[0].id.clone();
+    let latest = f.engine.change_sets(1, None).unwrap().remove(0).id;
+    let ai_edit = f.engine.change_sets(1, Some(&f.ai.actor)).unwrap().remove(0).id;
+    f.engine.revert(&f.user, &latest).unwrap();
+    f.engine.revert(&f.user, &ai_edit).unwrap();
+    f.engine.revert(&f.user, &user_edit).unwrap();
+    assert_eq!(f.engine.node(&n.id).unwrap().unwrap().body, "a");
+}

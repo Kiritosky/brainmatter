@@ -127,12 +127,18 @@ export interface NodeRevision {
   after: Node | null;
 }
 
+export interface Settings {
+  auto_lock_minutes: number;
+  lock_on_sleep: boolean;
+  lock_on_screen_lock: boolean;
+}
+
 export interface Status {
   state: 'none' | 'locked' | 'unlocked';
   touch_id_enrolled: boolean;
   biometry_available: boolean;
   user_name: string | null;
-  auto_lock_minutes: number;
+  settings: Settings;
 }
 
 export interface ApiError {
@@ -197,9 +203,11 @@ export const api = {
   unlockTouchId: () => call<void>('unlock_touch_id'),
   enrollTouchId: () => call<void>('enroll_touch_id'),
   disableTouchId: () => call<void>('disable_touch_id'),
-  changePassword: (password: string) => call<void>('change_password', { password }),
+  changePassword: (current: string, password: string) => call<void>('change_password', { current, password }),
+  rotateRecoveryKey: (current: string) => call<string>('rotate_recovery_key', { current }),
   lock: () => call<void>('lock'),
-  setAutoLock: (minutes: number) => call<void>('set_auto_lock', { minutes }),
+  getSettings: () => call<Settings>('get_settings'),
+  updateSettings: (settings: Settings) => call<Settings>('update_settings', { settings }),
   touch: () => call<void>('touch'),
 
   // data

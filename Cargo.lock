@@ -449,6 +449,7 @@ version = "0.1.0"
 dependencies = [
  "block2",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "objc2-local-authentication",
  "security-framework",
@@ -484,6 +485,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

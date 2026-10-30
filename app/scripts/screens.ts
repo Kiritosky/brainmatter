@@ -81,6 +81,14 @@ try {
   await page.getByRole('button', { name: /Kern/ }).first().click();
   await page.waitForTimeout(2500);
   await shot(page, '09-project-view');
+
+  await page.getByTitle('Aktivität').click();
+  await page.getByText('Demo-Daten angelegt').waitFor();
+  await shot(page, '10-activity');
+
+  await page.keyboard.press('Meta+,');
+  await page.getByText('Automatisch sperren nach').waitFor();
+  await shot(page, '11-settings');
 } catch (e) {
   await shot(page, 'zz-failure');
   errors.push(`step failed: ${(e as Error).message.split('\n')[0]}`);

@@ -10,7 +10,7 @@ type DataStep = fn(&Connection) -> rusqlite::Result<()>;
 /// optional Rust step for data that SQL cannot compute. Never edit a released
 /// migration; append a new one instead.
 const MIGRATIONS: &[(&str, Option<DataStep>)] =
-    &[(V1, None), (V2, Some(backfill_wikilink_refs)), (V3, None)];
+    &[(V1, None), (V2, Some(backfill_wikilink_refs)), (V3, None), (V4, None)];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     let current: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
@@ -254,4 +254,10 @@ fn backfill_wikilink_refs(conn: &Connection) -> rusqlite::Result<()> {
 // `ORDER BY rank LIMIT n` can rank without an extra bm25() call per row.
 const V3: &str = r#"
 INSERT INTO nodes_fts(nodes_fts, rank) VALUES ('rank', 'bm25(5.0, 1.0, 2.0)');
+"#;
+
+// Consecutive edits of one entry by one actor share a change set, so autosave
+// and multi-step AI edits stay one undo step.
+const V4: &str = r#"
+ALTER TABLE change_sets ADD COLUMN coalesce_key TEXT;
 "#;

@@ -174,6 +174,8 @@
         enableNodeDrag: true,
         // Sigma 4 defaults to sizes in graph units; we want pixels.
         itemSizesReference: 'screen',
+        // Room for labels of nodes at the edge of the view.
+        stagePadding: 60,
         labelDensity: 0.8,
         labelGridCellSize: 90,
         // The label grid already avoids collisions; don't also hide small nodes.

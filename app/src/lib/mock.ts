@@ -13,6 +13,7 @@ import type {
   Project,
   ProjectSummary,
   SearchHit,
+  Settings,
   Status,
 } from './api';
 
@@ -33,13 +34,14 @@ const changeSets: ChangeSetInfo[] = [];
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
 let userName = 'Lasse';
+let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false };
 
 const status = (): Status => ({
   state,
   touch_id_enrolled: touchId,
   biometry_available: true,
   user_name: state === 'unlocked' ? userName : null,
-  auto_lock_minutes: 60,
+  settings,
 });
 
 function fail(code: string, message: string): never {
@@ -235,9 +237,16 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   enroll_touch_id: () => void (touchId = true),
   disable_touch_id: () => void (touchId = false),
-  change_password: () => undefined,
+  change_password: (a) => {
+    if (a.current !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+  },
+  rotate_recovery_key: (a) => {
+    if (a.current !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    return 'N3W4-K3Y5-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345';
+  },
   lock: () => ((state = 'locked'), emit('bm:session', status())),
-  set_auto_lock: () => undefined,
+  get_settings: () => settings,
+  update_settings: (a) => (settings = { ...a.settings, auto_lock_minutes: Math.max(1, a.settings.auto_lock_minutes) }),
   touch: () => undefined,
 
   projects: () => projectList(),

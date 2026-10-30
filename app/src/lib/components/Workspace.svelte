@@ -7,6 +7,8 @@
   import GraphView from './GraphView.svelte';
   import Inspector from './Inspector.svelte';
   import CommandPalette from './CommandPalette.svelte';
+  import ActivityPanel from './ActivityPanel.svelte';
+  import SettingsDialog from './SettingsDialog.svelte';
 
   let { status }: { status: Status } = $props();
 
@@ -41,6 +43,9 @@
     if (mod && e.key === 'k') {
       e.preventDefault();
       ws.palette = ws.palette ? null : 'open';
+    } else if (mod && e.key === ',') {
+      e.preventDefault();
+      ws.settingsOpen = true;
     } else if (mod && e.key === 'n') {
       e.preventDefault();
       ws.createNode('Neuer Eintrag');
@@ -62,7 +67,7 @@
 
 <svelte:window {onkeydown} onmousemove={activity} />
 
-<div class="grid h-full" style="grid-template-columns: 232px 1fr {ws.detail ? '400px' : '0px'}">
+<div class="grid h-full" style="grid-template-columns: 232px 1fr {ws.detail || ws.panel ? '400px' : '0px'}">
   <Sidebar userName={status.user_name} />
 
   <main class="relative flex min-w-0 flex-col border-l border-line">
@@ -105,12 +110,18 @@
       {#key ws.detail.node.id}
         <Inspector />
       {/key}
+    {:else if ws.panel === 'activity'}
+      <ActivityPanel userName={status.user_name} />
     {/if}
   </div>
 </div>
 
 {#if ws.palette}
   <CommandPalette />
+{/if}
+
+{#if ws.settingsOpen}
+  <SettingsDialog />
 {/if}
 
 {#if ws.toast}

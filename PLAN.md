@@ -540,5 +540,13 @@ bis dahin reichen die indizierten SQL-Nachbarschaftsabfragen (80 µs). Unicode-G
 - **Browser-Dev mit Mock-Backend** (`src/lib/mock.ts`, nur Dev-Builds außerhalb von Tauri) und `scripts/screens.ts`
   (Playwright klickt alle Screens durch: `bun scripts/screens.ts`).
 
-**Offen**: Sperren bei System-Sleep, Template-Icon für die Menüleiste, Einstellungsseite (Auto-Lock, Touch ID, Passwort ändern),
-Aktivitäts-Feed, Integrationstests der Tauri-Commands (`tauri::test`), Messung auf Retina.
+**Nachgezogen** (2026-10-30):
+- **Sperren** bei Ruhezustand (Standard: an) und Bildschirmsperre (Standard: aus), über `bm-macos::power`.
+- **Einstellungen** liegen in `settings.json` neben dem Tresor: Auto-Lock, Sperr-Trigger, Touch ID an/aus.
+- **Passwortwechsel und Recovery-Rotation** verlangen das aktuelle Passwort.
+- **Aktivitäts-Panel** mit Filter „nur KI“ und Undo; **Menüleisten-Template-Icon**.
+- **Change-Set-Coalescing** (Migration V4): Aufeinanderfolgende Edits desselben Eintrags durch denselben Actor und Client
+  innerhalb von 5 min sind ein Undo-Schritt. Das betrifft Autosave genauso wie mehrstufige KI-Edits.
+- **Session testbar ohne Tauri**: Sie emittiert über einen Callback, der Code liegt in `lib.rs`. 5 Integrationstests in `app/src-tauri/tests`.
+
+**Offen**: Messung auf Retina, Kaltstart des Graph-Renderers.

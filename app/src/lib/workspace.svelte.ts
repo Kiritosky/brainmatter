@@ -26,6 +26,11 @@ class Workspace {
   selected = $state<Id | null>(null);
   detail = $state<NodeDetail | null>(null);
   palette = $state<PaletteMode | null>(null);
+  /** Right column when no entry is selected. */
+  panel = $state<'activity' | null>(null);
+  settingsOpen = $state(false);
+  /** Bumped after every coalesced refresh, for views that reload on change. */
+  revision = $state(0);
   /** Increment to ask the graph to centre the selected node. */
   focusTick = $state(0);
   toast = $state<string | null>(null);
@@ -125,6 +130,7 @@ class Workspace {
     clearTimeout(this.refreshTimer);
     this.refreshTimer = setTimeout(async () => {
       await Promise.all([this.loadProjects(), this.loadGraph(), this.refreshDetail()]);
+      this.revision++;
     }, 120);
   }
 }

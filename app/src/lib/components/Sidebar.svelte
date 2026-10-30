@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Network, FolderPlus, Lock, Search, Plus } from '@lucide/svelte';
+  import { Network, FolderPlus, Lock, Search, Plus, Activity, Settings } from '@lucide/svelte';
   import { api, errorMessage, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
 
@@ -89,6 +89,9 @@
       {(userName ?? '?').slice(0, 1).toUpperCase()}
     </div>
     <span class="flex-1 truncate text-muted">{userName}</span>
+    <button class="icon-btn {ws.panel === 'activity' ? '!text-accent' : ''}" title="Aktivität"
+      onclick={() => ((ws.panel = ws.panel === 'activity' ? null : 'activity'), ws.select(null))}><Activity size={14} /></button>
+    <button class="icon-btn" title="Einstellungen (⌘,)" onclick={() => (ws.settingsOpen = true)}><Settings size={14} /></button>
     <button class="icon-btn" title="Sperren (⌘⇧L)" onclick={() => api.lock()}><Lock size={14} /></button>
   </footer>
 </nav>

@@ -11,7 +11,7 @@ use tauri::State;
 
 use crate::{
     error::{ApiError, ApiResult},
-    session::{Session, Status},
+    session::{Session, Settings, Status},
 };
 
 type S<'a> = State<'a, Arc<Session>>;
@@ -65,9 +65,15 @@ pub fn disable_touch_id(session: S<'_>) -> ApiResult<()> {
 }
 
 #[tauri::command]
-pub async fn change_password(session: S<'_>, password: String) -> ApiResult<()> {
+pub async fn change_password(session: S<'_>, current: String, password: String) -> ApiResult<()> {
     let session = session.inner().clone();
-    blocking(move || session.change_password(&password)).await
+    blocking(move || session.change_password(&current, &password)).await
+}
+
+#[tauri::command]
+pub async fn rotate_recovery_key(session: S<'_>, current: String) -> ApiResult<String> {
+    let session = session.inner().clone();
+    blocking(move || session.rotate_recovery_key(&current)).await
 }
 
 #[tauri::command]
@@ -76,8 +82,13 @@ pub fn lock(session: S<'_>) {
 }
 
 #[tauri::command]
-pub fn set_auto_lock(session: S<'_>, minutes: u32) {
-    session.set_auto_lock_minutes(minutes);
+pub fn get_settings(session: S<'_>) -> Settings {
+    session.settings()
+}
+
+#[tauri::command]
+pub fn update_settings(session: S<'_>, settings: Settings) -> ApiResult<Settings> {
+    session.update_settings(settings)
 }
 
 /// Called by the UI on user input so auto-lock measures real idleness.
