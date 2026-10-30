@@ -1,30 +1,31 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { invoke } from '@tauri-apps/api/core';
+  import { api, onSession, type Status } from '#lib/api.ts';
+  import Onboarding from '#lib/components/Onboarding.svelte';
+  import LockScreen from '#lib/components/LockScreen.svelte';
+  import Workspace from '#lib/components/Workspace.svelte';
 
-  onMount(async () => {
-    const spike = await invoke<string | null>('spike_mode').catch(() => null);
-    if (spike === 'graph') goto('/spike');
+  let status = $state<Status | null>(null);
+  // Onboarding keeps control until the user finishes it, even though the
+  // vault is already unlocked after its first step.
+  let onboarding = $state(false);
+
+  onMount(() => {
+    api.status().then((s) => {
+      status = s;
+      onboarding = s.state === 'none';
+    });
+    const off = onSession((s) => (status = s));
+    return () => off.then((f) => f());
   });
 </script>
 
-<main>
-  <h1>Brainmatter</h1>
-  <p>Phase 0 · <a href="/spike">Graph-Spike starten</a></p>
-</main>
-
-<style>
-  :global(body) {
-    margin: 0;
-    background: #11141b;
-    color: #d8deea;
-    font: 14px -apple-system, system-ui, sans-serif;
-  }
-  main {
-    padding: 48px;
-  }
-  a {
-    color: #7c9cff;
-  }
-</style>
+{#if !status}
+  <div class="h-full" data-tauri-drag-region></div>
+{:else if onboarding}
+  <Onboarding {status} ondone={async () => ((status = await api.status()), (onboarding = false))} />
+{:else if status.state === 'unlocked'}
+  <Workspace {status} />
+{:else}
+  <LockScreen {status} />
+{/if}

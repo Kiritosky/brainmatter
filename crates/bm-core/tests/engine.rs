@@ -428,3 +428,51 @@ fn unknown_actor_is_rejected() {
         Err(CoreError::NotFound { kind: "actor", .. })
     ));
 }
+
+#[test]
+fn graph_snapshot_scopes_to_project_and_keeps_layout() {
+    let f = setup();
+    let p = f
+        .engine
+        .create_project(&f.user, NewProject { name: "P".into(), ..Default::default() })
+        .unwrap();
+    let sub = f
+        .engine
+        .create_project(
+            &f.user,
+            NewProject { name: "Sub".into(), parent: Some(p.id.clone()), ..Default::default() },
+        )
+        .unwrap();
+    let a = f
+        .engine
+        .create_node(&f.user, NewNode { projects: vec![p.id.clone()], ..note("A", "") })
+        .unwrap();
+    let b = f
+        .engine
+        .create_node(&f.user, NewNode { projects: vec![sub.id.clone()], ..note("B", "[[A]]") })
+        .unwrap();
+    let c = f.engine.create_node(&f.user, note("C", "[[A]]")).unwrap();
+
+    let all = f.engine.graph_snapshot(None).unwrap();
+    assert_eq!((all.nodes.len(), all.edges.len()), (3, 2));
+    assert_eq!(all.nodes.iter().find(|n| n.id == a.id).unwrap().degree, 2);
+
+    let scoped = f.engine.graph_snapshot(Some(&p.id)).unwrap();
+    let ids: Vec<_> = scoped.nodes.iter().map(|n| n.id.clone()).collect();
+    assert!(ids.contains(&a.id) && ids.contains(&b.id) && !ids.contains(&c.id));
+    assert_eq!(scoped.edges.len(), 1, "edge to C is outside the view");
+
+    f.engine
+        .save_layout(
+            &scoped.view,
+            &[LayoutPosition { node: a.id.clone(), x: 1.5, y: -2.0, pinned: true }],
+        )
+        .unwrap();
+    let again = f.engine.graph_snapshot(Some(&p.id)).unwrap();
+    let pa = again.nodes.iter().find(|n| n.id == a.id).unwrap();
+    assert_eq!((pa.x, pa.y, pa.pinned), (Some(1.5), Some(-2.0), true));
+    assert_eq!(
+        f.engine.graph_snapshot(None).unwrap().nodes.iter().find(|n| n.id == a.id).unwrap().x,
+        None
+    );
+}

@@ -136,6 +136,49 @@ pub struct ProjectSummary {
     pub node_count: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GraphNode {
+    pub id: NodeId,
+    pub title: String,
+    pub kind: String,
+    pub reviewed: bool,
+    pub updated_at: i64,
+    pub created_by: ActorId,
+    pub projects: Vec<ProjectId>,
+    /// Number of live edges within the view.
+    pub degree: i64,
+    /// Saved layout position for this view, if any.
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GraphEdge {
+    pub id: EdgeId,
+    pub src: NodeId,
+    pub dst: NodeId,
+    pub relation: String,
+    pub origin: EdgeOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GraphSnapshot {
+    /// `"all"` or a project id.
+    pub view: String,
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<GraphEdge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayoutPosition {
+    pub node: NodeId,
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub pinned: bool,
+}
+
 // ---------------------------------------------------------------- inputs ---
 
 /// Who is acting, recorded on every change set.

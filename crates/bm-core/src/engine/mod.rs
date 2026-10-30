@@ -6,6 +6,7 @@
 //! The API is synchronous; async callers should use `spawn_blocking`.
 
 mod edges;
+mod graph;
 mod history;
 mod nodes;
 mod projects;
@@ -96,6 +97,19 @@ impl Engine {
         };
         drop(conn);
         self.actor(&id)?.ok_or_else(|| CoreError::not_found("actor", id.as_str()))
+    }
+
+    /// The vault owner: the first user actor ever created.
+    pub fn primary_user(&self) -> Result<Option<Actor>> {
+        let id: Option<ActorId> = self.read(|c| {
+            Ok(c.query_row(
+                "SELECT id FROM actors WHERE kind = 'user' ORDER BY created_at, id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+        })?;
+        id.map_or(Ok(None), |id| self.actor(&id))
     }
 
     pub fn actor(&self, id: &ActorId) -> Result<Option<Actor>> {
@@ -252,6 +266,23 @@ impl Engine {
 
     pub fn search(&self, query: &SearchQuery) -> Result<Vec<SearchHit>> {
         self.read(|c| search::search(c, query))
+    }
+
+    // ------------------------------------------------------------- graph ---
+
+    /// Everything needed to render a view: all live nodes, or a project with
+    /// its subprojects, plus edges between them and saved positions.
+    pub fn graph_snapshot(&self, project: Option<&ProjectId>) -> Result<GraphSnapshot> {
+        self.read(|c| graph::snapshot(c, project))
+    }
+
+    /// Persists node positions for a view (`"all"` or a project id).
+    pub fn save_layout(&self, view: &str, positions: &[LayoutPosition]) -> Result<()> {
+        let mut conn = self.writer.lock();
+        let tx = conn.transaction()?;
+        graph::save_layout(&tx, view, positions)?;
+        tx.commit()?;
+        Ok(())
     }
 
     // ----------------------------------------------------------- history ---

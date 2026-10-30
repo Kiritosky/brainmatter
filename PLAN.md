@@ -523,3 +523,22 @@ TypeScript 7 ist mit SvelteKit noch inkompatibel.
 
 **Offen für Phase 1**: In-Memory-Graph (petgraph) für `explore` und `find_path`. Er kommt zusammen mit den MCP-Tools in Phase 3,
 bis dahin reichen die indizierten SQL-Nachbarschaftsabfragen (80 µs). Unicode-Groß/Klein beim Titelvergleich (SQLite `NOCASE` faltet nur ASCII).
+
+## 15. Stand Phase 2: Desktop-App (2026-10-30)
+
+**Fertig**:
+- **Tauri-Shell** (`app/src-tauri`): Sitzung mit drei Zuständen (kein Tresor / gesperrt / entsperrt). Entsperren per Passwort, Recovery-Key oder Touch ID;
+  nach einem Update wird Touch ID still neu eingerichtet. Auto-Lock nach Inaktivität, Menüleisten-Icon (Öffnen/Sperren/Beenden).
+  Schließen versteckt das Fenster nur, die App läuft weiter. Single-Instance, Live-Events (`bm:event`) und Daten-Commands.
+  Debug-Builds nutzen einen eigenen Tresor (`vault-dev`).
+- **UI** (Svelte 5, Tailwind 4):
+  - Onboarding (Passwort-Stärke, Recovery-Key genau einmal, Touch ID anbieten) und Lock-Screen (Touch ID automatisch, Backoff bei Fehlversuchen)
+  - Sidebar mit Projektbaum (Unterprojekte), Breadcrumb, Graph (Sigma 4: Hover-Nachbarschaft, Drag zum Pinnen, ForceAtlas2 im Worker,
+    Layout pro Ansicht gespeichert, inkrementelle Updates)
+  - Inspector (Markdown-Vorschau mit DOMPurify, Wikilinks klickbar, CodeMirror-Editor mit `[[`-Autocomplete, Autosave, Tags, Projekte,
+    Verbindungen, Verlauf mit Undo, „ungeprüft“-Badge für KI-Einträge) und ⌘K-Palette (Suchen, Anlegen, ⌘L Verbinden)
+- **Browser-Dev mit Mock-Backend** (`src/lib/mock.ts`, nur Dev-Builds außerhalb von Tauri) und `scripts/screens.ts`
+  (Playwright klickt alle Screens durch: `bun scripts/screens.ts`).
+
+**Offen**: Sperren bei System-Sleep, Template-Icon für die Menüleiste, Einstellungsseite (Auto-Lock, Touch ID, Passwort ändern),
+Aktivitäts-Feed, Integrationstests der Tauri-Commands (`tauri::test`), Messung auf Retina.
