@@ -308,6 +308,12 @@ pub fn unreviewed(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
 }
 
 #[tauri::command(async)]
+pub fn templates(session: S<'_>) -> ApiResult<Vec<TemplateInfo>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.templates(None)?)
+}
+
+#[tauri::command(async)]
 pub fn trash(session: S<'_>, limit: usize) -> ApiResult<Vec<TrashedNode>> {
     let (engine, _) = session.engine()?;
     Ok(engine.trash(limit.min(1000))?)

@@ -219,6 +219,32 @@ try {
   await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
   await page.waitForTimeout(400);
 
+  // Library: fill in a template, and check what would be copied.
+  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
+  await page.getByText('Code-Review', { exact: true }).waitFor();
+  await page.waitForTimeout(350);
+  await shot(page, '45-library');
+  await page.getByText('Code-Review', { exact: true }).click();
+  await page.getByText('Verwenden', { exact: true }).waitFor();
+  await page.getByLabel('Wert für datei').fill('session.rs');
+  await page.waitForTimeout(150);
+  const preview = await page.locator('pre').innerText();
+  if (!preview.includes('Prüfe session.rs auf {{thema}}')) errors.push(`template preview wrong: ${preview}`);
+  await page.getByText('1 Platzhalter noch offen').waitFor();
+  await page.getByLabel('Wert für thema').fill('Fehler');
+  await page.getByText('Alles ausgefüllt').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '46-template-use');
+  if (await page.getByText('Code-Review', { exact: true }).locator('xpath=ancestor::main').count()) errors.push('template shown in the graph header');
+  const inGraph = await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    return (await invoke('graph', { project: null })).nodes.some((n: any) => n.kind === 'template');
+  });
+  if (inGraph) errors.push('templates must stay out of the graph');
+  await page.getByLabel('Schließen').first().click();
+  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
+  await page.waitForTimeout(250);
+
   // Trash: delete, restore, delete again, erase for good.
   const deleteOpenEntry = async () => {
     await page.getByLabel('In den Papierkorb').click();
@@ -350,8 +376,11 @@ try {
   await page.waitForTimeout(400);
   await shot(page, '25-review-orphans');
   await page.getByRole('radio', { name: 'Ungeprüft' }).click();
+  await page.getByText('Übergabe', { exact: true }).waitFor(); // AI-written templates need review too
   await page.locator('aside').getByText('Hybrid-Suche').hover();
-  await page.getByLabel('Als geprüft markieren').click();
+  await page.locator('aside').locator('div.group', { hasText: 'Hybrid-Suche' }).getByLabel('Als geprüft markieren').click();
+  await page.getByRole('button', { name: 'Alle als geprüft markieren' }).waitFor({ state: 'detached' });
+  await page.locator('aside').getByLabel('Als geprüft markieren').click();
   await page.getByText('Alles geprüft').waitFor();
   await page.waitForTimeout(400);
   await shot(page, '26-review-empty');

@@ -73,6 +73,17 @@ export interface NodeDetail {
   attachments: Attachment[];
 }
 
+export const TEMPLATE_KIND = 'template';
+
+export interface TemplateInfo {
+  node: NodeBrief;
+  slug: string;
+  body: string;
+  arguments: string[];
+  projects: { id: Id; name: string }[];
+  reviewed: boolean;
+}
+
 export interface TrashedNode {
   node: NodeBrief;
   deleted_at: number;
@@ -375,6 +386,7 @@ export const api = {
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),
+  templates: () => call<TemplateInfo[]>('templates'),
   trash: (limit = 500) => call<TrashedNode[]>('trash', { limit }),
   restoreNode: (id: Id) => call<Node>('restore_node', { id }),
   purgeNode: (id: Id) => call<void>('purge_node', { id }),

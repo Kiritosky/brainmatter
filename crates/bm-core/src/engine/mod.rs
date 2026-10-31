@@ -19,6 +19,7 @@ mod semantic;
 mod writer;
 
 use std::{
+    collections::HashSet,
     path::Path,
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
 };
@@ -187,6 +188,42 @@ impl Engine {
         let title = self.read(|c| Ok(rows::live_node(c, id)?.title))?;
         self.write(ctx, format!("„{title}“ gelöscht"), |w| nodes::delete(w, id))?;
         Ok(())
+    }
+
+    /// The template library, by title. With a project: what applies there, which
+    /// is global templates plus those of the project and its ancestors.
+    pub fn templates(&self, project: Option<&ProjectId>) -> Result<Vec<TemplateInfo>> {
+        self.read(|c| {
+            let applicable: Option<HashSet<ProjectId>> =
+                project.map(|p| projects::ancestors_and_self(c, p)).transpose()?;
+            let mut stmt = c.prepare_cached(
+                "SELECT id, title, kind, body, reviewed FROM nodes
+                 WHERE kind = ?1 AND deleted_at IS NULL ORDER BY title COLLATE NOCASE",
+            )?;
+            let found = stmt.query_map([TEMPLATE_KIND], |r| {
+                Ok((rows::brief_from_row(r)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)? != 0))
+            })?;
+            let mut out = Vec::new();
+            for row in found {
+                let (node, body, reviewed) = row?;
+                let projects = rows::projects_of(c, &node.id)?;
+                let applies = projects.is_empty()
+                    || applicable
+                        .as_ref()
+                        .is_none_or(|a| projects.iter().any(|p| a.contains(&p.id)));
+                if applies {
+                    out.push(TemplateInfo {
+                        slug: crate::templates::slug(&node.title),
+                        arguments: crate::templates::placeholders(&body),
+                        node,
+                        body,
+                        projects,
+                        reviewed,
+                    });
+                }
+            }
+            Ok(out)
+        })
     }
 
     /// What is in the trash, most recently deleted first.

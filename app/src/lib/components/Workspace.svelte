@@ -9,6 +9,7 @@
   import Inspector from './Inspector.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import ActivityPanel from './ActivityPanel.svelte';
+  import LibraryPanel from './LibraryPanel.svelte';
   import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
   import TimeSlider from './TimeSlider.svelte';
@@ -150,6 +151,10 @@
     {:else if ws.panel === 'review'}
       <div class="h-full w-100" in:slideIn>
         <ReviewPanel />
+      </div>
+    {:else if ws.panel === 'library'}
+      <div class="h-full w-100" in:slideIn>
+        <LibraryPanel />
       </div>
     {:else if ws.panel === 'trash'}
       <div class="h-full w-100" in:slideIn>

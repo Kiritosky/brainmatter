@@ -49,6 +49,10 @@ impl Hub for SessionHub {
         self.0.engine_for_client(&client.name)
     }
 
+    fn open_engine(&self) -> Option<Arc<Engine>> {
+        self.0.open_engine()
+    }
+
     fn embedder(&self) -> Option<Arc<dyn Embedder>> {
         self.0.embedder()
     }
@@ -282,6 +286,7 @@ pub fn run() {
             commands::app_version,
             commands::check_update,
             commands::install_update,
+            commands::templates,
             commands::trash,
             commands::restore_node,
             commands::purge_node,

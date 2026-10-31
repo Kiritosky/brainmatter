@@ -237,7 +237,7 @@ function projectList(): ProjectSummary[] {
 function graph(project: string | null): GraphSnapshot {
   const view = project ?? 'all';
   const scope = project ? subtree(project) : null;
-  const ns = [...nodes.values()].filter((n) => !n.deleted_at && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
+  const ns = [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'template' && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
   const ids = new Set(ns.map((n) => n.id));
   const es = [...edges.values()].filter((e) => !e.deleted_at && ids.has(e.src) && ids.has(e.dst));
   const degree = new Map<string, number>();
@@ -324,6 +324,8 @@ function seed() {
   n('Sauerteig ansetzen', 'Anstellgut im Verhältnis 1:5:5 füttern und 12 Stunden bei 24 Grad gehen lassen.', [life]);
   n('Roggenbrot', 'Basiert auf [[Sauerteig]]. 70 % Roggen, 30 % Dinkel.', [life]);
   n('Marathon-Plan', '16 Wochen, lange Läufe sonntags, Intervalle dienstags.', [life], 'task');
+  n('Code-Review', 'Prüfe {{datei}} auf {{thema}}. Nenne nur Fehler, keine Stilfragen.', [], 'template');
+  n('Übergabe', 'Fasse den Stand von {{projekt}} für die nächste Sitzung zusammen.', [bm], 'template', false);
   const ids = [...nodes.values()];
   addEdge(ids[3].id, ids[1].id, 'depends_on');
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
@@ -436,6 +438,18 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  templates: () =>
+    [...nodes.values()]
+      .filter((n) => !n.deleted_at && n.kind === 'template')
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((n) => ({
+        node: { id: n.id, title: n.title, kind: n.kind },
+        slug: n.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        body: n.body,
+        arguments: [...new Set([...n.body.matchAll(/\{\{\s*([\p{L}\p{N}_-]+)\s*\}\}/gu)].map((m) => m[1]))],
+        projects: projectsOf(n.id).map((p) => ({ id: p.id, name: p.name })),
+        reviewed: n.reviewed,
+      })),
   trash: () =>
     [...nodes.values()]
       .filter((n) => n.deleted_at)

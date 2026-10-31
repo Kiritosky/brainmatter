@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { ArrowLeft, ArrowRight, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Sparkles, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
-  import { api, errorMessage, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
+  import { api, errorMessage, TEMPLATE_KIND, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
   import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, previewKind } from '#lib/attachments.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import AttachmentPreview from './AttachmentPreview.svelte';
   import MarkdownEditor from './MarkdownEditor.svelte';
+  import TemplateUse from './TemplateUse.svelte';
   import { pop } from '#lib/ui/motion.ts';
 
   let pickingProject = $state(false);
@@ -326,6 +327,10 @@
       <button class="w-full rounded-xl border border-dashed border-line py-6 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = true)}>
         Noch leer. Klicken zum Schreiben.
       </button>
+    {/if}
+
+    {#if node.kind === TEMPLATE_KIND}
+      <TemplateUse body={draftBody} />
     {/if}
 
     <div class="mt-7 mb-1 flex h-6 items-center">

@@ -12,6 +12,7 @@ pub mod ids;
 pub mod model;
 pub mod semantic;
 pub mod store;
+pub mod templates;
 pub mod time;
 pub mod vault;
 pub mod wikilinks;

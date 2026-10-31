@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +125,18 @@ pub(crate) fn list(conn: &Connection) -> Result<Vec<ProjectSummary>> {
         }
     }
     Ok(ordered)
+}
+
+/// The project and everything above it.
+pub(crate) fn ancestors_and_self(conn: &Connection, id: &ProjectId) -> Result<HashSet<ProjectId>> {
+    let mut stmt = conn.prepare_cached(
+        "WITH RECURSIVE chain(id, parent_id) AS (
+             SELECT id, parent_id FROM projects WHERE id = ?1
+             UNION SELECT p.id, p.parent_id FROM projects p JOIN chain c ON p.id = c.parent_id)
+         SELECT id FROM chain",
+    )?;
+    let ids = stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    Ok(ids)
 }
 
 /// The project and all its live descendants.

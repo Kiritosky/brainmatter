@@ -124,6 +124,20 @@ pub struct NodeDetail {
     pub attachments: Vec<Attachment>,
 }
 
+/// A template in the library.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateInfo {
+    pub node: NodeBrief,
+    pub slug: String,
+    pub body: String,
+    pub arguments: Vec<String>,
+    /// Empty for a template available everywhere.
+    pub projects: Vec<ProjectBrief>,
+    /// Has the user seen it? AIs can write templates, and only reviewed ones
+    /// are offered to clients as prompts.
+    pub reviewed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrashedNode {
     pub node: NodeBrief,

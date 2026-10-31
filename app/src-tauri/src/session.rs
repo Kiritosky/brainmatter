@@ -353,7 +353,7 @@ impl Session {
 
     /// The open engine for an AI client. Deliberately does not count as user
     /// activity: a busy AI must not keep an unattended vault unlocked.
-    fn open_engine(&self) -> Option<Arc<Engine>> {
+    pub fn open_engine(&self) -> Option<Arc<Engine>> {
         match &*self.state.lock() {
             State::Unlocked(u) => Some(u.engine.clone()),
             _ => None,

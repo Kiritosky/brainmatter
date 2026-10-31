@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { ArrowUpCircle, ChevronRight, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
+  import { ArrowUpCircle, BookMarked, ChevronRight, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
   import { api, errorMessage, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -154,6 +154,9 @@
         <ArrowUpCircle size={14} /> Update auf {ws.update.version}
       </button>
     {/if}
+    <button class="nav-row {ws.panel === 'library' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'library' ? null : 'library'), ws.select(null))}>
+      <BookMarked size={14} class={ws.panel === 'library' ? 'text-accent' : ''} /> Bibliothek
+    </button>
     <button class="nav-row {ws.panel === 'trash' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'trash' ? null : 'trash'), ws.select(null))}>
       <Trash2 size={14} class={ws.panel === 'trash' ? 'text-accent' : ''} /> Papierkorb
     </button>

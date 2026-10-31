@@ -12,6 +12,10 @@ pub trait Hub: Send + Sync + 'static {
     /// is shown to the AI.
     fn engine(&self, client: &Client) -> Result<Arc<Engine>, String>;
 
+    /// The engine if the vault is unlocked; never asks the user anything. For
+    /// requests clients make on their own, such as listing prompts on connect.
+    fn open_engine(&self) -> Option<Arc<Engine>>;
+
     /// The embedding model, once the user has set it up. Without one, search
     /// falls back to full text and similarity hints are skipped.
     fn embedder(&self) -> Option<Arc<dyn Embedder>> {
@@ -25,6 +29,10 @@ pub struct StaticHub(pub Arc<Engine>, pub Option<Arc<dyn Embedder>>);
 impl Hub for StaticHub {
     fn engine(&self, _client: &Client) -> Result<Arc<Engine>, String> {
         Ok(self.0.clone())
+    }
+
+    fn open_engine(&self) -> Option<Arc<Engine>> {
+        Some(self.0.clone())
     }
 
     fn embedder(&self) -> Option<Arc<dyn Embedder>> {

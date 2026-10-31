@@ -44,7 +44,7 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
                     lp.x, lp.y, coalesce(lp.pinned, 0)
              FROM nodes n INDEXED BY nodes_graph_idx
              LEFT JOIN layout_positions lp ON lp.view_id = ?1 AND lp.node_id = n.id
-             WHERE n.deleted_at IS NULL",
+             WHERE n.deleted_at IS NULL AND n.kind != 'template'",
         )?;
         let rows = stmt.query_map([&view], |r| {
             Ok(GraphNode {
