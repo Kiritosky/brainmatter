@@ -256,6 +256,52 @@ impl BrainmatterMcp {
         self.run(&parts, "merge", Scope::Delete, args, tools::merge).await
     }
 
+    #[tool(description = "Store text as a file attached to an entry, for longer material that \
+        should not be part of the entry's own text.")]
+    async fn attach(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::AttachArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "attach", Scope::Write, args, tools::attach).await
+    }
+
+    #[tool(description = "Entries written by AIs that the user has not looked at yet.")]
+    async fn unreviewed(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ListArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "unreviewed", Scope::Read, args, tools::unreviewed).await
+    }
+
+    #[tool(description = "Entries without any link: candidates for `similar` and `link`.")]
+    async fn unlinked(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ListArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "unlinked", Scope::Read, args, tools::unlinked).await
+    }
+
+    #[tool(description = "What is in the trash.")]
+    async fn trash(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ListArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "trash", Scope::Read, args, tools::trash).await
+    }
+
+    #[tool(description = "Bring an entry back from the trash, with its links.")]
+    async fn restore(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::RestoreArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "restore", Scope::Write, args, tools::restore).await
+    }
+
     #[tool(description = "Move an entry and its links to the trash (restorable by the user).")]
     async fn delete(
         &self,
@@ -281,10 +327,16 @@ impl BrainmatterMcp {
     router = self.tool_router,
     name = "brainmatter",
     instructions = "Brainmatter is the user's personal, encrypted knowledge graph: entries (notes, concepts, tasks, \
-people, sources, decisions, snippets) linked by typed relations and organised in nested projects. Use it as shared \
-long-term memory across sessions and tools.
+people, sources, decisions, snippets) linked by typed relations and organised in projects, which nest to any depth \
+(`create_project` with a `parent`). An entry can be in several projects. Use it as shared long-term memory across \
+sessions and tools.
 - Before creating, `search` (or `project_overview` for a project) and extend existing entries with `update` instead of \
-creating near-duplicates.
+creating near-duplicates. If the user set up the local model, `search` also finds entries by meaning, and `capture` \
+reports likely duplicates; `similar` finds what to link and `merge` combines duplicates.
+- Longer material can go into text files with `attach` and be read with `read_attachment`. `get` lists an entry's files.
+- For tidying up: `unreviewed` and `unlinked` list what needs attention, `trash` and `restore` handle deleted entries, \
+`recent_changes` and `revert` show and undo changes.
+- Only the user can mark entries as reviewed, erase them for good, manage backups and change settings.
 - One idea per entry, Markdown content. Link generously: `[[Exact Title]]` in the body, or explicit links with \
 relations such as related_to, part_of, depends_on, example_of, supports, contradicts, derived_from.
 - Use `capture` to add several entries and their links at once, and assign them to a project.

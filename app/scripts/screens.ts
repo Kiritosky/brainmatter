@@ -189,6 +189,36 @@ try {
   await page.waitForTimeout(250);
   await shot(page, '10b-activity-ai');
 
+  // Projects: nest three levels deep, collapse, and find the way back.
+  const sidebar = page.getByRole('navigation');
+  const addSubproject = async (parent: string, name: string) => {
+    await sidebar.getByRole('button', { name: parent, exact: false }).first().hover();
+    await sidebar.getByRole('button', { name: `Unterprojekt in ${parent} anlegen` }).click();
+    await sidebar.getByPlaceholder('Unterprojekt').fill(name);
+    await page.keyboard.press('Enter');
+    await sidebar.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor();
+    await page.waitForTimeout(250);
+  };
+  await addSubproject('Kern', 'Tresor-Details');
+  await addSubproject('Tresor-Details', 'Schlüssel');
+  await page.waitForTimeout(250);
+  await shot(page, '43-nested-projects');
+  await sidebar.getByRole('button', { name: 'Einklappen: Brainmatter' }).click();
+  await page.waitForTimeout(300);
+  if (await sidebar.getByRole('button', { name: /^Schlüssel/ }).count()) errors.push('collapsing left a subproject visible');
+  await shot(page, '44-collapsed-projects');
+  await sidebar.getByRole('button', { name: 'Ausklappen: Brainmatter' }).click();
+  await page.waitForTimeout(300);
+  await sidebar.getByRole('button', { name: /^Schlüssel/ }).waitFor();
+  await sidebar.getByRole('button', { name: 'Einklappen: Kern' }).click();
+  await page.waitForTimeout(250);
+  // The breadcrumb still leads there; arriving unfolds the way.
+  await page.getByRole('button', { name: 'Tresor-Details', exact: true }).first().click();
+  await page.waitForTimeout(350);
+  await sidebar.getByRole('button', { name: /^Tresor-Details/ }).waitFor();
+  await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
+  await page.waitForTimeout(400);
+
   // Trash: delete, restore, delete again, erase for good.
   const deleteOpenEntry = async () => {
     await page.getByLabel('In den Papierkorb').click();

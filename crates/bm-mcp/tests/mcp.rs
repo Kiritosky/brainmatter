@@ -295,6 +295,67 @@ async fn rejects_bad_tokens_and_browser_origins() {
 }
 
 #[tokio::test]
+async fn tidying_up_works_and_stays_within_scope() {
+    let s = start().await;
+    let (_, full) =
+        s.registry.create("Voll", &[Scope::Read, Scope::Write, Scope::Delete], &[]).unwrap();
+    let c = connect(&s.url, &full).await;
+    call(&c, "create_project", json!({"name": "Offen"})).await;
+    call(&c, "create_project", json!({"name": "Geheim"})).await;
+    let (t, err) = call(&c, "create_project", json!({"name": "Tief", "parent": "Offen"})).await;
+    assert!(!err, "{t}");
+    let entries = json!({"entries": [
+        {"title": "Sichtbar", "projects": ["Offen"]},
+        {"title": "Versteckt", "projects": ["Geheim"]},
+    ]});
+    call(&c, "capture", entries).await;
+
+    let (t, err) =
+        call(&c, "attach", json!({"entry": "Sichtbar", "file": "notiz.md", "text": "# Länger"}))
+            .await;
+    assert!(!err && t.contains("text/markdown"), "{t}");
+    let (t, _) =
+        call(&c, "read_attachment", json!({"entry": "Sichtbar", "file": "notiz.md"})).await;
+    assert!(t.contains("# Länger"), "{t}");
+
+    let (t, _) = call(&c, "unreviewed", json!({})).await;
+    assert!(t.contains("Sichtbar") && t.contains("Versteckt"), "{t}");
+    let (t, _) = call(&c, "unlinked", json!({})).await;
+    assert!(t.contains("Sichtbar") && t.contains("Versteckt"), "{t}");
+
+    let open = s.engine.resolve_project("Offen").unwrap();
+    let (_, limited) =
+        s.registry.create("Begrenzt", &[Scope::Read, Scope::Write], &[open]).unwrap();
+    let scoped = connect(&s.url, &limited).await;
+    let (t, _) = call(&scoped, "unreviewed", json!({})).await;
+    assert!(t.contains("Sichtbar") && !t.contains("Versteckt"), "{t}");
+    let (t, _) = call(&scoped, "unlinked", json!({})).await;
+    assert!(t.contains("Sichtbar") && !t.contains("Versteckt"), "{t}");
+    let (t, err) =
+        call(&scoped, "attach", json!({"entry": "Versteckt", "file": "x.md", "text": "y"})).await;
+    assert!(err && !t.contains("Attached"), "{t}");
+
+    let (t, err) = call(&c, "delete", json!({"entry": "Versteckt"})).await;
+    assert!(!err, "{t}");
+    let (t, err) = call(&scoped, "trash", json!({})).await;
+    assert!(err && !t.contains("Versteckt"), "{t}");
+    let (t, _) = call(&c, "trash", json!({})).await;
+    assert!(t.contains("Versteckt"), "{t}");
+    let short = t.split('#').nth(1).unwrap()[..8].to_string();
+
+    let (t, err) = call(&scoped, "restore", json!({"entry": short})).await;
+    assert!(err && !t.contains("Restored"), "{t}");
+    let (t, err) = call(&c, "restore", json!({"entry": format!("#{short}")})).await;
+    assert!(!err && t.contains("Restored **Versteckt**"), "{t}");
+    let (t, err) = call(&c, "restore", json!({"entry": short})).await;
+    assert!(err && t.contains("not in the trash"), "{t}");
+
+    c.cancel().await.unwrap();
+    scoped.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
 async fn similarity_says_when_the_model_is_missing_and_merge_needs_delete_scope() {
     let s = start().await;
     let (_, writer) = s.registry.create("Writer", &[Scope::Read, Scope::Write], &[]).unwrap();

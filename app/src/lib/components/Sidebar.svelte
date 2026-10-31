@@ -1,18 +1,66 @@
 <script lang="ts">
-  import { Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
+  import { untrack } from 'svelte';
+  import { slide } from 'svelte/transition';
+  import { ChevronRight, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
   import { api, errorMessage, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
 
   let { userName }: { userName: string | null } = $props();
 
+  const COLLAPSED_KEY = 'bm.collapsedProjects';
+  const INDENT_PX = 12;
+
   let creatingUnder = $state<Id | null | undefined>(undefined);
   let newName = $state('');
+  let collapsed = $state.raw(new Set<Id>(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')));
 
-  const depth = (id: Id): number => {
-    const p = ws.projects.find((x) => x.project.id === id)?.project;
-    return p?.parent_id ? 1 + depth(p.parent_id) : 0;
+  const byId = $derived(new Map(ws.projects.map((p) => [p.project.id, p])));
+  const childrenOf = $derived.by(() => {
+    const map = new Map<Id, Id[]>();
+    for (const { project } of ws.projects) {
+      if (project.parent_id) map.set(project.parent_id, [...(map.get(project.parent_id) ?? []), project.id]);
+    }
+    return map;
+  });
+
+  const ancestors = (id: Id): Id[] => {
+    const parent = byId.get(id)?.project.parent_id;
+    return parent ? [parent, ...ancestors(parent)] : [];
   };
+  const depth = (id: Id) => ancestors(id).length;
+  const visible = $derived(ws.projects.filter((p) => !ancestors(p.project.id).some((a) => collapsed.has(a))));
+
+  /** A collapsed project answers for what it hides. An entry in two of its
+   * subprojects counts twice here; for an overview that is close enough. */
+  const count = (id: Id): number =>
+    (byId.get(id)?.node_count ?? 0) + (collapsed.has(id) ? total(id) : 0);
+  const total = (id: Id): number =>
+    (childrenOf.get(id) ?? []).reduce((sum, child) => sum + (byId.get(child)?.node_count ?? 0) + total(child), 0);
+
+  function setCollapsed(next: Set<Id>) {
+    collapsed = next;
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+  }
+
+  function toggle(id: Id) {
+    const next = new Set(collapsed);
+    if (!next.delete(id)) next.add(id);
+    setCollapsed(next);
+  }
+
+  function reveal(id: Id, withSelf = false) {
+    const next = new Set(collapsed);
+    const hidden = [...ancestors(id), ...(withSelf ? [id] : [])].filter((a) => next.delete(a));
+    if (hidden.length) setCollapsed(next);
+  }
+
+  // Arriving at a project from elsewhere (search, breadcrumb) must show it. Only
+  // on arrival: collapsing around the open project afterwards stays possible.
+  $effect(() => {
+    const view = ws.view;
+    if (view) untrack(() => reveal(view));
+  });
 
   async function createProject(e: SubmitEvent) {
     e.preventDefault();
@@ -66,24 +114,37 @@
       </form>
     {/if}
 
-    {#each ws.projects as { project, node_count } (project.id)}
-      <div class="group relative" style="padding-left: {depth(project.id) * 12}px">
-        <button class="nav-row {ws.view === project.id ? 'active' : ''}" onclick={() => ws.setView(project.id)}>
-          <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(project.id)}"></span>
-          <span class="truncate">{project.name}</span>
-          <span class="ml-auto pl-2 text-[11px] text-faint tabular-nums transition-opacity group-hover:opacity-0">{node_count}</span>
-        </button>
-        <button class="icon-btn absolute top-1 right-1 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-          aria-label="Unterprojekt anlegen" title="Unterprojekt" onclick={() => (creatingUnder = project.id)}>
-          <Plus size={12} />
-        </button>
+    {#each visible as { project } (project.id)}
+      {@const hasChildren = childrenOf.has(project.id)}
+      {@const isCollapsed = collapsed.has(project.id)}
+      <div transition:slide={{ duration: 150 }}>
+        <div class="group relative" style="padding-left: {depth(project.id) * INDENT_PX}px">
+          <!-- The space for the arrow stays empty without subprojects, so the dots line up. -->
+          <button class="nav-row !pl-5.5 {ws.view === project.id ? 'active' : ''}" onclick={() => ws.setView(project.id)}>
+            <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(project.id)}"></span>
+            <span class="truncate">{project.name}</span>
+            <span class="ml-auto pl-2 text-[11px] text-faint tabular-nums transition-opacity group-hover:opacity-0">{count(project.id)}</span>
+          </button>
+          {#if hasChildren}
+            <button class="absolute top-1.5 flex h-5 w-5 items-center justify-center rounded text-faint transition-colors hover:bg-raised hover:text-text"
+              style="left: {depth(project.id) * INDENT_PX + 2}px"
+              aria-label="{isCollapsed ? 'Ausklappen' : 'Einklappen'}: {project.name}" aria-expanded={!isCollapsed}
+              onclick={() => toggle(project.id)}>
+              <ChevronRight size={13} class="transition-transform duration-150 ease-(--ease-out-soft) {isCollapsed ? '' : 'rotate-90'}" />
+            </button>
+          {/if}
+          <button class="icon-btn absolute top-1 right-1 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            aria-label="Unterprojekt in {project.name} anlegen" title="Unterprojekt" onclick={() => (reveal(project.id, true), (creatingUnder = project.id))}>
+            <Plus size={12} />
+          </button>
+        </div>
+        {#if creatingUnder === project.id}
+          <form class="py-1 pr-1" style="padding-left: {(depth(project.id) + 1) * INDENT_PX + 4}px" onsubmit={createProject} in:pop={{ duration: 140, y: -3 }}>
+            <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
+            <input class="field !h-7.5 w-full" placeholder="Unterprojekt" bind:value={newName} autofocus onblur={() => (creatingUnder = undefined)} />
+          </form>
+        {/if}
       </div>
-      {#if creatingUnder === project.id}
-        <form class="py-1 pr-1" style="padding-left: {(depth(project.id) + 1) * 12 + 4}px" onsubmit={createProject} in:pop={{ duration: 140, y: -3 }}>
-          <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-          <input class="field !h-7.5 w-full" placeholder="Unterprojekt" bind:value={newName} autofocus onblur={() => (creatingUnder = undefined)} />
-        </form>
-      {/if}
     {/each}
   </div>
 

@@ -485,6 +485,103 @@ pub(crate) fn merge(cx: &ToolCx, a: MergeArgs) -> Out {
     ))
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AttachArgs {
+    /// The entry: exact title, short id or full id.
+    pub entry: String,
+    /// File name including its extension, e.g. `notes.md`.
+    pub file: String,
+    /// The text to store.
+    pub text: String,
+}
+
+pub(crate) fn attach(cx: &ToolCx, a: AttachArgs) -> Out {
+    let id = cx.entry(&a.entry)?;
+    let added = cx.engine.add_attachment(&cx.ctx, &id, &a.file, None, a.text.as_bytes())?;
+    Ok(format!("Attached {} ({}). The user can undo this.", added.filename, added.mime))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListArgs {
+    /// Maximum results (default 30).
+    pub limit: Option<usize>,
+}
+
+/// Lists are filtered after the query, so scoped clients look further to still
+/// get a full page where possible.
+fn visible_briefs(cx: &ToolCx, limit: Option<usize>, found: Vec<NodeBrief>) -> Vec<String> {
+    let limit = limit.unwrap_or(30).clamp(1, 200);
+    found
+        .iter()
+        .filter(|n| cx.visible(&n.id).unwrap_or(false))
+        .take(limit)
+        .map(format::brief)
+        .collect()
+}
+
+fn fetch_limit(limit: Option<usize>) -> usize {
+    limit.unwrap_or(30).clamp(1, 200) * 5
+}
+
+fn bullets(empty: &str, heading: &str, lines: &[String]) -> String {
+    if lines.is_empty() {
+        return empty.to_string();
+    }
+    format!("{heading}\n- {}", lines.join("\n- "))
+}
+
+pub(crate) fn unreviewed(cx: &ToolCx, a: ListArgs) -> Out {
+    let found = cx.engine.unreviewed(fetch_limit(a.limit))?;
+    let lines = visible_briefs(cx, a.limit, found);
+    Ok(bullets(
+        "Nothing is waiting for the user's review.",
+        "Written by AIs and not seen by the user yet (only the user can mark them as reviewed):",
+        &lines,
+    ))
+}
+
+pub(crate) fn unlinked(cx: &ToolCx, a: ListArgs) -> Out {
+    let found = cx.engine.orphans(fetch_limit(a.limit))?;
+    let lines = visible_briefs(cx, a.limit, found);
+    Ok(bullets("Every entry has a link.", "Entries without any link, newest first:", &lines))
+}
+
+pub(crate) fn trash(cx: &ToolCx, a: ListArgs) -> Out {
+    // Whole-vault clients only: a trashed entry may have lost the memberships
+    // that would decide whether a scoped client may see it.
+    if cx.scope.is_some() {
+        return Err(fail("Only clients without a project limit can see the trash."));
+    }
+    let limit = a.limit.unwrap_or(30).clamp(1, 200);
+    let lines: Vec<String> = cx
+        .engine
+        .trash(limit)?
+        .iter()
+        .map(|t| format!("{} — deleted {}", format::brief(&t.node), format::time(t.deleted_at)))
+        .collect();
+    Ok(bullets("The trash is empty.", "In the trash (use `restore`):", &lines))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RestoreArgs {
+    /// Short id or full id of the entry, as listed by `trash`.
+    pub entry: String,
+}
+
+pub(crate) fn restore(cx: &ToolCx, a: RestoreArgs) -> Out {
+    if cx.scope.is_some() {
+        return Err(fail("Only clients without a project limit can restore from the trash."));
+    }
+    let wanted = a.entry.trim().trim_start_matches('#');
+    let found = cx.engine.trash(1000)?;
+    let matches = |id: &NodeId| id.as_str() == wanted || id.short() == wanted;
+    let Some(t) = found.iter().find(|t| matches(&t.node.id)) else {
+        return Err(fail(format!("„{}“ is not in the trash. `trash` lists what is.", a.entry)));
+    };
+    let n = cx.engine.restore_node(&cx.ctx, &t.node.id)?;
+    Ok(format!("Restored **{}** ({}) with its links.", n.title, format::short(&n.id)))
+}
+
 /// More than a model should get in one tool result.
 const MAX_ATTACHMENT_CHARS: usize = 100_000;
 
