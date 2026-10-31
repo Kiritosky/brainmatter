@@ -189,6 +189,31 @@ try {
   await page.waitForTimeout(250);
   await shot(page, '10b-activity-ai');
 
+  // Trash: delete, restore, delete again, erase for good.
+  const deleteOpenEntry = async () => {
+    await page.getByLabel('In den Papierkorb').click();
+    await page.getByRole('button', { name: 'Löschen?' }).click();
+    await page.waitForTimeout(300);
+  };
+  await openEntry('Graph-Layout');
+  await deleteOpenEntry();
+  await page.getByRole('button', { name: 'Papierkorb', exact: true }).click();
+  await page.getByText('Graph-Layout').first().waitFor();
+  await page.waitForTimeout(350);
+  await shot(page, '40-trash');
+  await page.getByRole('button', { name: '„Graph-Layout“ wiederherstellen' }).click({ force: true });
+  await page.getByLabel('Titel').waitFor();
+  await page.waitForTimeout(300);
+  await deleteOpenEntry();
+  await page.getByRole('button', { name: '„Graph-Layout“ endgültig löschen' }).click({ force: true });
+  await page.waitForTimeout(250);
+  await shot(page, '41-trash-confirm');
+  await page.getByRole('button', { name: 'Endgültig löschen', exact: true }).click();
+  await page.getByText('Der Papierkorb ist leer').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '42-trash-empty');
+  await page.getByRole('button', { name: 'Papierkorb', exact: true }).click();
+
   // Time slider: halfway through, some entries are not there yet.
   await page.getByRole('button', { name: 'Zeitregler' }).click();
   const slider = page.getByRole('slider', { name: 'Zeitpunkt' });

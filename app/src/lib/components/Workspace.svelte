@@ -12,6 +12,7 @@
   import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
   import TimeSlider from './TimeSlider.svelte';
+  import TrashPanel from './TrashPanel.svelte';
   import { pop, slideIn } from '#lib/ui/motion.ts';
 
   let { status }: { status: Status } = $props();
@@ -149,6 +150,10 @@
     {:else if ws.panel === 'review'}
       <div class="h-full w-100" in:slideIn>
         <ReviewPanel />
+      </div>
+    {:else if ws.panel === 'trash'}
+      <div class="h-full w-100" in:slideIn>
+        <TrashPanel />
       </div>
     {/if}
   </div>

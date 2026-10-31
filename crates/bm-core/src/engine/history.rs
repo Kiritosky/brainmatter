@@ -121,6 +121,11 @@ pub(crate) fn revert(w: &mut Writer<'_>, target: &ChangeSetId) -> Result<usize> 
         })?
         .collect::<rusqlite::Result<_>>()?;
     drop(stmt);
+    if revisions.is_empty() {
+        return Err(CoreError::Conflict(
+            "nothing left to revert: everything this change touched was erased".into(),
+        ));
+    }
 
     // Only the newest revision of each entity must match the current state;
     // older revisions of the same entity chain onto what we just restored.

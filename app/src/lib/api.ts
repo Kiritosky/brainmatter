@@ -73,6 +73,11 @@ export interface NodeDetail {
   attachments: Attachment[];
 }
 
+export interface TrashedNode {
+  node: NodeBrief;
+  deleted_at: number;
+}
+
 export interface Attachment {
   id: Id;
   node_id: Id;
@@ -361,6 +366,9 @@ export const api = {
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),
+  trash: (limit = 500) => call<TrashedNode[]>('trash', { limit }),
+  restoreNode: (id: Id) => call<Node>('restore_node', { id }),
+  purgeNode: (id: Id) => call<void>('purge_node', { id }),
   link: (src: Id, dst: Id, relation?: string) =>
     call<Edge>('link', { input: { src, dst, relation: relation ?? null } }),
   unlink: (src: Id, dst: Id, relation?: string) =>

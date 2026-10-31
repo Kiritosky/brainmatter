@@ -124,6 +124,12 @@ pub struct NodeDetail {
     pub attachments: Vec<Attachment>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrashedNode {
+    pub node: NodeBrief,
+    pub deleted_at: i64,
+}
+
 /// A file attached to an entry; the content lives encrypted outside the database.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Attachment {

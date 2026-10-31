@@ -292,6 +292,24 @@ pub fn unreviewed(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
 }
 
 #[tauri::command(async)]
+pub fn trash(session: S<'_>, limit: usize) -> ApiResult<Vec<TrashedNode>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.trash(limit.min(1000))?)
+}
+
+#[tauri::command(async)]
+pub fn restore_node(session: S<'_>, id: NodeId) -> ApiResult<Node> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.restore_node(&ctx, &id)?)
+}
+
+#[tauri::command(async)]
+pub fn purge_node(session: S<'_>, id: NodeId) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.purge_node(&ctx, &id)?)
+}
+
+#[tauri::command(async)]
 pub fn create_node(session: S<'_>, input: NewNode) -> ApiResult<Node> {
     let (engine, ctx) = session.engine()?;
     Ok(engine.create_node(&ctx, input)?)

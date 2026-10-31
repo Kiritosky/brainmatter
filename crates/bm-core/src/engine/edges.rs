@@ -64,6 +64,32 @@ pub(crate) fn soft_delete(w: &mut Writer<'_>, edge: &Edge) -> Result<()> {
     Ok(())
 }
 
+/// Edges that went to the trash along with `node`: those removed in the change
+/// set that last touched it, which for a trashed node is the deletion. Times
+/// would not do, since a link removed just before can have the same millisecond.
+pub(crate) fn trashed_with(conn: &Connection, node: &NodeId) -> Result<Vec<Edge>> {
+    query(
+        conn,
+        "(src = ?1 OR dst = ?1) AND deleted_at IS NOT NULL AND id IN (
+             SELECT entity_id FROM revisions WHERE entity_type = 'edge' AND change_set_id = (
+                 SELECT change_set_id FROM revisions
+                 WHERE entity_type = 'node' AND entity_id = ?1 ORDER BY id DESC LIMIT 1))",
+        node,
+    )
+}
+
+pub(crate) fn restore(w: &mut Writer<'_>, edge: &Edge) -> Result<()> {
+    let after = Edge { deleted_at: None, ..edge.clone() };
+    w.conn.execute("UPDATE edges SET deleted_at = NULL WHERE id = ?1", [&edge.id])?;
+    w.record(Entity::Edge, edge.id.as_str(), 0, Some(edge), Some(&after))?;
+    w.emit(Event::EdgeUpserted {
+        id: edge.id.clone(),
+        src: edge.src.clone(),
+        dst: edge.dst.clone(),
+    });
+    Ok(())
+}
+
 /// Removes live edges `src → dst` (all relations unless one is given). If none
 /// exist in that direction, the reverse direction is tried, since callers
 /// rarely remember which way a link points.

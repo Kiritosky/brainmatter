@@ -48,7 +48,7 @@ class Workspace {
   detail = $state<NodeDetail | null>(null);
   palette = $state<PaletteMode | null>(null);
   /** Right column when no entry is selected. */
-  panel = $state<'activity' | 'review' | null>(null);
+  panel = $state<'activity' | 'review' | 'trash' | null>(null);
   settingsOpen = $state(false);
   /** Bumped after every coalesced refresh, for views that reload on change. */
   revision = $state(0);

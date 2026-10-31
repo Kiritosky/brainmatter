@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks } from '@lucide/svelte';
+  import { Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
   import { api, errorMessage, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -85,6 +85,12 @@
         </form>
       {/if}
     {/each}
+  </div>
+
+  <div class="px-2 pb-1.5">
+    <button class="nav-row {ws.panel === 'trash' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'trash' ? null : 'trash'), ws.select(null))}>
+      <Trash2 size={14} class={ws.panel === 'trash' ? 'text-accent' : ''} /> Papierkorb
+    </button>
   </div>
 
   <footer class="flex items-center gap-1 border-t border-line-soft px-3 py-2">

@@ -435,6 +435,27 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  trash: () =>
+    [...nodes.values()]
+      .filter((n) => n.deleted_at)
+      .sort((a, b) => b.deleted_at! - a.deleted_at!)
+      .map((n) => ({ node: { id: n.id, title: n.title, kind: n.kind }, deleted_at: n.deleted_at! })),
+  restore_node: (a) => {
+    const n = nodes.get(a.id);
+    if (!n?.deleted_at) fail('invalid', 'this entry is not in the trash');
+    for (const e of edges.values()) if (e.deleted_at === n.deleted_at && (e.src === n.id || e.dst === n.id)) e.deleted_at = null;
+    n.deleted_at = null;
+    record(`„${n.title}“ wiederhergestellt`, [n.id]);
+    notify({ type: 'node_upserted', id: n.id });
+    return n;
+  },
+  purge_node: (a) => {
+    const n = nodes.get(a.id);
+    if (!n?.deleted_at) fail('invalid', 'only entries in the trash can be erased');
+    for (const [key, e] of edges) if (e.src === n.id || e.dst === n.id) edges.delete(key);
+    nodes.delete(n.id);
+    notify({ type: 'node_deleted', id: n.id });
+  },
   hide_capture: () => undefined,
   show_main_window: () => undefined,
   backup_status: () => ({ running: false, error: null, backups }),

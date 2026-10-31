@@ -2,7 +2,8 @@
 //!
 //! A backup is encrypted with the same data key as the database, so it stays
 //! readable after a password change. Attachment files are not copied: they are
-//! encrypted already and never removed, so older backups still find theirs.
+//! encrypted already and stay in place, so older backups still find theirs,
+//! unless the entry was erased from the trash for good.
 
 use std::{
     collections::BTreeMap,

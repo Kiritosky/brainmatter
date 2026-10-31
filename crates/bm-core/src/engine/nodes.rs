@@ -142,6 +142,116 @@ pub(crate) fn delete(w: &mut Writer<'_>, id: &NodeId) -> Result<()> {
     Ok(())
 }
 
+/// Takes an entry out of the trash, with the edges that went there along with it.
+/// An edge stays gone if its other end is still in the trash or an equal one
+/// has appeared since. Links from other entries' text are found again.
+pub(crate) fn restore(w: &mut Writer<'_>, id: &NodeId) -> Result<Node> {
+    let before =
+        rows::node(w.conn, id)?.ok_or_else(|| CoreError::not_found("node", id.as_str()))?;
+    if before.deleted_at.is_none() {
+        return Err(CoreError::Invalid("this entry is not in the trash".into()));
+    }
+    // Before recording: it looks at the node's latest revision, the deletion.
+    let trashed_edges = edges::trashed_with(w.conn, id)?;
+    let after = Node {
+        deleted_at: None,
+        rev: before.rev + 1,
+        updated_at: w.now,
+        updated_by: w.actor.clone(),
+        ..before.clone()
+    };
+    w.conn.execute(
+        "UPDATE nodes SET deleted_at = NULL, rev = ?2, updated_at = ?3, updated_by = ?4 WHERE id = ?1",
+        params![id, after.rev, after.updated_at, after.updated_by],
+    )?;
+    w.record(Entity::Node, id.as_str(), after.rev, Some(&before), Some(&after))?;
+    w.emit(Event::NodeUpserted { id: id.clone() });
+    for edge in trashed_edges {
+        let other = if edge.src == *id { &edge.dst } else { &edge.src };
+        let other_live = rows::node(w.conn, other)?.is_some_and(|n| n.deleted_at.is_none());
+        if other_live && rows::active_edge(w.conn, &edge.src, &edge.dst, &edge.relation)?.is_none()
+        {
+            edges::restore(w, &edge)?;
+        }
+    }
+    backfill_incoming_wikilinks(w, &after)?;
+    Ok(after)
+}
+
+/// What a change set says after an entry it touched was erased.
+const ERASED_SUMMARY: &str = "(endgültig gelöscht)";
+
+/// Erases an entry from the trash for good: not undoable, so it leaves nothing
+/// behind. That includes old versions, and change summaries, which name titles.
+/// Returns the attachment files no entry refers to any more.
+pub(crate) fn purge(w: &mut Writer<'_>, id: &NodeId) -> Result<Vec<String>> {
+    let node = rows::node(w.conn, id)?.ok_or_else(|| CoreError::not_found("node", id.as_str()))?;
+    if node.deleted_at.is_none() {
+        return Err(CoreError::Invalid("only entries in the trash can be erased".into()));
+    }
+    let conn = w.conn;
+    let column = |sql: &str| -> Result<Vec<String>> {
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    };
+    let edge_ids = column("SELECT id FROM edges WHERE src = ?1 OR dst = ?1")?;
+    let attachment_ids = column("SELECT id FROM attachments WHERE node_id = ?1")?;
+    let blobs = column("SELECT DISTINCT blob_id FROM attachments WHERE node_id = ?1")?;
+
+    let forget = |entity: &str, filter: &str, value: &str| -> Result<()> {
+        conn.execute(
+            &format!(
+                "UPDATE change_sets SET summary = ?3, coalesce_key = NULL WHERE id IN
+                 (SELECT change_set_id FROM revisions WHERE entity_type = ?1 AND {filter})"
+            ),
+            params![entity, value, ERASED_SUMMARY],
+        )?;
+        conn.execute(
+            &format!("DELETE FROM revisions WHERE entity_type = ?1 AND {filter}"),
+            params![entity, value],
+        )?;
+        Ok(())
+    };
+    forget(Entity::Node.as_str(), "entity_id = ?2", id.as_str())?;
+    forget(Entity::Membership.as_str(), "entity_id LIKE '%|' || ?2", id.as_str())?;
+    for edge in &edge_ids {
+        forget(Entity::Edge.as_str(), "entity_id = ?2", edge)?;
+    }
+    for attachment in &attachment_ids {
+        forget(Entity::Attachment.as_str(), "entity_id = ?2", attachment)?;
+    }
+
+    for sql in [
+        "DELETE FROM edges WHERE src = ?1 OR dst = ?1",
+        "DELETE FROM link_suggestions WHERE src = ?1 OR dst = ?1",
+        "DELETE FROM wikilink_refs WHERE src = ?1",
+        "DELETE FROM embeddings WHERE node_id = ?1",
+        "DELETE FROM layout_positions WHERE node_id = ?1",
+        "DELETE FROM attachments WHERE node_id = ?1",
+        "DELETE FROM project_members WHERE node_id = ?1",
+        "DELETE FROM node_tags WHERE node_id = ?1",
+        "DELETE FROM nodes WHERE id = ?1",
+    ] {
+        conn.execute(sql, [id])?;
+    }
+
+    // Files are deduplicated, so another entry may still use the same one.
+    let mut unused = Vec::new();
+    for blob in blobs {
+        let used: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM attachments WHERE blob_id = ?1)",
+            [&blob],
+            |r| r.get(0),
+        )?;
+        if !used {
+            unused.push(blob);
+        }
+    }
+    w.emit(Event::NodeDeleted { id: id.clone() });
+    Ok(unused)
+}
+
 /// Moves everything from `others` onto `keep`: edges, project memberships, tags
 /// and text. The merged entries go to the trash, so the whole merge is undoable.
 pub(crate) fn merge(w: &mut Writer<'_>, keep: &NodeId, others: &[NodeId]) -> Result<Node> {

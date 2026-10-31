@@ -189,6 +189,45 @@ impl Engine {
         Ok(())
     }
 
+    /// What is in the trash, most recently deleted first.
+    pub fn trash(&self, limit: usize) -> Result<Vec<TrashedNode>> {
+        self.read(|c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT id, title, kind, deleted_at FROM nodes WHERE deleted_at IS NOT NULL
+                 ORDER BY deleted_at DESC, id DESC LIMIT ?1",
+            )?;
+            let rows = stmt.query_map([limit as i64], |r| {
+                Ok(TrashedNode { node: rows::brief_from_row(r)?, deleted_at: r.get(3)? })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+    }
+
+    pub fn restore_node(&self, ctx: &Ctx, id: &NodeId) -> Result<Node> {
+        let title = self
+            .read(|c| rows::brief(c, id))?
+            .ok_or_else(|| CoreError::not_found("node", id.as_str()))?
+            .title;
+        let summary = format!("„{title}“ wiederhergestellt");
+        Ok(self.write(ctx, summary, |w| nodes::restore(w, id))?.0)
+    }
+
+    /// Erases an entry from the trash for good. This cannot be undone, so it is
+    /// not offered to AI clients.
+    pub fn purge_node(&self, ctx: &Ctx, id: &NodeId) -> Result<()> {
+        let (unused, _) = self.write(ctx, "", |w| nodes::purge(w, id))?;
+        // After the commit: a file must not vanish if the transaction fails. A
+        // file left over here is harmless, only wasted space.
+        if let Some(blobs) = &self.blobs {
+            for blob in unused {
+                if let Err(e) = blobs.remove(&blob) {
+                    tracing::warn!("could not remove an attachment file: {e}");
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Creates several nodes and links atomically (one change set).
     pub fn capture(&self, ctx: &Ctx, capture: Capture) -> Result<CaptureResult> {
         let summary = format!(

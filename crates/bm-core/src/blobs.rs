@@ -1,7 +1,8 @@
 //! Encrypted attachment files (PLAN.md §3). A file is named after a keyed hash
 //! of its content, which deduplicates and reveals nothing about the content.
 //!
-//! Files are never removed here: the trash and undo can still need them.
+//! Files stay as long as any row names them, trashed ones included, since undo
+//! can still need them. Only erasing an entry for good removes files.
 
 use std::{
     fs,
@@ -90,6 +91,15 @@ impl BlobStore {
         self.cipher()
             .decrypt(&XNonce::from(*nonce), Payload { msg: sealed, aad: id.as_bytes() })
             .map_err(|_| corrupt())
+    }
+
+    /// Deletes a file no entry refers to any more. Older backups may still name
+    /// it; their attachment then cannot be opened.
+    pub fn remove(&self, id: &str) -> Result<()> {
+        match fs::remove_file(self.path(id)?) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        }
     }
 
     fn cipher(&self) -> XChaCha20Poly1305 {
