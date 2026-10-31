@@ -70,6 +70,17 @@ export interface NodeDetail {
   projects: { id: Id; name: string }[];
   outgoing: EdgeView[];
   incoming: EdgeView[];
+  attachments: Attachment[];
+}
+
+export interface Attachment {
+  id: Id;
+  node_id: Id;
+  filename: string;
+  mime: string;
+  size: number;
+  created_at: number;
+  created_by: Id;
 }
 
 export interface GraphNode {
@@ -307,6 +318,18 @@ export const api = {
   mergeNodes: (keep: Id, others: Id[]) => call<Node>('merge_nodes', { keep, others }),
   orphans: (limit = 200) => call<NodeBrief[]>('orphans', { limit }),
   unreviewed: (limit = 200) => call<NodeBrief[]>('unreviewed', { limit }),
+  addAttachment: async (node: Id, file: File) => {
+    // See parse_attachment in commands.rs.
+    const meta = new TextEncoder().encode(JSON.stringify({ node, filename: file.name, mime: file.type || null }));
+    const body = new Uint8Array(4 + meta.length + file.size);
+    new DataView(body.buffer).setUint32(0, meta.length, true);
+    body.set(meta, 4);
+    body.set(new Uint8Array(await file.arrayBuffer()), 4 + meta.length);
+    return invoke<Attachment>('add_attachment', body);
+  },
+  attachmentData: (id: Id) => call<ArrayBuffer>('attachment_data', { id }),
+  deleteAttachment: (id: Id) => call<void>('delete_attachment', { id }),
+  exportAttachment: (id: Id) => call<boolean>('export_attachment', { id }),
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),

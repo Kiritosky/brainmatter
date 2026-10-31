@@ -10,6 +10,10 @@ pub enum CoreError {
     Invalid(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("attachment file {0} is damaged or was tampered with")]
+    CorruptBlob(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]

@@ -36,7 +36,9 @@ async fn start() -> Server {
 async fn start_with(embedder: Option<Arc<dyn Embedder>>) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let (vault, keys, _) = Vault::create(dir.path(), "pw", KdfParams::insecure_fast()).unwrap();
-    let engine = Arc::new(Engine::open(&vault.db_path(), &keys.db_key(), 2).unwrap());
+    let blobs = bm_core::blobs::BlobStore::new(dir.path().join("blobs"), &keys.blob_key());
+    let engine =
+        Arc::new(Engine::open(&vault.db_path(), &keys.db_key(), 2).unwrap().with_blobs(blobs));
     let registry = Arc::new(ClientRegistry::in_memory());
     let shutdown = CancellationToken::new();
     let app = bm_mcp::router(
@@ -399,6 +401,61 @@ async fn similarity_hints_respect_project_scopes() {
 
     let (t, _) = call(&c, "search", json!({"query": TEXT})).await;
     assert!(t.contains("Sichtbar") && !t.contains("Versteckt"), "{t}");
+
+    c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn attachments_can_be_read_within_scope_only() {
+    let s = start().await;
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Lasse").unwrap().id);
+    let add = |title: &str, project: &bm_core::model::Project| {
+        s.engine
+            .create_node(
+                &user,
+                NewNode {
+                    title: title.into(),
+                    projects: vec![project.id.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    let project = |name: &str| {
+        s.engine
+            .create_project(&user, NewProject { name: name.into(), ..Default::default() })
+            .unwrap()
+    };
+    let (open, secret) = (project("Offen"), project("Geheim"));
+    let visible = add("Sichtbar", &open);
+    let hidden = add("Versteckt", &secret);
+    let attach = |id, name: &str, bytes: &[u8]| {
+        s.engine.add_attachment(&user, id, name, None, bytes).unwrap();
+    };
+    attach(&visible.id, "notiz.md", "# Überschrift".as_bytes());
+    attach(&visible.id, "bild.png", &[0x89, 0x50, 0xff, 0xfe]);
+    attach(&hidden.id, "geheim.md", b"Kennwort");
+
+    let (_, token) =
+        s.registry.create("Scoped", &[Scope::Read], std::slice::from_ref(&open.id)).unwrap();
+    let c = connect(&s.url, &token).await;
+    let read = |entry: &str, file: &str| json!({"entry": entry, "file": file});
+
+    let (t, _) = call(&c, "get", json!({"entry": "Sichtbar"})).await;
+    assert!(t.contains("notiz.md") && t.contains("bild.png"), "{t}");
+
+    let (t, err) = call(&c, "read_attachment", read("Sichtbar", "notiz.md")).await;
+    assert!(!err && t.contains("# Überschrift") && t.contains("<entry-content>"), "{t}");
+
+    let (t, err) = call(&c, "read_attachment", read("Sichtbar", "bild.png")).await;
+    assert!(err && t.contains("binary"), "{t}");
+
+    let (t, err) = call(&c, "read_attachment", read("Sichtbar", "fehlt.md")).await;
+    assert!(err && t.contains("notiz.md"), "{t}");
+
+    let (t, err) = call(&c, "read_attachment", read("Versteckt", "geheim.md")).await;
+    assert!(err && !t.contains("Kennwort"), "{t}");
 
     c.cancel().await.unwrap();
     s.shutdown.cancel();

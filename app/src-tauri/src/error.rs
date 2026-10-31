@@ -45,6 +45,9 @@ impl From<CoreError> for ApiError {
             },
             CoreError::Invalid(m) => Self::new("invalid", m),
             CoreError::Conflict(m) => Self::new("conflict", m),
+            CoreError::CorruptBlob(_) => {
+                Self::new("corrupt", "Die Datei ist beschädigt oder wurde verändert.")
+            }
             other => Self::internal(other),
         }
     }

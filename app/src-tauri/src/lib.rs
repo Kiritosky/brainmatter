@@ -89,6 +89,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?.join(VAULT_DIR);
             tracing::info!("vault directory: {}", dir.display());
@@ -165,6 +166,10 @@ pub fn run() {
             commands::dismiss_suggestion,
             commands::accept_suggestion,
             commands::merge_nodes,
+            commands::add_attachment,
+            commands::attachment_data,
+            commands::delete_attachment,
+            commands::export_attachment,
             commands::orphans,
             commands::unreviewed,
             commands::create_node,

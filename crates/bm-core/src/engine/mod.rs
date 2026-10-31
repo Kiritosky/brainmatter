@@ -6,6 +6,7 @@
 //! The API is synchronous; async callers should use `spawn_blocking`.
 
 mod analytics;
+mod attachments;
 mod edges;
 mod graph;
 mod history;
@@ -27,9 +28,10 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use tokio::sync::broadcast;
 
 use crate::{
+    blobs::BlobStore,
     error::{CoreError, Result},
     events::Event,
-    ids::{ActorId, ChangeSetId, NodeId, ProjectId},
+    ids::{ActorId, AttachmentId, ChangeSetId, NodeId, ProjectId},
     model::*,
     store::{Db, DbKey},
     time::now_ms,
@@ -42,6 +44,8 @@ const EVENT_BUFFER: usize = 1024;
 const READER_CACHE_KIB: i64 = 32 * 1024;
 /// Edits of the same entry closer together than this share one change set.
 const COALESCE_WINDOW_MS: i64 = 5 * 60 * 1000;
+/// Attachments are encrypted as a whole in memory, which sets the upper bound.
+pub const MAX_ATTACHMENT_BYTES: usize = 200 * 1024 * 1024;
 
 pub struct Engine {
     writer: Mutex<Connection>,
@@ -53,6 +57,7 @@ pub struct Engine {
     vector_model: RwLock<Option<String>>,
     /// Bumped by every committed change; the indexer watches it.
     generation: AtomicU64,
+    blobs: Option<BlobStore>,
 }
 
 impl Engine {
@@ -78,7 +83,18 @@ impl Engine {
             vectors: RwLock::default(),
             vector_model: RwLock::new(None),
             generation: AtomicU64::new(0),
+            blobs: None,
         })
+    }
+
+    /// Enables attachments.
+    pub fn with_blobs(mut self, blobs: BlobStore) -> Self {
+        self.blobs = Some(blobs);
+        self
+    }
+
+    fn blob_store(&self) -> Result<&BlobStore> {
+        self.blobs.as_ref().ok_or_else(|| CoreError::Invalid("attachments are not enabled".into()))
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
@@ -206,8 +222,61 @@ impl Engine {
                 let src = e.src.clone();
                 incoming.extend(view(e, &src)?);
             }
-            Ok(NodeDetail { node, projects, outgoing, incoming })
+            let attachments = attachments::of_node(c, id)?;
+            Ok(NodeDetail { node, projects, outgoing, incoming, attachments })
         })
+    }
+
+    // ------------------------------------------------------- attachments ---
+
+    /// Encrypts `bytes` and attaches them to an entry. `mime` is checked and
+    /// otherwise guessed from the file name.
+    pub fn add_attachment(
+        &self,
+        ctx: &Ctx,
+        node: &NodeId,
+        filename: &str,
+        mime: Option<&str>,
+        bytes: &[u8],
+    ) -> Result<Attachment> {
+        let filename = attachments::clean_filename(filename)
+            .ok_or_else(|| CoreError::Invalid("the file needs a name".into()))?;
+        if bytes.len() > MAX_ATTACHMENT_BYTES {
+            let limit = MAX_ATTACHMENT_BYTES / (1024 * 1024);
+            return Err(CoreError::Invalid(format!("attachments are limited to {limit} MB")));
+        }
+        let mime = attachments::clean_mime(mime, &filename);
+        let title = self.read(|c| Ok(rows::live_node(c, node)?.title))?;
+        // Outside the transaction: encrypting a large file must not hold up writes.
+        let blob = self.blob_store()?.put(bytes)?;
+        let summary = format!("„{filename}“ an „{title}“ angehängt");
+        let size = bytes.len() as i64;
+        Ok(self
+            .write(ctx, summary, |w| attachments::insert(w, node, &filename, &mime, size, &blob))?
+            .0)
+    }
+
+    /// A live attachment of a live entry, without its content.
+    pub fn attachment(&self, id: &AttachmentId) -> Result<Attachment> {
+        self.read(|c| {
+            let found = attachments::get(c, id)?.filter(|a| a.deleted_at.is_none());
+            let a = found.ok_or_else(|| CoreError::not_found("attachment", id.as_str()))?;
+            rows::live_node(c, &a.node_id)?;
+            Ok(a)
+        })
+    }
+
+    pub fn attachment_data(&self, id: &AttachmentId) -> Result<(Attachment, Vec<u8>)> {
+        let a = self.attachment(id)?;
+        let bytes = self.blob_store()?.get(&a.blob_id)?;
+        Ok((a, bytes))
+    }
+
+    pub fn delete_attachment(&self, ctx: &Ctx, id: &AttachmentId) -> Result<()> {
+        let a = self.attachment(id)?;
+        let summary = format!("Anhang „{}“ entfernt", a.filename);
+        self.write(ctx, summary, |w| attachments::remove(w, &a))?;
+        Ok(())
     }
 
     /// Accepts a full id, an exact title or a short id (last hex digits).

@@ -17,6 +17,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) use crypto::random_fill;
 pub use crypto::{KdfParams, SecretKey};
 pub use recovery::RecoveryKey;
 

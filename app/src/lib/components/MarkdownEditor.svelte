@@ -13,8 +13,11 @@
     onchange,
     onsave,
     titles,
+    onpastefile,
     autofocus = false,
   }: {
+    /** Stores a pasted file and returns the Markdown to insert for it. */
+    onpastefile?: (file: File) => Promise<string | null>;
     value: string;
     onchange: (text: string) => void;
     onsave?: () => void;
@@ -80,6 +83,19 @@
           autocompletion({ override: [wikilinkSource], icons: false }),
           placeholderExt('Schreibe in Markdown … [[ verlinkt andere Einträge'),
           theme,
+          EditorView.domEventHandlers({
+            paste(event, editor) {
+              const files = [...(event.clipboardData?.files ?? [])];
+              if (!files.length || !onpastefile) return false;
+              event.preventDefault();
+              for (const file of files) {
+                onpastefile(file).then((snippet) => {
+                  if (snippet) editor.dispatch(editor.state.replaceSelection(snippet));
+                });
+              }
+              return true;
+            },
+          }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onchange(u.state.doc.toString());
           }),

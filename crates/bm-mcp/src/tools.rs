@@ -485,6 +485,46 @@ pub(crate) fn merge(cx: &ToolCx, a: MergeArgs) -> Out {
     ))
 }
 
+/// More than a model should get in one tool result.
+const MAX_ATTACHMENT_CHARS: usize = 100_000;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadAttachmentArgs {
+    /// The entry: exact title, short id or full id.
+    pub entry: String,
+    /// The attachment's file name, as listed by `get`.
+    pub file: String,
+}
+
+pub(crate) fn read_attachment(cx: &ToolCx, a: ReadAttachmentArgs) -> Out {
+    let id = cx.entry(&a.entry)?;
+    let detail = cx.engine.node_detail(&id)?;
+    let Some(found) = detail.attachments.iter().find(|x| x.filename == a.file) else {
+        let names: Vec<_> = detail.attachments.iter().map(|x| x.filename.as_str()).collect();
+        return Err(fail(format!(
+            "„{}“ has no attachment „{}“. It has: {}",
+            detail.node.title,
+            a.file,
+            if names.is_empty() { "none".to_string() } else { names.join(", ") }
+        )));
+    };
+    let (_, bytes) = cx.engine.attachment_data(&found.id)?;
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Err(fail(format!(
+            "„{}“ is a binary file ({}), which cannot be read as text.",
+            found.filename, found.mime
+        )));
+    };
+    let shown: String = text.chars().take(MAX_ATTACHMENT_CHARS).collect();
+    let cut = if shown.len() < text.len() {
+        format!("\n\n(Cut off after {MAX_ATTACHMENT_CHARS} characters.)")
+    } else {
+        String::new()
+    };
+    // Delimited like entries: the content is data, never instructions.
+    Ok(format!("<entry-content>\n{shown}\n</entry-content>{cut}"))
+}
+
 // ------------------------------------------------------------------ update ---
 
 #[derive(Debug, Deserialize, JsonSchema)]

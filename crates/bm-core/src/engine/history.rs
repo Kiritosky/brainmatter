@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{
-    edges, nodes,
+    attachments, edges, nodes,
     projects::{self, Membership},
     rows,
     writer::{Entity, Writer, decode_snapshot},
@@ -13,8 +13,8 @@ use super::{
 use crate::{
     error::{CoreError, Result},
     events::Event,
-    ids::{ActorId, ChangeSetId, EdgeId, NodeId, ProjectId},
-    model::{ChangeSetInfo, Edge, Node, NodeRevision, Project},
+    ids::{ActorId, AttachmentId, ChangeSetId, EdgeId, NodeId, ProjectId},
+    model::{Attachment, ChangeSetInfo, Edge, Node, NodeRevision, Project},
 };
 
 const CHANGE_SET_SELECT: &str = "SELECT c.id, c.actor_id, a.name, c.client_name, c.tool, c.summary,
@@ -132,6 +132,7 @@ pub(crate) fn revert(w: &mut Writer<'_>, target: &ChangeSetId) -> Result<usize> 
             Entity::Edge => revert_edge(w, rev, check)?,
             Entity::Project => revert_project(w, rev, check)?,
             Entity::Membership => revert_membership(w, rev, check)?,
+            Entity::Attachment => revert_attachment(w, rev, check)?,
         }
     }
 
@@ -314,6 +315,21 @@ fn revert_membership(w: &mut Writer<'_>, rev: &RawRevision, check: bool) -> Resu
         _ => {}
     }
     Ok(())
+}
+
+fn revert_attachment(w: &mut Writer<'_>, rev: &RawRevision, check: bool) -> Result<()> {
+    let id = AttachmentId::from_raw(rev.id.clone());
+    let current =
+        attachments::get(w.conn, &id)?.ok_or_else(|| conflict(Entity::Attachment, &rev.id))?;
+    let after: Option<Attachment> = rev.after.as_deref().map(decode_snapshot).transpose()?;
+    if check && after.as_ref() != Some(&current) {
+        return Err(conflict(Entity::Attachment, &rev.id));
+    }
+    let before: Option<Attachment> = rev.before.as_deref().map(decode_snapshot).transpose()?;
+    // Undoing the upload leaves the row in the trash, like undoing a new entry.
+    let restored =
+        before.unwrap_or_else(|| Attachment { deleted_at: Some(w.now), ..current.clone() });
+    attachments::store(w, &current, &restored)
 }
 
 /// Entries touched by a change set, in first-touch order.

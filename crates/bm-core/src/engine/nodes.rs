@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rusqlite::params;
 
 use super::{
-    edges, projects, refs,
+    attachments, edges, projects, refs,
     rows::{self, clean_tags, clean_title, snake},
     writer::{Entity, Writer},
 };
@@ -177,6 +177,9 @@ pub(crate) fn merge(w: &mut Writer<'_>, keep: &NodeId, others: &[NodeId]) -> Res
         }
         for project in rows::projects_of(w.conn, other)? {
             projects::add_member(w, &project.id, keep)?;
+        }
+        for attachment in attachments::of_node(w.conn, other)? {
+            attachments::move_to(w, &attachment, keep)?;
         }
         let current = rows::live_node(w.conn, keep)?;
         let body = source.body.trim();

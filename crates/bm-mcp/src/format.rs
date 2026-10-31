@@ -67,6 +67,12 @@ pub(crate) fn node_detail(d: &NodeDetail, author: &str) -> String {
             let _ = writeln!(out, "← {}: {}{}", e.edge.relation, brief(&e.other), note(&e.edge));
         }
     }
+    if !d.attachments.is_empty() {
+        out.push_str("\nAttachments (use `read_attachment`):\n");
+        for a in &d.attachments {
+            let _ = writeln!(out, "- {} ({}, {} KB)", a.filename, a.mime, (a.size + 1023) / 1024);
+        }
+    }
     out
 }
 

@@ -9,6 +9,7 @@ import type {
   DomainEvent,
   Edge,
   GraphSnapshot,
+  Attachment,
   ModelStatus,
   Node,
   NodeDetail,
@@ -244,6 +245,20 @@ function graph(project: string | null): GraphSnapshot {
   };
 }
 
+const attachments = new Map<string, { meta: Attachment; bytes: Uint8Array; deleted: boolean }>();
+
+function addAttachment(body: Uint8Array) {
+  const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
+  const len = view.getUint32(0, true);
+  const input = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + len)));
+  const bytes = body.slice(4 + len);
+  const meta: Attachment = { id: id(), node_id: input.node, filename: input.filename, mime: input.mime ?? 'application/octet-stream', size: bytes.length, created_at: now(), created_by: USER };
+  attachments.set(meta.id, { meta, bytes, deleted: false });
+  record(`„${meta.filename}“ an „${live(input.node).title}“ angehängt`, [input.node]);
+  notify({ type: 'node_upserted', id: input.node });
+  return meta;
+}
+
 function detail(nid: string): NodeDetail {
   const node = live(nid);
   const brief = (x: string) => ({ id: x, title: nodes.get(x)!.title, kind: nodes.get(x)!.kind });
@@ -253,6 +268,7 @@ function detail(nid: string): NodeDetail {
     projects: projectsOf(nid).map((p) => ({ id: p.id, name: p.name })),
     outgoing: active.filter((e) => e.src === nid).map((e) => ({ edge: e, other: brief(e.dst) })),
     incoming: active.filter((e) => e.dst === nid).map((e) => ({ edge: e, other: brief(e.src) })),
+    attachments: [...attachments.values()].filter((a) => a.meta.node_id === nid && !a.deleted).map((a) => a.meta),
   };
 }
 
@@ -409,6 +425,20 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  add_attachment: (a) => addAttachment(a as unknown as Uint8Array),
+  attachment_data: (a) => {
+    const found = attachments.get(a.id);
+    if (!found || found.deleted) fail('not_found', 'Anhang nicht gefunden');
+    return found.bytes.buffer.slice(found.bytes.byteOffset, found.bytes.byteOffset + found.bytes.byteLength);
+  },
+  delete_attachment: (a) => {
+    const found = attachments.get(a.id);
+    if (!found) fail('not_found', 'Anhang nicht gefunden');
+    found.deleted = true;
+    record(`Anhang „${found.meta.filename}“ entfernt`);
+    notify({ type: 'node_upserted', id: found.meta.node_id });
+  },
+  export_attachment: () => true,
   model_status: () => modelStatus(),
   download_model: () => downloadModel(),
   remove_model: () => {

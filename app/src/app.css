@@ -228,6 +228,7 @@ html.tauri .sidebar-glass {
 .prose-bm h2 { font-size: 1.2em; font-weight: 650; margin: 1em 0 0.4em; color: var(--color-text); }
 .prose-bm h3 { font-size: 1.05em; font-weight: 600; margin: 0.9em 0 0.3em; color: var(--color-text); }
 .prose-bm p { margin: 0.55em 0; }
+.prose-bm img { max-width: 100%; border-radius: 8px; }
 .prose-bm ul, .prose-bm ol { padding-left: 1.3em; margin: 0.45em 0; }
 .prose-bm ul { list-style: disc; }
 .prose-bm ol { list-style: decimal; }

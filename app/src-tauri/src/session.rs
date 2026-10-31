@@ -16,6 +16,7 @@ use std::{
 
 use bm_core::{
     Engine, Vault, VaultKeys,
+    blobs::BlobStore,
     engine::{Indexer, spawn_indexer},
     model::{ActorKind, Ctx},
     semantic::Embedder,
@@ -199,7 +200,7 @@ impl Session {
             return Err(ApiError::new("vault_exists", "Es gibt bereits einen Tresor."));
         }
         let (vault, keys, recovery) = Vault::create(&self.dir, password, self.kdf.clone())?;
-        let engine = Engine::open(&vault.db_path(), &keys.db_key(), READERS)?;
+        let engine = open_engine(&self.dir, &vault, &keys)?;
         engine.ensure_actor(ActorKind::User, name)?;
         self.install(vault, keys, Arc::new(engine))?;
         Ok(recovery.to_string())
@@ -539,7 +540,7 @@ impl Session {
     }
 
     fn open(&self, vault: Vault, keys: VaultKeys) -> ApiResult<()> {
-        let engine = Engine::open(&vault.db_path(), &keys.db_key(), READERS)?;
+        let engine = open_engine(&self.dir, &vault, &keys)?;
         self.install(vault, keys, Arc::new(engine))
     }
 
@@ -591,6 +592,11 @@ impl Session {
             }
         }
     }
+}
+
+fn open_engine(dir: &Path, vault: &Vault, keys: &VaultKeys) -> ApiResult<Engine> {
+    let blobs = BlobStore::new(dir.join("blobs"), &keys.blob_key());
+    Ok(Engine::open(&vault.db_path(), &keys.db_key(), READERS)?.with_blobs(blobs))
 }
 
 fn check_password(password: &str) -> ApiResult<()> {

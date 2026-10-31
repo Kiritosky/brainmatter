@@ -21,11 +21,20 @@ const wikilink: TokenizerAndRendererExtension = {
 };
 
 const marked = new Marked({ gfm: true, breaks: false });
-marked.use({ extensions: [wikilink] });
+marked.use({
+  extensions: [wikilink],
+  renderer: {
+    // `![Name](attachment:id)` is decrypted after rendering; see Inspector.
+    image({ href, text }) {
+      const id = /^attachment:([\w-]+)$/.exec(href)?.[1];
+      return id ? `<img data-attachment="${escape(id)}" alt="${escape(text)}">` : false;
+    },
+  },
+});
 
 export function renderMarkdown(source: string, known?: (title: string) => boolean): string {
   const html = marked.parse(source, { async: false }) as string;
-  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['data-target'], FORBID_TAGS: ['style', 'form'] });
+  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['data-target', 'data-attachment'], FORBID_TAGS: ['style', 'form'] });
   if (!known) return clean;
   // Mark links whose target does not exist yet.
   const doc = new DOMParser().parseFromString(`<div>${clean}</div>`, 'text/html');

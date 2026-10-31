@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{ActorId, ChangeSetId, EdgeId, NodeId, ProjectId};
+use crate::ids::{ActorId, AttachmentId, ChangeSetId, EdgeId, NodeId, ProjectId};
 
 pub const DEFAULT_KIND: &str = "note";
 pub const DEFAULT_RELATION: &str = "related_to";
@@ -121,6 +121,21 @@ pub struct NodeDetail {
     pub projects: Vec<ProjectBrief>,
     pub outgoing: Vec<EdgeView>,
     pub incoming: Vec<EdgeView>,
+    pub attachments: Vec<Attachment>,
+}
+
+/// A file attached to an entry; the content lives encrypted outside the database.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attachment {
+    pub id: AttachmentId,
+    pub node_id: NodeId,
+    pub filename: String,
+    pub mime: String,
+    pub size: i64,
+    pub blob_id: String,
+    pub created_at: i64,
+    pub created_by: ActorId,
+    pub deleted_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

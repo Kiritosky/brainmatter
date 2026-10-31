@@ -3,6 +3,7 @@
 //! This crate has no UI or network dependencies; the Tauri app and the MCP
 //! server are thin layers on top of it.
 
+pub mod blobs;
 pub mod engine;
 pub mod error;
 pub mod events;

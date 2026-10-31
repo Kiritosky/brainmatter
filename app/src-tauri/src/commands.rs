@@ -4,12 +4,13 @@
 use std::sync::Arc;
 
 use bm_core::{
-    ids::{ChangeSetId, NodeId, ProjectId},
+    ids::{AttachmentId, ChangeSetId, NodeId, ProjectId},
     model::*,
 };
 use bm_mcp::{Client, ClientRegistry, RegistryError, Scope};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::{
     McpStatus,
@@ -196,6 +197,67 @@ pub fn accept_suggestion(session: S<'_>, src: NodeId, dst: NodeId) -> ApiResult<
 pub fn merge_nodes(session: S<'_>, keep: NodeId, others: Vec<NodeId>) -> ApiResult<Node> {
     let (engine, ctx) = session.engine()?;
     Ok(engine.merge_nodes(&ctx, &keep, &others)?)
+}
+
+/// What precedes the file in the body of `add_attachment`.
+#[derive(Deserialize)]
+struct AttachmentMeta {
+    node: NodeId,
+    filename: String,
+    mime: Option<String>,
+}
+
+/// Body: JSON length (u32, little endian), JSON, file. Files travel as raw bytes
+/// because JSON arrays would take seconds at this size, and file names as JSON
+/// because headers cannot carry umlauts.
+fn parse_attachment(body: &[u8]) -> Option<(AttachmentMeta, &[u8])> {
+    let (len, rest) = body.split_first_chunk::<4>()?;
+    let len = u32::from_le_bytes(*len) as usize;
+    if len > rest.len() {
+        return None;
+    }
+    let (meta, file) = rest.split_at(len);
+    Some((serde_json::from_slice(meta).ok()?, file))
+}
+
+#[tauri::command(async)]
+pub fn add_attachment(session: S<'_>, request: tauri::ipc::Request<'_>) -> ApiResult<Attachment> {
+    let (engine, ctx) = session.engine()?;
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err(ApiError::new("invalid", "Die Datei kam nicht als Binärdaten an."));
+    };
+    let (meta, file) = parse_attachment(body)
+        .ok_or_else(|| ApiError::new("invalid", "Die Datei kam unvollständig an."))?;
+    Ok(engine.add_attachment(&ctx, &meta.node, &meta.filename, meta.mime.as_deref(), file)?)
+}
+
+#[tauri::command(async)]
+pub fn attachment_data(session: S<'_>, id: AttachmentId) -> ApiResult<tauri::ipc::Response> {
+    let (engine, _) = session.engine()?;
+    Ok(tauri::ipc::Response::new(engine.attachment_data(&id)?.1))
+}
+
+#[tauri::command(async)]
+pub fn delete_attachment(session: S<'_>, id: AttachmentId) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.delete_attachment(&ctx, &id)?)
+}
+
+/// Saves a decrypted copy where the user chooses. Returns false if they cancel.
+#[tauri::command(async)]
+pub fn export_attachment(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    id: AttachmentId,
+) -> ApiResult<bool> {
+    let (engine, _) = session.engine()?;
+    let a = engine.attachment(&id)?;
+    let Some(target) = app.dialog().file().set_file_name(&a.filename).blocking_save_file() else {
+        return Ok(false);
+    };
+    let path = target.into_path().map_err(ApiError::internal)?;
+    std::fs::write(path, engine.attachment_data(&id)?.1).map_err(ApiError::internal)?;
+    Ok(true)
 }
 
 #[tauri::command(async)]

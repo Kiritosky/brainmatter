@@ -222,6 +222,16 @@ impl BrainmatterMcp {
         self.run(&parts, "find_path", Scope::Read, args, tools::find_path).await
     }
 
+    #[tool(description = "Read a text attachment of an entry (Markdown, plain text, JSON, CSV). \
+        `get` lists an entry's attachments. Binary files such as images and PDFs cannot be read yet.")]
+    async fn read_attachment(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ReadAttachmentArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "read_attachment", Scope::Read, args, tools::read_attachment).await
+    }
+
     #[tool(
         description = "Entries similar in meaning to a given entry, with likely duplicates marked. \
         Use it to find what to link or merge. Needs the embedding model; says so if it is not set up."

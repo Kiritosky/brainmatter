@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { ArrowLeft, ArrowRight, Crosshair, GitMerge, Link2, Sparkles, Trash2, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
-  import { api, errorMessage, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
+  import { ArrowLeft, ArrowRight, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Sparkles, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
+  import { api, errorMessage, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
+  import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, previewKind } from '#lib/attachments.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
   import { ws } from '#lib/workspace.svelte.ts';
+  import AttachmentPreview from './AttachmentPreview.svelte';
   import MarkdownEditor from './MarkdownEditor.svelte';
   import { pop } from '#lib/ui/motion.ts';
 
@@ -135,6 +137,63 @@
     await act(() => api.dismissSuggestion(nodeId, s.node.id));
   }
 
+  let previewing = $state<Attachment | null>(null);
+  let dragging = $state(false);
+  let uploading = $state(0);
+  let filePicker: HTMLInputElement | undefined = $state();
+  let preview: HTMLDivElement | undefined = $state();
+  const inlineUrls = new Map<string, Promise<string>>();
+
+  async function attach(file: File) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      ws.notify(`„${file.name}“ ist zu groß. Anhänge dürfen höchstens 200 MB haben.`);
+      return null;
+    }
+    uploading++;
+    try {
+      return await api.addAttachment(nodeId, file);
+    } catch (e) {
+      ws.notify(errorMessage(e));
+      return null;
+    } finally {
+      uploading--;
+    }
+  }
+
+  async function ondrop(e: DragEvent) {
+    e.preventDefault();
+    dragging = false;
+    await Promise.all([...(e.dataTransfer?.files ?? [])].map(attach));
+  }
+
+  function hasFiles(e: DragEvent) {
+    return e.dataTransfer?.types.includes('Files') ?? false;
+  }
+
+  /** Pasted screenshots have no useful name, so they get the time as one. */
+  async function pasteFile(file: File) {
+    const stamp = new Date().toLocaleString('sv-SE').replaceAll(':', '-');
+    const named = file.name && file.name !== 'image.png' ? file : new File([file], `Bild ${stamp}.png`, { type: file.type });
+    const a = await attach(named);
+    if (!a) return null;
+    return `${previewKind(a.mime) === 'image' ? '!' : ''}[${a.filename}](attachment:${a.id})`;
+  }
+
+  // Images in the text. Only attachments of this entry: a note written by an AI
+  // must not be able to pull other files into view.
+  $effect(() => {
+    void html;
+    const files = detail.attachments;
+    preview?.querySelectorAll<HTMLImageElement>('img[data-attachment]').forEach(async (img) => {
+      const a = files.find((f) => f.id === img.dataset.attachment && previewKind(f.mime) === 'image');
+      if (!a) return;
+      if (!inlineUrls.has(a.id)) inlineUrls.set(a.id, attachmentUrl(a));
+      img.src = await inlineUrls.get(a.id)!;
+    });
+  });
+
+  onDestroy(() => inlineUrls.forEach((url) => url.then(URL.revokeObjectURL).catch(() => {})));
+
   async function openHistory() {
     showHistory = !showHistory;
     if (showHistory) history = await api.nodeHistory(node.id);
@@ -158,7 +217,19 @@
     new Date(ms).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 </script>
 
-<aside class="flex h-full flex-col border-l border-line bg-panel">
+<aside class="relative flex h-full flex-col border-l border-line bg-panel"
+  aria-label="Eintrag"
+  ondragenter={(e) => hasFiles(e) && (dragging = true)}
+  ondragover={(e) => hasFiles(e) && e.preventDefault()}
+  ondragleave={(e) => e.relatedTarget === null && (dragging = false)}
+  {ondrop}>
+  {#if dragging}
+    <div class="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-accent/60 bg-panel/90 text-accent" transition:pop={{ duration: 140, y: 0 }}>
+      <Upload size={22} />
+      <span class="font-medium">Zum Anhängen loslassen</span>
+      <span class="text-xs text-faint">Wird verschlüsselt im Tresor gespeichert</span>
+    </div>
+  {/if}
   <header class="flex h-11 shrink-0 items-center gap-1 border-b border-line-soft px-3" data-tauri-drag-region>
     <span class="chip">{node.kind}</span>
     {#if !node.reviewed}
@@ -245,16 +316,47 @@
         value={draftBody}
         autofocus
         titles={completeTitles}
+        onpastefile={pasteFile}
         onsave={save}
         onchange={(text) => ((draftBody = text), scheduleSave())} />
     {:else if node.body.trim()}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
-      <div class="prose-bm" role="presentation" onclick={onPreviewClick} ondblclick={() => (editing = true)}>{@html html}</div>
+      <div class="prose-bm" role="presentation" bind:this={preview} onclick={onPreviewClick} ondblclick={() => (editing = true)}>{@html html}</div>
     {:else}
       <button class="w-full rounded-xl border border-dashed border-line py-6 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = true)}>
         Noch leer. Klicken zum Schreiben.
       </button>
     {/if}
+
+    <div class="mt-7 mb-1 flex h-6 items-center">
+      <div class="section-title !mb-0 flex-1">Anhänge</div>
+      {#if uploading}
+        <span class="mr-1 flex items-center gap-1.5 text-[11px] text-faint" in:pop={{ duration: 120, y: 0 }}>
+          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"></span>Verschlüsselt …
+        </span>
+      {/if}
+      <button class="icon-btn !h-6 !w-6" aria-label="Datei anhängen" title="Datei anhängen" onclick={() => filePicker?.click()}><Paperclip size={13} /></button>
+      <input class="hidden" type="file" multiple bind:this={filePicker} aria-hidden="true" tabindex="-1"
+        onchange={async (e) => {
+          const input = e.currentTarget;
+          await Promise.all([...(input.files ?? [])].map(attach));
+          input.value = '';
+        }} />
+    </div>
+    {#each detail.attachments as a (a.id)}
+      {@const kind = previewKind(a.mime)}
+      <div class="group flex h-8 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-elevated" in:pop={{ duration: 160, y: 3 }}>
+        {#if kind === 'image'}<FileImage size={14} class="shrink-0 text-faint" />{:else if kind === 'none'}<FileIcon size={14} class="shrink-0 text-faint" />{:else}<FileText size={14} class="shrink-0 text-faint" />{/if}
+        <button class="min-w-0 flex-1 truncate text-left" onclick={() => (previewing = a)}>{a.filename}</button>
+        <span class="shrink-0 text-[11px] text-faint tabular-nums group-hover:hidden">{formatSize(a.size)}</span>
+        <button class="hidden shrink-0 text-faint transition-colors group-hover:block hover:text-danger focus-visible:block" aria-label="Anhang entfernen" title="Anhang entfernen"
+          onclick={() => act(() => api.deleteAttachment(a.id))}><X size={13} /></button>
+      </div>
+    {:else}
+      <button class="w-full rounded-lg border border-dashed border-line-soft py-2.5 text-xs text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => filePicker?.click()}>
+        Dateien hierher ziehen oder klicken
+      </button>
+    {/each}
 
     {#if groups.length}
       <div class="section-title mt-7">Verbindungen</div>
@@ -324,3 +426,11 @@
     <span class="selectable ml-auto font-mono">#{node.id.slice(-8)}</span>
   </footer>
 </aside>
+
+{#if previewing}
+  <!-- Keyed: opening another file during the fade-out would otherwise reuse this
+       instance, whose content was loaded for the previous file. -->
+  {#key previewing.id}
+    <AttachmentPreview attachment={previewing} onclose={() => (previewing = null)} />
+  {/key}
+{/if}

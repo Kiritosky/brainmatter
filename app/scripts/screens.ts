@@ -107,6 +107,72 @@ try {
   if (!bodies.edited.includes('ZZMARKER')) errors.push(`edit lost: ${bodies.edited}`);
   if (bodies.other.includes('ZZMARKER')) errors.push(`edit landed in the wrong entry: ${bodies.other}`);
   console.log('autosave on switch: ok =', bodies.edited.includes('ZZMARKER') && !bodies.other.includes('ZZMARKER'));
+
+  // Attachments: picked, previewed, shown inline when pasted, removed.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEBgIApD5fRAAAAABJRU5ErkJggg==', 'base64');
+  await page.locator('input[type=file]').setInputFiles([
+    { name: 'Rezept.md', mimeType: 'text/markdown', buffer: Buffer.from('# Roggenbrot\n\n70 % Roggen') },
+    { name: 'Foto.png', mimeType: 'image/png', buffer: PNG },
+    { name: 'daten.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([1, 2, 3]) },
+  ]);
+  await page.getByRole('button', { name: 'Rezept.md' }).waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, '27-attachments');
+  await page.getByRole('button', { name: 'Rezept.md' }).click();
+  await page.getByRole('dialog', { name: 'Rezept.md' }).getByText('70 % Roggen').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '28-attachment-text');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Foto.png' }).click();
+  await page.getByRole('dialog', { name: 'Foto.png' }).locator('img').waitFor();
+  await page.waitForTimeout(300);
+  const decoded = await page.getByRole('dialog', { name: 'Foto.png' }).locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth);
+  if (decoded !== 1) errors.push(`attachment image did not decode: ${decoded}`);
+  await shot(page, '29-attachment-image');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'daten.bin' }).click();
+  await page.getByText('keine Vorschau').waitFor();
+  await page.keyboard.press('Escape');
+
+  // A pasted screenshot lands in the text and renders decrypted.
+  await page.getByLabel('Bearbeiten').click();
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.evaluate((b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], 'image.png', { type: 'image/png' }));
+    document.querySelector('.cm-content')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG.toString('base64'));
+  await page.getByText('attachment:').waitFor();
+  await page.getByLabel('Ansehen').click();
+  await page.waitForTimeout(1200);
+  const inline = await page.locator('.prose-bm img').evaluate((img: HTMLImageElement) => img.naturalWidth).catch(() => 0);
+  if (inline !== 1) errors.push(`pasted image did not render: ${inline}`);
+  await shot(page, '30-attachment-inline');
+
+  // A note (possibly written by an AI) can neither run code nor pull in the
+  // attachment of another entry.
+  const hostile = await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    const hits: any[] = await invoke('search', { query: { text: 'Marathon-Plan', kinds: [], tags: [], limit: 5, include_subprojects: true } });
+    const roggen: any[] = await invoke('search', { query: { text: 'Roggenbrot', kinds: [], tags: [], limit: 5, include_subprojects: true } });
+    const own = (await invoke('node_detail', { id: roggen[0].node.id })).attachments[0].id;
+    const id = hits[0].node.id;
+    await invoke('update_node', { id, patch: { body: { mode: 'replace', text: `![fremd](attachment:${own})\n\n<img src="data:," onerror="window.__pwned = 1">\n\n<script>window.__pwned = 1</script>` } } });
+    return id as string;
+  });
+  await openEntry('Marathon-Plan');
+  await page.waitForTimeout(600);
+  const sources = await page.locator('.prose-bm img').evaluateAll((imgs) => imgs.map((i) => i.getAttribute('src')));
+  if (sources.some((s) => s?.startsWith('blob:'))) errors.push(`foreign attachment rendered: ${sources}`);
+  if (await page.evaluate(() => (window as any).__pwned)) errors.push('script ran from a note');
+  console.log('hostile note blocked:', hostile.length > 0 && !sources.some((s) => s?.startsWith('blob:')));
+
+  await openEntry('Roggenbrot');
+  await page.getByRole('button', { name: 'daten.bin' }).hover();
+  await page.getByRole('button', { name: 'Anhang entfernen' }).locator('visible=true').click();
+  await page.getByRole('button', { name: 'daten.bin' }).waitFor({ state: 'detached' });
   await page.getByLabel('Schließen').first().click();
 
   await page.getByRole('button', { name: /Kern/ }).first().click();
