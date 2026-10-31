@@ -168,6 +168,19 @@ export interface Settings {
   auto_lock_minutes: number;
   lock_on_sleep: boolean;
   lock_on_screen_lock: boolean;
+  auto_backup: boolean;
+}
+
+export interface BackupInfo {
+  name: string;
+  at: number;
+  size: number;
+}
+
+export interface BackupStatus {
+  running: boolean;
+  error: string | null;
+  backups: BackupInfo[];
 }
 
 export interface Status {
@@ -278,6 +291,11 @@ export const api = {
   getSettings: () => call<Settings>('get_settings'),
   updateSettings: (settings: Settings) => call<Settings>('update_settings', { settings }),
   touch: () => call<void>('touch'),
+
+  // backups
+  backupStatus: () => call<BackupStatus>('backup_status'),
+  backupNow: () => call<BackupInfo>('backup_now'),
+  restoreBackup: (name: string, password: string) => call<void>('restore_backup', { name, password }),
 
   // AI clients
   mcpInfo: () => call<McpInfo>('mcp_info'),

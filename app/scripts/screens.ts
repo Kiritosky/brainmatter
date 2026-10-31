@@ -198,6 +198,18 @@ try {
   await shot(page, '12-settings-select');
   await page.keyboard.press('Escape');
 
+  await page.getByRole('button', { name: 'Backups' }).click();
+  await page.getByText('Vorhandene Backups').waitFor();
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: 'Jetzt sichern' }).click();
+  await page.waitForTimeout(350);
+  await page.getByRole('button', { name: 'Wiederherstellen' }).nth(1).click();
+  await page.getByPlaceholder('Master-Passwort').fill('falsch');
+  await page.getByRole('button', { name: 'Zurücksetzen' }).click();
+  await page.getByText('Falsches Passwort').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '31-backups');
+
   await page.getByRole('button', { name: 'Suche nach Sinn' }).click();
   await page.getByRole('button', { name: 'Laden', exact: true }).waitFor();
   await page.waitForTimeout(300);

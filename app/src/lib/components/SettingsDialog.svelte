@@ -1,15 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Sparkles } from '@lucide/svelte';
+  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Sparkles } from '@lucide/svelte';
   import { api, errorMessage, type Settings, type Status } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import Select from '#lib/ui/Select.svelte';
   import { fadeQuick, pop } from '#lib/ui/motion.ts';
   import AiConnections from './AiConnections.svelte';
+  import BackupSettings from './BackupSettings.svelte';
   import ModelSettings from './ModelSettings.svelte';
 
-  type Tab = 'security' | 'password' | 'search' | 'ai';
+  type Tab = 'security' | 'password' | 'backups' | 'search' | 'ai';
   let tab = $state<Tab>('security');
   let status = $state<Status | null>(null);
   let settings = $state<Settings | null>(null);
@@ -31,6 +32,7 @@
   const tabs: { id: Tab; label: string; icon: typeof Lock }[] = [
     { id: 'security', label: 'Sperren', icon: Lock },
     { id: 'password', label: 'Passwort & Schlüssel', icon: KeyRound },
+    { id: 'backups', label: 'Backups', icon: Archive },
     { id: 'search', label: 'Suche nach Sinn', icon: Sparkles },
     { id: 'ai', label: 'KI-Verbindungen', icon: Bot },
   ];
@@ -157,6 +159,8 @@
             <AiConnections />
           {:else if tab === 'search'}
             <ModelSettings />
+          {:else if tab === 'backups'}
+            <BackupSettings {settings} onsave={save} />
           {:else}
             <h2 class="mb-1 text-lg font-semibold">Passwort & Schlüssel</h2>
             <p class="mb-5 text-muted">Beide Aktionen verlangen dein aktuelles Passwort.</p>

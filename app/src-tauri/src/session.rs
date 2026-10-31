@@ -16,6 +16,7 @@ use std::{
 
 use bm_core::{
     Engine, Vault, VaultKeys,
+    backups::{self, BackupInfo},
     blobs::BlobStore,
     engine::{Indexer, spawn_indexer},
     model::{ActorKind, Ctx},
@@ -45,6 +46,9 @@ const MODEL_IDLE_MS: i64 = 5 * 60 * 1000;
 /// Shorter queries are prefixes of a word being typed; meaning adds only noise.
 const MIN_SEMANTIC_QUERY: usize = 3;
 const PROGRESS_INTERVAL_MS: i64 = 150;
+const BACKUP_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
+/// How long a restore waits for running commands to let go of the database.
+const RESTORE_WAIT: Duration = Duration::from_secs(5);
 
 /// Sends a named event with a JSON payload to the UI.
 pub type Emit = Arc<dyn Fn(&'static str, serde_json::Value) + Send + Sync>;
@@ -57,11 +61,17 @@ pub struct Settings {
     pub auto_lock_minutes: u32,
     pub lock_on_sleep: bool,
     pub lock_on_screen_lock: bool,
+    pub auto_backup: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false }
+        Self {
+            auto_lock_minutes: 60,
+            lock_on_sleep: true,
+            lock_on_screen_lock: false,
+            auto_backup: true,
+        }
     }
 }
 
@@ -114,6 +124,15 @@ enum Download {
     Failed(String),
 }
 
+/// The settings page's view of the backups.
+#[derive(Debug, Clone, Serialize)]
+pub struct BackupStatus {
+    pub running: bool,
+    /// Why the last automatic backup failed.
+    pub error: Option<String>,
+    pub backups: Vec<BackupInfo>,
+}
+
 /// The optional embedding model, for the settings page.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelStatus {
@@ -141,6 +160,9 @@ pub struct Session {
     models: ModelStore,
     embedder: Arc<E5Embedder>,
     download: Mutex<Download>,
+    backup_running: AtomicBool,
+    backup_error: Mutex<Option<String>>,
+    restoring: AtomicBool,
 }
 
 impl Session {
@@ -154,6 +176,9 @@ impl Session {
             embedder: Arc::new(E5Embedder::new(models.clone())),
             models,
             download: Mutex::new(Download::Idle),
+            backup_running: AtomicBool::new(false),
+            backup_error: Mutex::new(None),
+            restoring: AtomicBool::new(false),
             dir,
             emit,
             kdf,
@@ -365,6 +390,104 @@ impl Session {
         Err(LOCKED.into())
     }
 
+    // ---------------------------------------------------------- backups ---
+
+    fn backup_dir(&self) -> PathBuf {
+        self.dir.join("backups")
+    }
+
+    pub fn backup_status(&self) -> ApiResult<BackupStatus> {
+        Ok(BackupStatus {
+            running: self.backup_running.load(Ordering::SeqCst),
+            error: self.backup_error.lock().clone(),
+            backups: backups::list(&self.backup_dir())?,
+        })
+    }
+
+    /// Slow for large vaults: call from a blocking thread. Only one at a time.
+    pub fn backup_now(&self) -> ApiResult<BackupInfo> {
+        let (db, key) = {
+            let state = self.state.lock();
+            let State::Unlocked(u) = &*state else { return Err(ApiError::locked()) };
+            (u.vault.db_path(), u.keys.db_key())
+        };
+        if self.backup_running.swap(true, Ordering::SeqCst) {
+            return Err(ApiError::new("busy", "Es läuft bereits ein Backup."));
+        }
+        let result = backups::create(&db, &key, &self.backup_dir());
+        self.backup_running.store(false, Ordering::SeqCst);
+        *self.backup_error.lock() = result.as_ref().err().map(ToString::to_string);
+        Ok(result?)
+    }
+
+    /// Called periodically: starts a backup in the background if there are
+    /// changes the newest backup does not have and it is a day old. Unchanged
+    /// days add nothing, and would push older states out of the retention.
+    pub fn maybe_backup(self: &Arc<Self>) {
+        if !self.settings.lock().auto_backup || self.backup_running.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(engine) = self.open_engine() else { return };
+        let last = backups::list(&self.backup_dir()).ok().and_then(|b| b.first().map(|b| b.at));
+        let changed = engine.change_sets(1, None).ok().and_then(|c| c.first().map(|c| c.at));
+        let due = match (last, changed) {
+            (_, None) => false,
+            (None, Some(_)) => true,
+            (Some(last), Some(changed)) => changed > last && now_ms() - last >= BACKUP_INTERVAL_MS,
+        };
+        if due {
+            let session = self.clone();
+            std::thread::spawn(move || match session.backup_now() {
+                Ok(b) => tracing::info!("backup written: {} bytes", b.size),
+                Err(e) => tracing::warn!("backup failed: {}", e.message),
+            });
+        }
+    }
+
+    /// Replaces all data with a backup and locks. The current state is saved as
+    /// a backup first, so this can be undone. Asks for the password because it
+    /// is the most far-reaching action in the app. Slow: blocking thread.
+    pub fn restore_backup(&self, name: &str, password: &str) -> ApiResult<()> {
+        if self.backup_running.load(Ordering::SeqCst) {
+            return Err(ApiError::new("busy", "Es läuft gerade ein Backup."));
+        }
+        let vault = Vault::load(&self.dir)?;
+        let keys = vault.unlock_with_password(password)?;
+        // Checked before locking, so a bad backup does not interrupt the user.
+        let source = self.backup_dir().join(name);
+        if !backups::list(&self.backup_dir())?.iter().any(|b| b.name == name) {
+            return Err(ApiError::new("not_found", "Dieses Backup gibt es nicht mehr."));
+        }
+        backups::verify(&source, &keys.db_key())
+            .map_err(|_| ApiError::new("corrupt", "Dieses Backup ist beschädigt."))?;
+
+        // Files of an open database must not be swapped underneath it, and
+        // running commands or AI calls can still hold the engine.
+        let engine = Arc::downgrade(&self.open_engine().ok_or_else(ApiError::locked)?);
+        // Keeps everyone out while the files change: the UI is about to show the
+        // lock screen, and an AI request could ask for Touch ID.
+        self.restoring.store(true, Ordering::SeqCst);
+        self.lock();
+        let deadline = Instant::now() + RESTORE_WAIT;
+        let result = loop {
+            if engine.strong_count() == 0 {
+                break backups::restore(&vault.db_path(), &keys.db_key(), &self.backup_dir(), name)
+                    .map_err(ApiError::from);
+            }
+            if Instant::now() >= deadline {
+                break Err(ApiError::new(
+                    "busy",
+                    "Die Datenbank war noch in Benutzung und wurde nicht ersetzt. Bitte noch einmal versuchen.",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        self.restoring.store(false, Ordering::SeqCst);
+        // The dialog is gone by now, so this is where the user can read it.
+        *self.backup_error.lock() = result.as_ref().err().map(|e| e.message.clone());
+        result.map(|_| tracing::info!("restored a backup"))
+    }
+
     // ------------------------------------------------------------ model ---
 
     /// The model for AI clients, once it is downloaded.
@@ -532,6 +655,9 @@ impl Session {
 
     /// Fresh header from disk; Argon2 then runs without holding the state lock.
     fn locked_vault(&self) -> ApiResult<Vault> {
+        if self.restoring.load(Ordering::SeqCst) {
+            return Err(ApiError::new("busy", "Das Backup wird gerade wiederhergestellt."));
+        }
         match *self.state.lock() {
             State::Locked => Ok(Vault::load(&self.dir)?),
             State::Unlocked(_) => Err(ApiError::new("already_unlocked", "Bereits entsperrt.")),

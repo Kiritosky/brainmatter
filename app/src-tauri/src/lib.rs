@@ -124,6 +124,7 @@ pub fn run() {
                     tick.tick().await;
                     session.maybe_auto_lock();
                     session.unload_idle_model();
+                    session.maybe_backup();
                 }
             });
 
@@ -166,6 +167,9 @@ pub fn run() {
             commands::dismiss_suggestion,
             commands::accept_suggestion,
             commands::merge_nodes,
+            commands::backup_status,
+            commands::backup_now,
+            commands::restore_backup,
             commands::add_attachment,
             commands::attachment_data,
             commands::delete_attachment,

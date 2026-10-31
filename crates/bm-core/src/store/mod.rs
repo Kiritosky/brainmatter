@@ -40,6 +40,14 @@ impl DbKey {
         s.push('\'');
         s
     }
+
+    /// Sets this key on a connection that has not read anything yet.
+    pub(crate) fn apply(&self, conn: &Connection) -> rusqlite::Result<()> {
+        let mut literal = self.pragma_literal();
+        let keyed = conn.pragma_update(None, "key", &literal);
+        literal.zeroize();
+        keyed
+    }
 }
 
 pub struct Db {
@@ -63,10 +71,7 @@ impl Db {
             return Err(StoreError::CipherUnavailable);
         }
 
-        let mut literal = key.pragma_literal();
-        let keyed = conn.pragma_update(None, "key", &literal);
-        literal.zeroize();
-        keyed?;
+        key.apply(&conn)?;
 
         // The first real read fails with SQLITE_NOTADB if the key is wrong.
         match conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0)) {

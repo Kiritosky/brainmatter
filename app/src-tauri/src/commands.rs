@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use bm_core::{
+    backups::BackupInfo,
     ids::{AttachmentId, ChangeSetId, NodeId, ProjectId},
     model::*,
 };
@@ -16,7 +17,7 @@ use crate::{
     McpStatus,
     error::{ApiError, ApiResult},
     integrations::{self as setup, Integrations, Target},
-    session::{ModelStatus, Session, Settings, Status},
+    session::{BackupStatus, ModelStatus, Session, Settings, Status},
 };
 
 type S<'a> = State<'a, Arc<Session>>;
@@ -329,6 +330,26 @@ pub fn node_history(session: S<'_>, id: NodeId) -> ApiResult<Vec<NodeRevision>> 
 pub fn revert(session: S<'_>, change_set: ChangeSetId) -> ApiResult<RevertReport> {
     let (engine, ctx) = session.engine()?;
     Ok(engine.revert(&ctx, &change_set)?)
+}
+
+// ------------------------------------------------------------- backups ---
+
+#[tauri::command(async)]
+pub fn backup_status(session: S<'_>) -> ApiResult<BackupStatus> {
+    require_unlocked(&session)?;
+    session.backup_status()
+}
+
+#[tauri::command]
+pub async fn backup_now(session: S<'_>) -> ApiResult<BackupInfo> {
+    let session = session.inner().clone();
+    blocking(move || session.backup_now()).await
+}
+
+#[tauri::command]
+pub async fn restore_backup(session: S<'_>, name: String, password: String) -> ApiResult<()> {
+    let session = session.inner().clone();
+    blocking(move || session.restore_backup(&name, &password)).await
 }
 
 // ---------------------------------------------------------- AI clients ---

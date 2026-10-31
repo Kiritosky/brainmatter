@@ -39,7 +39,9 @@ const clients: AiClient[] = [];
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
 let userName = 'Lasse';
-let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false };
+let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true };
+const DAY = 86_400_000;
+const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
 const MODEL_BYTES = 487_724_985;
 let modelState: ModelStatus['state'] = 'missing';
@@ -425,6 +427,17 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  backup_status: () => ({ running: false, error: null, backups }),
+  backup_now: () => {
+    const b = { name: `backup-${now()}.db`, at: now(), size: 2_450_000 };
+    backups.unshift(b);
+    return b;
+  },
+  restore_backup: (a) => {
+    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    state = 'locked';
+    emit('bm:session', status());
+  },
   add_attachment: (a) => addAttachment(a as unknown as Uint8Array),
   attachment_data: (a) => {
     const found = attachments.get(a.id);
