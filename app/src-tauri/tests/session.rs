@@ -114,6 +114,7 @@ fn settings_persist_and_drive_system_locks() {
             auto_lock_minutes: 0,
             lock_on_sleep: true,
             lock_on_screen_lock: true,
+            ..Default::default()
         })
         .unwrap();
     assert_eq!(saved.auto_lock_minutes, 1, "clamped to at least one minute");

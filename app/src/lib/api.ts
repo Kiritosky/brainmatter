@@ -169,6 +169,8 @@ export interface Settings {
   lock_on_sleep: boolean;
   lock_on_screen_lock: boolean;
   auto_backup: boolean;
+  theme: 'system' | 'light' | 'dark';
+  quick_capture: boolean;
 }
 
 export interface BackupInfo {
@@ -266,6 +268,11 @@ export type DomainEvent =
   | { type: 'change_set_committed'; id: Id; actor: Id; summary: string }
   | { type: 'index_updated'; indexed: number; total: number };
 
+/** When something was created: UUIDv7 ids start with the time in ms. */
+export function createdAt(id: Id): number {
+  return parseInt(id.slice(0, 8) + id.slice(9, 13), 16);
+}
+
 export function isApiError(e: unknown): e is ApiError {
   return typeof e === 'object' && e !== null && 'code' in e && 'message' in e;
 }
@@ -291,6 +298,9 @@ export const api = {
   getSettings: () => call<Settings>('get_settings'),
   updateSettings: (settings: Settings) => call<Settings>('update_settings', { settings }),
   touch: () => call<void>('touch'),
+
+  hideCapture: () => call<void>('hide_capture'),
+  showMainWindow: () => call<void>('show_main_window'),
 
   // backups
   backupStatus: () => call<BackupStatus>('backup_status'),
@@ -371,6 +381,10 @@ export function onSession(cb: (s: Status) => void): Promise<UnlistenFn> {
 
 export function onModel(cb: (m: ModelStatus) => void): Promise<UnlistenFn> {
   return listen<ModelStatus>('bm:model', (e) => cb(e.payload));
+}
+
+export function onCaptureOpen(cb: () => void): Promise<UnlistenFn> {
+  return listen('bm:capture-open', () => cb());
 }
 
 export function onResync(cb: () => void): Promise<UnlistenFn> {

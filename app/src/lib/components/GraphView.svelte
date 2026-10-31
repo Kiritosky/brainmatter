@@ -5,17 +5,21 @@
   import forceAtlas2 from 'graphology-layout-forceatlas2';
   import FA2Layout from 'graphology-layout-forceatlas2/worker';
   import { Maximize, Minus, Plus } from '@lucide/svelte';
-  import { api, type GraphNode, type GraphSnapshot, type Id } from '#lib/api.ts';
+  import { api, createdAt, type GraphNode, type GraphSnapshot, type Id } from '#lib/api.ts';
+  import { theme } from '#lib/theme.svelte.ts';
 
   let {
     snapshot,
     selected,
     focusTick,
     suggested,
+    until,
     colorFor,
     onselect,
     onopen,
   }: {
+    /** Time slider: show only what existed at this time (ms). */
+    until: number | null;
     snapshot: GraphSnapshot | null;
     selected: Id | null;
     focusTick: number;
@@ -35,17 +39,23 @@
   let resizeObserver: ResizeObserver | undefined;
   const graph = new Graph({ type: 'directed', multi: true });
 
-  // WebGL needs concrete colours: read them from the theme once.
+  // WebGL needs concrete colours, so they are read from the theme.
   const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const DIM_NODE = css('--color-line');
-  const DIM_LABEL = css('--color-faint');
-  const LABEL = css('--color-text');
-  const EDGE = css('--color-line');
-  const EDGE_DIM = css('--color-line-soft');
-  const EDGE_ACTIVE = css('--color-muted');
-
-  const EDGE_GHOST = css('--color-accent');
+  const readColors = () => ({
+    dimNode: css('--color-line'),
+    dimLabel: css('--color-faint'),
+    label: css('--color-text'),
+    labelAi: css('--color-ai'),
+    edge: css('--color-line'),
+    edgeDim: css('--color-line-soft'),
+    edgeActive: css('--color-muted'),
+    edgeGhost: css('--color-accent'),
+  });
+  let colors = readColors();
   const GHOST = 'ghost:';
+  // Read by the styles below; a plain variable, so a drag on the slider costs
+  // one refresh and not a reactive update per node.
+  let visibleUntil = Infinity;
 
   /** `rank * count` is 1 for an average entry, whatever the size of the view. */
   const sizeFor = (rank: number, count: number) => Math.min(18, Math.max(3.5, 2 + Math.sqrt(rank * count) * 3.6));
@@ -89,6 +99,7 @@
         label: n.title,
         size: sizeFor(n.rank, snap.nodes.length),
         color: colorFor(n),
+        born: createdAt(n.id),
         reviewed: n.reviewed,
         fixed: n.pinned,
       };
@@ -107,7 +118,7 @@
     });
     for (const e of snap.edges) {
       if (!graph.hasEdge(e.id) && graph.hasNode(e.src) && graph.hasNode(e.dst)) {
-        graph.addEdgeWithKey(e.id, e.src, e.dst, { relation: e.relation, origin: e.origin });
+        graph.addEdgeWithKey(e.id, e.src, e.dst, { relation: e.relation, origin: e.origin, born: createdAt(e.id) });
       }
     }
 
@@ -213,9 +224,10 @@
         nodes: [
           DEFAULT_STYLES.nodes,
           {
-            color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? DIM_NODE : (a.color as string)),
+            visibility: (a) => ((a.born as number) > visibleUntil ? 'hidden' : 'visible'),
+            color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? colors.dimNode : (a.color as string)),
             labelColor: (a, s, gs) =>
-              gs.hasHighlighted && !s.isHighlighted ? DIM_LABEL : a.reviewed === false ? '#d3b0ff' : LABEL,
+              gs.hasHighlighted && !s.isHighlighted ? colors.dimLabel : a.reviewed === false ? colors.labelAi : colors.label,
             labelFont: '-apple-system, BlinkMacSystemFont, sans-serif',
             labelSize: 12,
             labelVisibility: (_a, s) => (s.isHighlighted || s.isHovered ? 'visible' : 'auto'),
@@ -224,7 +236,8 @@
         edges: [
           DEFAULT_STYLES.edges,
           {
-            color: (a, s, gs) => (a.ghost ? EDGE_GHOST : s.isHighlighted ? EDGE_ACTIVE : gs.hasHighlighted ? EDGE_DIM : EDGE),
+            visibility: (a) => ((a.born as number) > visibleUntil ? 'hidden' : 'visible'),
+            color: (a, s, gs) => (a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : gs.hasHighlighted ? colors.edgeDim : colors.edge),
             size: (a, s) => (a.ghost ? 1 : s.isHighlighted ? 1.5 : 0.6),
           },
         ],
@@ -275,6 +288,17 @@
     void selected;
     void suggested;
     syncGhosts();
+  });
+
+  $effect(() => {
+    visibleUntil = until ?? Infinity;
+    renderer?.refresh();
+  });
+
+  $effect(() => {
+    void theme.tick;
+    colors = readColors();
+    renderer?.refresh();
   });
 
   $effect(() => {

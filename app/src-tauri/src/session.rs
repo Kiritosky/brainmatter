@@ -62,6 +62,8 @@ pub struct Settings {
     pub lock_on_sleep: bool,
     pub lock_on_screen_lock: bool,
     pub auto_backup: bool,
+    pub theme: Theme,
+    pub quick_capture: bool,
 }
 
 impl Default for Settings {
@@ -71,8 +73,18 @@ impl Default for Settings {
             lock_on_sleep: true,
             lock_on_screen_lock: false,
             auto_backup: true,
+            theme: Theme::System,
+            quick_capture: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Theme {
+    System,
+    Light,
+    Dark,
 }
 
 impl Settings {

@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /* ------------------------------------------------------------ tokens --- */
-/* Dark is the default; light follows the system setting. */
+/* Dark is the default; light follows the system setting or the user's choice. */
 @theme static {
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
   --font-mono: 'SF Mono', ui-monospace, Menlo, monospace;
@@ -26,17 +26,41 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme='dark']) {
     --color-bg: #f5f6f9;
     --color-panel: #ffffff;
-    --color-elevated: #f7f8fb;
-    --color-raised: #eef0f5;
-    --color-line: #e2e5ec;
-    --color-line-soft: #eceef3;
+    --color-elevated: #f2f4f8;
+    --color-raised: #e9ecf2;
+    --color-line: #dde1e9;
+    --color-line-soft: #e8ebf0;
     --color-text: #191e2a;
     --color-muted: #5b6477;
-    --color-faint: #9aa2b2;
+    --color-faint: #8a93a5;
+    --color-accent: #4f70f0;
+    --color-accent-strong: #3d5fe6;
+    --color-ok: #17935f;
+    --color-warn: #b37a00;
+    --color-danger: #d93d3d;
+    --color-ai: #8a4fe0;
   }
+}
+
+:root[data-theme='light'] {
+  --color-bg: #f5f6f9;
+  --color-panel: #ffffff;
+  --color-elevated: #f2f4f8;
+  --color-raised: #e9ecf2;
+  --color-line: #dde1e9;
+  --color-line-soft: #e8ebf0;
+  --color-text: #191e2a;
+  --color-muted: #5b6477;
+  --color-faint: #8a93a5;
+  --color-accent: #4f70f0;
+  --color-accent-strong: #3d5fe6;
+  --color-ok: #17935f;
+  --color-warn: #b37a00;
+  --color-danger: #d93d3d;
+  --color-ai: #8a4fe0;
 }
 
 /* ------------------------------------------------------------- base --- */

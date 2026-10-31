@@ -189,7 +189,37 @@ try {
   await page.waitForTimeout(250);
   await shot(page, '10b-activity-ai');
 
+  // Time slider: halfway through, some entries are not there yet.
+  await page.getByRole('button', { name: 'Zeitregler' }).click();
+  const slider = page.getByRole('slider', { name: 'Zeitpunkt' });
+  await slider.waitFor();
+  const box = (await slider.boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height / 2);
+  await page.waitForTimeout(500);
+  await shot(page, '32-time-slider');
+  const count = await page.getByText(/von \d+ Einträgen/).innerText();
+  if (!/^[1-9]\d* von /.test(count) || /^(\d+) von \1 /.test(count)) errors.push(`time slider count looks wrong: ${count}`);
+  await page.getByRole('button', { name: 'Abspielen' }).click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'Anhalten' }).click();
+  await page.getByRole('button', { name: 'Zeitregler schließen' }).click();
+
   await page.keyboard.press('Meta+,');
+  await page.getByRole('heading', { name: 'Allgemein' }).waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '33-settings-general');
+  await page.getByRole('radio', { name: 'Hell' }).click();
+  await page.waitForTimeout(500);
+  await shot(page, '34-light-settings');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
+  await shot(page, '35-light-graph');
+  await openEntry('Brainmatter');
+  await page.waitForTimeout(600);
+  await shot(page, '36-light-inspector');
+  await page.keyboard.press('Meta+,');
+  await page.getByRole('radio', { name: 'Dunkel' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Sperren' }).click();
   await page.getByText('Automatisch sperren', { exact: true }).waitFor();
   await page.waitForTimeout(300);
   await shot(page, '11-settings');
@@ -294,6 +324,35 @@ try {
   await shot(page, 'zz-failure');
   errors.push(`step failed: ${(e as Error).message.split('\n')[0]}`);
   errors.push(`visible text: ${(await page.locator('body').innerText()).slice(0, 600).replace(/\n+/g, ' | ')}`);
+}
+
+// Quick capture: asks to unlock first, then saves and confirms.
+{
+  const capture = await open('/?window=capture&touchid=ok');
+  try {
+    await capture.setViewportSize({ width: 620, height: 168 });
+    await capture.getByText('Brainmatter ist gesperrt').waitFor();
+    await capture.waitForTimeout(250);
+    await shot(capture, '37-capture-locked');
+    await capture.getByRole('button', { name: 'Touch ID' }).click();
+    const field = capture.getByLabel('Neuer Eintrag');
+    await field.waitFor();
+    await field.fill('Idee für den Zeitregler\nAuch Verbindungen zeigen');
+    await capture.waitForTimeout(150);
+    await shot(capture, '38-capture');
+    await field.press('Enter');
+    await capture.getByText('Festgehalten').waitFor();
+    await shot(capture, '39-capture-saved');
+    const saved = await capture.evaluate(async () => {
+      const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+      const hits: any[] = await invoke('search', { query: { text: 'Idee für den Zeitregler', kinds: [], tags: [], limit: 5, include_subprojects: true } });
+      return (await invoke('node_detail', { id: hits[0].node.id })).node;
+    });
+    if (saved.title !== 'Idee für den Zeitregler' || saved.body !== 'Auch Verbindungen zeigen') errors.push(`capture saved wrongly: ${JSON.stringify(saved)}`);
+  } catch (e) {
+    await shot(capture, 'zz-capture-failure');
+    errors.push(`capture failed: ${(e as Error).message.split('\n')[0]}`);
+  }
 }
 
 await browser.close();

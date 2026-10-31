@@ -24,7 +24,15 @@ type Args = Record<string, any>;
 
 const USER = 'actor-user';
 let seq = 0;
-const id = () => `00000000-0000-7000-8000-${(++seq).toString(16).padStart(12, '0')}`;
+// Like the real ids, these start with the time. The demo data is spread over
+// the past weeks so that the time slider has something to show.
+const SEED_START = Date.now() - 40 * 86_400_000;
+let seeding = true;
+const id = () => {
+  seq++;
+  const hex = Math.floor(seeding ? SEED_START + seq * 86_400_000 : Date.now()).toString(16).padStart(12, '0');
+  return `${hex.slice(0, 8)}-${hex.slice(8)}-7000-8000-${seq.toString(16).padStart(12, '0')}`;
+};
 const now = () => Date.now();
 
 const nodes = new Map<string, Node>();
@@ -39,7 +47,7 @@ const clients: AiClient[] = [];
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
 let userName = 'Lasse';
-let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true };
+let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true };
 const DAY = 86_400_000;
 const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
@@ -427,6 +435,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  hide_capture: () => undefined,
+  show_main_window: () => undefined,
   backup_status: () => ({ running: false, error: null, backups }),
   backup_now: () => {
     const b = { name: `backup-${now()}.db`, at: now(), size: 2_450_000 };
@@ -551,6 +561,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
 
 export function install() {
   if (state === 'locked') seed();
+  seeding = false;
   mockIPC(
     (cmd, payload) => {
       const handler = handlers[cmd];

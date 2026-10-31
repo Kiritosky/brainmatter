@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { ChevronRight, Sparkles } from '@lucide/svelte';
-  import { api, type Status } from '#lib/api.ts';
+  import { ChevronRight, Clock, Sparkles } from '@lucide/svelte';
+  import { api, createdAt, type Status } from '#lib/api.ts';
   import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
   import Sidebar from './Sidebar.svelte';
@@ -11,6 +11,7 @@
   import ActivityPanel from './ActivityPanel.svelte';
   import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
+  import TimeSlider from './TimeSlider.svelte';
   import { pop, slideIn } from '#lib/ui/motion.ts';
 
   let { status }: { status: Status } = $props();
@@ -22,6 +23,14 @@
   ];
 
   const suggested = $derived(ws.suggestions.map((s) => s.node.id));
+
+  /** The time slider's position; null while it is closed. */
+  let until = $state<number | null>(null);
+
+  function openTimeSlider() {
+    const nodes = ws.graph?.nodes ?? [];
+    until = Math.max(...nodes.map((n) => createdAt(n.id)));
+  }
 
   let lastTouch = 0;
   function activity() {
@@ -86,14 +95,27 @@
         selected={ws.selected}
         focusTick={ws.focusTick}
         {suggested}
+        {until}
         colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />
 
       {#if ws.graph && ws.graph.nodes.length > 0}
-        <div class="absolute bottom-4 left-4 z-10 w-56">
-          <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
+        <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2">
+          <div class="w-56">
+            <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
+          </div>
+          {#if until === null}
+            <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs text-muted transition-colors hover:text-text" title="Das Wachstum des Graphen ansehen" onclick={openTimeSlider}>
+              <Clock size={13} /> Zeitregler
+            </button>
+          {/if}
         </div>
+        {#if until !== null}
+          <div class="absolute right-34 bottom-4 left-64 z-10">
+            <TimeSlider nodes={ws.graph.nodes} bind:until onclose={() => (until = null)} />
+          </div>
+        {/if}
       {/if}
 
       {#if ws.graph && ws.graph.nodes.length === 0}

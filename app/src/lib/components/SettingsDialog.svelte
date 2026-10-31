@@ -1,17 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Sparkles } from '@lucide/svelte';
+  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Palette, Sparkles } from '@lucide/svelte';
   import { api, errorMessage, type Settings, type Status } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
+  import { theme } from '#lib/theme.svelte.ts';
+  import Segmented from '#lib/ui/Segmented.svelte';
   import Select from '#lib/ui/Select.svelte';
   import { fadeQuick, pop } from '#lib/ui/motion.ts';
   import AiConnections from './AiConnections.svelte';
   import BackupSettings from './BackupSettings.svelte';
   import ModelSettings from './ModelSettings.svelte';
 
-  type Tab = 'security' | 'password' | 'backups' | 'search' | 'ai';
-  let tab = $state<Tab>('security');
+  type Tab = 'general' | 'security' | 'password' | 'backups' | 'search' | 'ai';
+  let tab = $state<Tab>('general');
   let status = $state<Status | null>(null);
   let settings = $state<Settings | null>(null);
   let message = $state<{ text: string; ok: boolean } | null>(null);
@@ -24,12 +26,19 @@
   let newRecovery = $state('');
   let copied = $state(false);
 
+  const THEMES: { value: Settings['theme']; label: string }[] = [
+    { value: 'system', label: 'System' },
+    { value: 'light', label: 'Hell' },
+    { value: 'dark', label: 'Dunkel' },
+  ];
+
   const AUTO_LOCK = [5, 15, 30, 60, 120, 240, 480].map((m) => ({
     value: m,
     label: m < 60 ? `${m} Minuten` : m === 60 ? '1 Stunde' : `${m / 60} Stunden`,
   }));
 
   const tabs: { id: Tab; label: string; icon: typeof Lock }[] = [
+    { id: 'general', label: 'Allgemein', icon: Palette },
     { id: 'security', label: 'Sperren', icon: Lock },
     { id: 'password', label: 'Passwort & Schlüssel', icon: KeyRound },
     { id: 'backups', label: 'Backups', icon: Archive },
@@ -115,7 +124,28 @@
 
       <div class="flex-1 overflow-y-auto px-7 pb-7">
         {#if settings && status}
-          {#if tab === 'security'}
+          {#if tab === 'general'}
+            <h2 class="mb-5 text-lg font-semibold">Allgemein</h2>
+            <div class="card">
+              <div class="row">
+                <div class="flex-1">
+                  <div>Erscheinungsbild</div>
+                  <div class="text-xs text-faint">Gilt für alle Fenster</div>
+                </div>
+                <div class="w-64">
+                  <Segmented value={settings.theme} options={THEMES} label="Erscheinungsbild"
+                    onchange={(t) => (theme.apply(t), save({ theme: t }))} />
+                </div>
+              </div>
+              <div class="row">
+                <div class="flex-1">
+                  <div>Quick Capture</div>
+                  <div class="text-xs text-faint">Mit <kbd class="kbd">⌥⇧Space</kbd> von überall aus etwas festhalten</div>
+                </div>
+                <Toggle checked={settings.quick_capture} label="Quick Capture" onchange={(v) => save({ quick_capture: v })} />
+              </div>
+            </div>
+          {:else if tab === 'security'}
             <h2 class="mb-1 text-lg font-semibold">Sperren</h2>
             <p class="mb-5 text-muted">Gesperrt ist alles verschlüsselt, und auch KIs erhalten keinen Zugriff.</p>
             <div class="card">

@@ -93,8 +93,26 @@ pub fn get_settings(session: S<'_>) -> Settings {
 }
 
 #[tauri::command]
-pub fn update_settings(session: S<'_>, settings: Settings) -> ApiResult<Settings> {
-    session.update_settings(settings)
+pub fn update_settings(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    settings: Settings,
+) -> ApiResult<Settings> {
+    let settings = session.update_settings(settings)?;
+    crate::apply_settings(&app, &settings);
+    Ok(settings)
+}
+
+/// Closes the quick capture window and gives the focus back.
+#[tauri::command]
+pub fn hide_capture(app: tauri::AppHandle) {
+    crate::hide_capture(&app);
+}
+
+/// Called from quick capture when the vault needs more than Touch ID.
+#[tauri::command]
+pub fn show_main_window(app: tauri::AppHandle) {
+    crate::show_main(&app);
 }
 
 /// Called by the UI on user input so auto-lock measures real idleness.

@@ -6,18 +6,27 @@ pub mod error;
 pub mod integrations;
 pub mod session;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use bm_core::{Engine, semantic::Embedder, vault::KdfParams};
 use bm_mcp::{Client, ClientRegistry, Hub};
 use parking_lot::Mutex;
-use session::{Emit, Session};
+use session::{Emit, Session, Settings, Theme};
 use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, WindowEvent,
+    AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
 };
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+const CAPTURE_WINDOW: &str = "capture";
 
 /// Debug builds use a separate vault so development never touches real data.
 const VAULT_DIR: &str = if cfg!(debug_assertions) { "vault-dev" } else { "vault" };
@@ -45,10 +54,96 @@ impl Hub for SessionHub {
 }
 
 fn show_main(app: &AppHandle) {
+    let _ = app.show();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
+    }
+}
+
+fn capture_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::Space)
+}
+
+/// Where the focus goes when quick capture closes.
+#[derive(Default)]
+struct CaptureState {
+    /// Brainmatter had it. Otherwise it goes back to the previous app.
+    return_to_main: AtomicBool,
+}
+
+fn tauri_theme(settings: &Settings) -> Option<tauri::Theme> {
+    match settings.theme {
+        Theme::System => None,
+        Theme::Light => Some(tauri::Theme::Light),
+        Theme::Dark => Some(tauri::Theme::Dark),
+    }
+}
+
+fn toggle_capture(app: &AppHandle) {
+    let existing = app.get_webview_window(CAPTURE_WINDOW);
+    if existing.as_ref().is_some_and(|w| w.is_visible().unwrap_or(false)) {
+        hide_capture(app);
+        return;
+    }
+    let main_focused =
+        app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false));
+    app.state::<CaptureState>().return_to_main.store(main_focused, Ordering::Relaxed);
+    let _ = app.show();
+    if let Some(w) = existing {
+        let _ = w.center();
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = w.emit("bm:capture-open", ());
+        return;
+    }
+    // Built on first use: most sessions never need its web view in memory.
+    let theme = tauri_theme(&app.state::<Arc<Session>>().settings());
+    let built =
+        WebviewWindowBuilder::new(app, CAPTURE_WINDOW, WebviewUrl::App("index.html".into()))
+            .title("Quick Capture")
+            .inner_size(620.0, 168.0)
+            .center()
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .resizable(false)
+            .skip_taskbar(true)
+            .shadow(false)
+            .theme(theme)
+            .focused(true)
+            .build();
+    if let Err(e) = built {
+        tracing::error!("quick capture window failed: {e}");
+    }
+}
+
+fn hide_capture(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(CAPTURE_WINDOW) {
+        let _ = w.hide();
+    }
+    if !app.state::<CaptureState>().return_to_main.load(Ordering::Relaxed) {
+        let _ = app.hide();
+    }
+}
+
+/// Applies the settings that live outside the web view.
+fn apply_settings(app: &AppHandle, settings: &Settings) {
+    let theme = tauri_theme(settings);
+    for window in app.webview_windows().values() {
+        let _ = window.set_theme(theme);
+    }
+    let shortcuts = app.global_shortcut();
+    let shortcut = capture_shortcut();
+    let result = match (settings.quick_capture, shortcuts.is_registered(shortcut)) {
+        (true, false) => shortcuts.register(shortcut),
+        (false, true) => shortcuts.unregister(shortcut),
+        _ => Ok(()),
+    };
+    if let Err(e) = result {
+        // Most likely another app holds the same keys.
+        tracing::warn!("quick capture shortcut: {e}");
     }
 }
 
@@ -90,6 +185,15 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        toggle_capture(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let dir = app.path().app_data_dir()?.join(VAULT_DIR);
             tracing::info!("vault directory: {}", dir.display());
@@ -103,6 +207,8 @@ pub fn run() {
             app.manage(session.clone());
             app.manage(registry.clone());
             app.manage(mcp_status.clone());
+            app.manage(CaptureState::default());
+            apply_settings(app.handle(), &session.settings());
 
             let hub: Arc<dyn Hub> = Arc::new(SessionHub(session.clone()));
             tauri::async_runtime::spawn(async move {
@@ -167,6 +273,8 @@ pub fn run() {
             commands::dismiss_suggestion,
             commands::accept_suggestion,
             commands::merge_nodes,
+            commands::hide_capture,
+            commands::show_main_window,
             commands::backup_status,
             commands::backup_now,
             commands::restore_backup,
