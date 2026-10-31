@@ -35,6 +35,14 @@
     },
     "macOSPrivateApi": true
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBCM0MyQzNFRjE0MkYwOTcKUldTWDhFTHhQaXc4Qy9RR1FhZkdQSnJid3lwZnp4RU5QSkhNQnRzVXkyTFJqU2Q3ZSs3bFpFWTMK",
+      "endpoints": [
+        "https://github.com/Kiritosky/brainmatter/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": [

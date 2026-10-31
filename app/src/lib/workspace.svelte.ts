@@ -5,6 +5,8 @@ import {
   onDomainEvent,
   onModel,
   onResync,
+  onUpdateAvailable,
+  type AvailableUpdate,
   type DomainEvent,
   type GraphNode,
   type GraphSnapshot,
@@ -60,6 +62,8 @@ class Workspace {
   /** Link suggestions for the selected entry. */
   suggestions = $state.raw<Similar[]>([]);
   unreviewed = $state.raw<NodeBrief[]>([]);
+  /** A newer version, once a check has found one. */
+  update = $state<AvailableUpdate | null>(null);
 
   projectColor = $derived.by(() => {
     const map = new Map<Id, string>();
@@ -95,6 +99,7 @@ class Workspace {
   async start() {
     this.unlisten.push(await onDomainEvent((e) => this.onEvent(e)));
     this.unlisten.push(await onResync(() => this.scheduleRefresh()));
+    this.unlisten.push(await onUpdateAvailable((u) => (this.update = u)));
     this.unlisten.push(
       await onModel((m) => {
         this.model = m;
@@ -102,6 +107,9 @@ class Workspace {
       }),
     );
     await Promise.all([this.loadProjects(), this.loadGraph(), this.loadModel(), this.loadUnreviewed()]);
+    // Here and not at launch: until the vault is unlocked, nothing could show it.
+    const settings = await api.getSettings();
+    if (settings.auto_update) api.checkUpdate().then((u) => (this.update = u)).catch(() => {});
   }
 
   stop() {

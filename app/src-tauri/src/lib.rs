@@ -5,11 +5,12 @@ mod commands;
 pub mod error;
 pub mod integrations;
 pub mod session;
+mod updates;
 
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Duration,
 };
@@ -185,6 +186,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -224,13 +226,17 @@ pub fn run() {
                 observed.on_system_event(trigger)
             }));
 
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // The workspace checks once on unlock; this is for apps left running.
+                let last_update_check = AtomicI64::new(bm_core::time::now_ms());
                 let mut tick = tokio::time::interval(Duration::from_secs(20));
                 loop {
                     tick.tick().await;
                     session.maybe_auto_lock();
                     session.unload_idle_model();
                     session.maybe_backup();
+                    updates::maybe_check(&handle, &last_update_check);
                 }
             });
 
@@ -273,6 +279,9 @@ pub fn run() {
             commands::dismiss_suggestion,
             commands::accept_suggestion,
             commands::merge_nodes,
+            commands::app_version,
+            commands::check_update,
+            commands::install_update,
             commands::trash,
             commands::restore_node,
             commands::purge_node,

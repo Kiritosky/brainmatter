@@ -18,6 +18,7 @@ use crate::{
     error::{ApiError, ApiResult},
     integrations::{self as setup, Integrations, Target},
     session::{BackupStatus, ModelStatus, Session, Settings, Status},
+    updates::AvailableUpdate,
 };
 
 type S<'a> = State<'a, Arc<Session>>;
@@ -101,6 +102,21 @@ pub fn update_settings(
     let settings = session.update_settings(settings)?;
     crate::apply_settings(&app, &settings);
     Ok(settings)
+}
+
+#[tauri::command]
+pub fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
+pub async fn check_update(app: tauri::AppHandle) -> ApiResult<Option<AvailableUpdate>> {
+    crate::updates::check(&app).await
+}
+
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> ApiResult<()> {
+    crate::updates::install(&app).await
 }
 
 /// Closes the quick capture window and gives the focus back.

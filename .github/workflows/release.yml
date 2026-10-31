@@ -1,0 +1,89 @@
+# Pushing a tag like v0.2.0 tests everything on macOS, then publishes the DMG and
+# the signed update that running apps install through latest.json.
+#
+# Needs the secret TAURI_SIGNING_PRIVATE_KEY, the key that signs updates. Losing
+# it means existing installations can no longer update.
+#
+# Apps are signed ad hoc: without an Apple Developer account a real identity would
+# not get past Gatekeeper either, and the updater's signature is what protects
+# updates. There is no notarization, see README.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      TARGET: aarch64-apple-darwin
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: Swatinem/rust-cache@v2
+
+      - name: The tag must match the version in the code
+        run: |
+          code="$(jq -r .version app/src-tauri/tauri.conf.json)"
+          if [ "v$code" != "$VERSION" ]; then
+            echo "Tag $VERSION does not match version $code in tauri.conf.json" >&2
+            exit 1
+          fi
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: bun install --frozen-lockfile
+
+      - name: Check the frontend
+        working-directory: app
+        run: bun run check
+
+      - name: Build the stdio bridge
+        run: |
+          cargo build --release -p bm-cli
+          mkdir -p app/src-tauri/binaries
+          cp target/release/brainmatter-mcp "app/src-tauri/binaries/brainmatter-mcp-$TARGET"
+
+      - name: Run all tests
+        run: cargo test --workspace
+
+      - name: Build and sign
+        working-directory: app
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          bun run tauri build --bundles app,dmg \
+            --config src-tauri/tauri.bundle.conf.json \
+            --config '{"bundle":{"createUpdaterArtifacts":true}}'
+
+      - name: Describe the update for running apps
+        run: |
+          bundle=target/release/bundle
+          code="${VERSION#v}"
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/Brainmatter.app.tar.gz"
+          jq -n \
+            --arg version "$code" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(cat "$bundle/macos/Brainmatter.app.tar.gz.sig")" \
+            --arg url "$url" \
+            '{version: $version, pub_date: $pub_date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
+            > latest.json
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bundle=target/release/bundle
+          gh release create "$VERSION" --generate-notes --verify-tag \
+            "$bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
+            "$bundle/macos/Brainmatter.app.tar.gz" \
+            "$bundle/macos/Brainmatter.app.tar.gz.sig" \
+            latest.json

@@ -17,6 +17,7 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-ap
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 serde.workspace = true
 # preserve_order: edited config files of other tools keep their key order.
 serde_json = { workspace = true, features = ["preserve_order"] }

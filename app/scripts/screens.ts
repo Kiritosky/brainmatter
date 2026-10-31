@@ -262,6 +262,9 @@ try {
   await page.keyboard.press('Meta+,');
   await page.getByRole('heading', { name: 'Allgemein' }).waitFor();
   await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Jetzt suchen' }).click();
+  await page.getByText('Version 0.3.0 ist verfügbar').waitFor();
+  await page.waitForTimeout(250);
   await shot(page, '33-settings-general');
   await page.getByRole('radio', { name: 'Hell' }).click();
   await page.waitForTimeout(500);

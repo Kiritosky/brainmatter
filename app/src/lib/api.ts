@@ -176,6 +176,12 @@ export interface Settings {
   auto_backup: boolean;
   theme: 'system' | 'light' | 'dark';
   quick_capture: boolean;
+  auto_update: boolean;
+}
+
+export interface AvailableUpdate {
+  version: string;
+  notes: string | null;
 }
 
 export interface BackupInfo {
@@ -304,6 +310,9 @@ export const api = {
   updateSettings: (settings: Settings) => call<Settings>('update_settings', { settings }),
   touch: () => call<void>('touch'),
 
+  appVersion: () => call<string>('app_version'),
+  checkUpdate: () => call<AvailableUpdate | null>('check_update'),
+  installUpdate: () => call<void>('install_update'),
   hideCapture: () => call<void>('hide_capture'),
   showMainWindow: () => call<void>('show_main_window'),
 
@@ -389,6 +398,14 @@ export function onSession(cb: (s: Status) => void): Promise<UnlistenFn> {
 
 export function onModel(cb: (m: ModelStatus) => void): Promise<UnlistenFn> {
   return listen<ModelStatus>('bm:model', (e) => cb(e.payload));
+}
+
+export function onUpdateAvailable(cb: (u: AvailableUpdate) => void): Promise<UnlistenFn> {
+  return listen<AvailableUpdate>('bm:update-available', (e) => cb(e.payload));
+}
+
+export function onUpdateProgress(cb: (p: { downloaded: number; total: number | null }) => void): Promise<UnlistenFn> {
+  return listen<{ downloaded: number; total: number | null }>('bm:update-progress', (e) => cb(e.payload));
 }
 
 export function onCaptureOpen(cb: () => void): Promise<UnlistenFn> {

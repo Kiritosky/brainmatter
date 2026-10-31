@@ -64,6 +64,7 @@ pub struct Settings {
     pub auto_backup: bool,
     pub theme: Theme,
     pub quick_capture: bool,
+    pub auto_update: bool,
 }
 
 impl Default for Settings {
@@ -75,6 +76,7 @@ impl Default for Settings {
             auto_backup: true,
             theme: Theme::System,
             quick_capture: true,
+            auto_update: true,
         }
     }
 }
@@ -538,8 +540,8 @@ impl Session {
         }
     }
 
-    /// Downloads in the background and reports through `bm:model`. Only the
-    /// user starts this: it is the app's only outgoing connection.
+    /// Downloads in the background and reports through `bm:model`. Only the user
+    /// starts this. Besides update checks, it is the only outgoing connection.
     pub fn download_model(self: &Arc<Self>) {
         {
             let mut download = self.download.lock();

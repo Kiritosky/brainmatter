@@ -78,6 +78,6 @@
 
   <div class="mt-4 flex gap-2.5 px-1 text-xs leading-relaxed text-muted">
     <ShieldCheck size={15} class="mt-px shrink-0 text-ok" />
-    <p>Das Modell läuft auf deinem Mac. Der Download ist die einzige Verbindung ins Netz, und deine Einträge verlassen den Mac dabei nie. Die daraus berechneten Daten liegen verschlüsselt im Tresor.</p>
+    <p>Das Modell läuft auf deinem Mac und wird nur dieses eine Mal aus dem Netz geladen. Deine Einträge verlassen den Mac dabei nie. Die daraus berechneten Daten liegen verschlüsselt im Tresor.</p>
   </div>
 {/if}

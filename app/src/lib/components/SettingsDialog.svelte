@@ -11,6 +11,7 @@
   import AiConnections from './AiConnections.svelte';
   import BackupSettings from './BackupSettings.svelte';
   import ModelSettings from './ModelSettings.svelte';
+  import UpdateSettings from './UpdateSettings.svelte';
 
   type Tab = 'general' | 'security' | 'password' | 'backups' | 'search' | 'ai';
   let tab = $state<Tab>('general');
@@ -145,6 +146,7 @@
                 <Toggle checked={settings.quick_capture} label="Quick Capture" onchange={(v) => save({ quick_capture: v })} />
               </div>
             </div>
+            <UpdateSettings {settings} onsave={save} />
           {:else if tab === 'security'}
             <h2 class="mb-1 text-lg font-semibold">Sperren</h2>
             <p class="mb-5 text-muted">Gesperrt ist alles verschlüsselt, und auch KIs erhalten keinen Zugriff.</p>

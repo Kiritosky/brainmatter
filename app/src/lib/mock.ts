@@ -46,11 +46,12 @@ const clients: AiClient[] = [];
 
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
-let userName = 'Lasse';
-let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true };
+let userName = 'Alex';
+let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true, auto_update: true };
 const DAY = 86_400_000;
 const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
+let updateChecks = 0;
 const MODEL_BYTES = 487_724_985;
 let modelState: ModelStatus['state'] = 'missing';
 let modelBytes = 0;
@@ -456,6 +457,10 @@ const handlers: Record<string, (a: Args) => unknown> = {
     nodes.delete(n.id);
     notify({ type: 'node_deleted', id: n.id });
   },
+  app_version: () => '0.2.0',
+  // Only when asked, so screenshots do not all show an update.
+  check_update: () => (updateChecks++ > 0 ? { version: '0.3.0', notes: null } : null),
+  install_update: () => undefined,
   hide_capture: () => undefined,
   show_main_window: () => undefined,
   backup_status: () => ({ running: false, error: null, backups }),
