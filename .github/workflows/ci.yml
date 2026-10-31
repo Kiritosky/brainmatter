@@ -1,0 +1,42 @@
+# Runs on every push. Deliberately on Linux: macOS minutes are expensive, and the
+# core, the MCP server and the frontend are platform independent. The macOS-only
+# parts are built and tested by the release workflow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: SQLCipher needs OpenSSL on Linux
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Install the pinned toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add clippy rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p bm-core -p bm-mcp --all-targets -- -D warnings
+      - run: cargo test -p bm-core -p bm-mcp
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check

@@ -612,3 +612,27 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 - Die Schwellen beruhen auf 30 Paaren und 10 Anfragen. Mit echten Daten nachmessen.
 - Der Download lässt sich nicht abbrechen (`hf-hub` bietet das nicht an).
 - Der Speicherbedarf des Indexers bei 50k Einträgen ist nicht gemessen, ebenso die Dauer der Erstindizierung.
+
+## 18. Stand Phase 5: Feinschliff (2026-10-31)
+
+**Fertig**:
+- **Anhänge**: XChaCha20-Poly1305 mit eigenem Schlüssel aus dem Tresor, Dateiname ist ein keyed BLAKE3 (dedupliziert, verrät nichts). Zeilen sind versioniert, Hinzufügen, Entfernen und `merge` lassen sich rückgängig machen. Drag & Drop, Dateiauswahl, eingefügte Bilder; Vorschau für Bilder, PDF und Text. Höchstens 200 MB, weil am Stück im Speicher verschlüsselt wird. MCP liest Textanhänge innerhalb des Projekt-Scopes.
+- **Backups**: täglich per `VACUUM INTO`, nur bei Änderungen, vor dem endgültigen Namen geprüft (`quick_check`). Bleiben: 7 Tage und 4 Wochen. Wiederherstellen verlangt das Passwort, sichert vorher den aktuellen Stand und tauscht nichts, solange ein Befehl die Datenbank hält. Anhangsdateien werden nicht kopiert: Sie sind schon verschlüsselt und werden nie gelöscht.
+- **Quick Capture** (⌥⇧Space), **Hell/Dunkel/System**, **Zeitregler**. Der Zeitregler liest die Zeit aus den UUIDv7-IDs, der Snapshot wächst dadurch nicht.
+- **Paket**: `scripts/build-release.sh` baut die signierte `.app` (22 MB) mit Bridge und das DMG (9,4 MB). Die Bridge steht in `tauri.bundle.conf.json`, weil `tauri-build` sonst schon bei `cargo test` nach ihr verlangt.
+- **CI**: Kern, MCP und Frontend bei jedem Push auf Linux.
+
+**Geprüft**: Tests prüfen an den Rohbytes, dass Anhänge und Backups verschlüsselt sind, dazu Manipulation, fremde Schlüssel und feindliche Dateinamen. Der Release-Build startet, sein MCP-Port lauscht.
+
+**In dieser Phase gefundene Fehler**:
+- Wiederherstellen löschte beim Aufräumen das Backup vom selben Tag, bevor es kopiert war.
+- Eine Vorschau, die während des Ausblendens der vorigen geöffnet wurde, blieb leer.
+- Esc in der Vorschau hätte auch den Eintrag geschlossen.
+- Das Quick-Capture-Fenster hatte keine Tauri-Rechte für Events (im Mock unsichtbar).
+
+**Offen**:
+- Nur im Mock oder ohne Oberfläche geprüft: Anhänge (Upload, PDF, Sichern-Dialog), Backups, Quick Capture samt Fokus-Rückgabe, Theme mit Vibrancy.
+- Der Speicher gelöschter Anhänge wird nie frei; das kommt mit dem Papierkorb.
+- Quick Capture speichert ohne Projekt. Liegt die Tastenkombination schon bei einer anderen App, steht das nur im Log.
+- Retina-Messung des Graphen, Kaltstart, Erstindizierung bei 50k.
+- Auto-Update und Release-Pipeline: warten auf die Entscheidung, wo die Releases liegen (das Repo ist privat).
