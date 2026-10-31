@@ -59,6 +59,9 @@ async fn start_with(embedder: Option<Arc<dyn Embedder>>) -> Server {
 }
 
 async fn connect(url: &str, token: &str) -> RunningService<RoleClient, ClientConfig> {
+    // In `cargo test --workspace`, the updater's reqwest features apply here too,
+    // and they expect someone to choose a TLS provider, even for plain HTTP.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let transport = StreamableHttpClientTransport::from_config(
         StreamableHttpClientTransportConfig::with_uri(url).auth_header(token),
     );
