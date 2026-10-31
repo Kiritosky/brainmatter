@@ -635,4 +635,4 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 - Der Speicher gelöschter Anhänge wird nie frei; das kommt mit dem Papierkorb.
 - Quick Capture speichert ohne Projekt. Liegt die Tastenkombination schon bei einer anderen App, steht das nur im Log.
 - Retina-Messung des Graphen, Kaltstart, Erstindizierung bei 50k.
-- Auto-Update und Release-Pipeline: warten auf die Entscheidung, wo die Releases liegen (das Repo ist privat).
+- Auto-Update und Release-Pipeline sind gebaut, aber noch nie gelaufen: Der Updater kann Releases erst lesen, wenn das Repo öffentlich ist, und `release.yml` läuft erst beim ersten Tag. Beides zusammen beim ersten Release prüfen, inklusive eines echten Updates von einer Version auf die nächste. Der Update-Schlüssel liegt in `~/.tauri/brainmatter-updater.key` und muss als Secret `TAURI_SIGNING_PRIVATE_KEY` im Repo stehen.
