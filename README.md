@@ -146,4 +146,4 @@ The core has no UI or network dependencies. [PLAN.md](PLAN.md) (in German) has t
 
 ## License
 
-See [LICENSE](LICENSE).
+[MIT](LICENSE)
