@@ -9,6 +9,7 @@ import type {
   DomainEvent,
   Edge,
   GraphSnapshot,
+  ModelStatus,
   Node,
   NodeDetail,
   Project,
@@ -38,6 +39,67 @@ let state: Status['state'] = new URLSearchParams(location.search).get('mock') ==
 let touchId = state === 'locked';
 let userName = 'Lasse';
 let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false };
+
+const MODEL_BYTES = 487_724_985;
+let modelState: ModelStatus['state'] = 'missing';
+let modelBytes = 0;
+const dismissed = new Set<string>();
+/** Stands in for the model: pairs of titles with a made-up similarity. */
+const SIMILAR: [string, string, number][] = [
+  ['Sauerteig', 'Sauerteig ansetzen', 0.95],
+  ['Touch ID', 'SQLCipher', 0.9],
+  ['Brainmatter', 'Hybrid-Suche', 0.89],
+  ['Graph-Layout', 'Command-Palette', 0.88],
+];
+
+const liveCount = () => [...nodes.values()].filter((n) => !n.deleted_at).length;
+const modelStatus = (): ModelStatus => ({
+  state: modelState,
+  downloaded: modelBytes,
+  size: MODEL_BYTES,
+  error: null,
+  indexed: modelState === 'ready' ? liveCount() : 0,
+  total: liveCount(),
+});
+
+function downloadModel() {
+  modelState = 'downloading';
+  modelBytes = 0;
+  emit('bm:model', modelStatus());
+  const tick = setInterval(() => {
+    modelBytes = Math.min(MODEL_BYTES, modelBytes + MODEL_BYTES / 12);
+    if (modelBytes >= MODEL_BYTES) {
+      clearInterval(tick);
+      modelState = 'ready';
+    }
+    emit('bm:model', modelStatus());
+  }, 120);
+}
+
+function linkSuggestions(nid: string) {
+  const title = live(nid).title;
+  const linked = (a: string, b: string) => [...edges.values()].some((e) => !e.deleted_at && ((e.src === a && e.dst === b) || (e.src === b && e.dst === a)));
+  return SIMILAR.flatMap(([a, b, score]) => {
+    const other = a === title ? b : b === title ? a : null;
+    const n = [...nodes.values()].find((x) => !x.deleted_at && x.title === other);
+    if (!n || linked(nid, n.id) || dismissed.has(`${nid}|${n.id}`) || dismissed.has(`${n.id}|${nid}`)) return [];
+    return [{ node: { id: n.id, title: n.title, kind: n.kind }, score, likely_duplicate: score >= 0.925 }];
+  });
+}
+
+/** Stands in for PageRank and Louvain: connected groups, largest first. */
+function analytics(ids: string[], links: [string, string][]) {
+  const root = new Map(ids.map((x) => [x, x]));
+  const find = (x: string): string => (root.get(x) === x ? x : find(root.get(x)!));
+  links.forEach(([a, b]) => root.set(find(a), find(b)));
+  const groups = new Map<string, number>();
+  ids.forEach((x) => groups.set(find(x), (groups.get(find(x)) ?? 0) + 1));
+  const order = [...groups.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
+  const degree = new Map<string, number>();
+  links.forEach((l) => l.forEach((x) => degree.set(x, (degree.get(x) ?? 0) + 1)));
+  const total = ids.reduce((sum, x) => sum + (degree.get(x) ?? 0) + 1, 0);
+  return (x: string) => ({ rank: ((degree.get(x) ?? 0) + 1) / total, cluster: order.indexOf(find(x)) });
+}
 
 const status = (): Status => ({
   state,
@@ -168,13 +230,14 @@ function graph(project: string | null): GraphSnapshot {
   const es = [...edges.values()].filter((e) => !e.deleted_at && ids.has(e.src) && ids.has(e.dst));
   const degree = new Map<string, number>();
   es.forEach((e) => [e.src, e.dst].forEach((x) => degree.set(x, (degree.get(x) ?? 0) + 1)));
+  const measure = analytics(ns.map((n) => n.id), es.map((e) => [e.src, e.dst]));
   return {
     view,
     nodes: ns.map((n) => {
       const l = layouts.get(`${view}|${n.id}`);
       return {
         id: n.id, title: n.title, kind: n.kind, reviewed: n.reviewed, updated_at: n.updated_at, created_by: n.created_by,
-        projects: projectsOf(n.id).map((p) => p.id), degree: degree.get(n.id) ?? 0, x: l?.x ?? null, y: l?.y ?? null, pinned: l?.pinned ?? false,
+        projects: projectsOf(n.id).map((p) => p.id), degree: degree.get(n.id) ?? 0, ...measure(n.id), x: l?.x ?? null, y: l?.y ?? null, pinned: l?.pinned ?? false,
       };
     }),
     edges: es.map((e) => ({ id: e.id, src: e.src, dst: e.dst, relation: e.relation, origin: e.origin })),
@@ -204,7 +267,7 @@ function search(q: Args): SearchHit[] {
       const t = terms[0];
       const at = t ? n.body.toLowerCase().indexOf(t) : -1;
       const snippet = at >= 0 ? `…${n.body.slice(Math.max(0, at - 30), at)}**${n.body.slice(at, at + t.length)}**${n.body.slice(at + t.length, at + 60)}…` : n.body.slice(0, 100);
-      return { node: { id: n.id, title: n.title, kind: n.kind }, snippet, score: terms.length ? score : n.updated_at };
+      return { node: { id: n.id, title: n.title, kind: n.kind }, snippet, score: terms.length ? score : n.updated_at, semantic: false };
     })
     .filter((h) => !terms.length || h.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -231,6 +294,7 @@ function seed() {
   n('Graph-Layout', 'ForceAtlas2 im Worker, Positionen pro Ansicht gespeichert. Siehe [[Sigma.js]].', [ui]);
   n('Hybrid-Suche', 'BM25 + Vektoren mit RRF. Kommt in Phase 4. Ergänzt [[SQLCipher]] FTS5.', [core], 'decision', false);
   n('Sauerteig', 'Anstellgut 1:5:5 füttern, 12 h Gare bei 24 °C.', [life]);
+  n('Sauerteig ansetzen', 'Anstellgut im Verhältnis 1:5:5 füttern und 12 Stunden bei 24 Grad gehen lassen.', [life]);
   n('Roggenbrot', 'Basiert auf [[Sauerteig]]. 70 % Roggen, 30 % Dinkel.', [life]);
   n('Marathon-Plan', '16 Wochen, lange Läufe sonntags, Intervalle dienstags.', [life], 'task');
   const ids = [...nodes.values()];
@@ -345,6 +409,39 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  model_status: () => modelStatus(),
+  download_model: () => downloadModel(),
+  remove_model: () => {
+    modelState = 'missing';
+    modelBytes = 0;
+    emit('bm:model', modelStatus());
+  },
+  link_suggestions: (a) => (modelState === 'ready' ? linkSuggestions(a.id) : []),
+  dismiss_suggestion: (a) => void dismissed.add(`${a.a}|${a.b}`),
+  accept_suggestion: (a) => {
+    const e = addEdge(a.src, a.dst, 'related_to', 'suggestion');
+    notify({ type: 'edge_upserted', id: e.id, src: e.src, dst: e.dst });
+    return e;
+  },
+  merge_nodes: (a) => {
+    const keep = live(a.keep);
+    for (const other of a.others as string[]) {
+      const o = live(other);
+      keep.body = `${keep.body}\n\n${o.body}`.trim();
+      o.deleted_at = now();
+      for (const e of edges.values()) if (e.src === other || e.dst === other) e.deleted_at ??= now();
+      notify({ type: 'node_deleted', id: other });
+    }
+    record(`${a.others.length === 1 ? 'Ein Eintrag' : `${a.others.length} Einträge`} in „${keep.title}“ zusammengeführt`, [keep.id]);
+    notify({ type: 'node_upserted', id: keep.id });
+    return keep;
+  },
+  orphans: () =>
+    [...nodes.values()]
+      .filter((n) => !n.deleted_at && ![...edges.values()].some((e) => !e.deleted_at && (e.src === n.id || e.dst === n.id)))
+      .map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
+  unreviewed: () =>
+    [...nodes.values()].filter((n) => !n.deleted_at && !n.reviewed).map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
   create_node: (a) => {
     const n = createNode(a.input);
     record(`„${n.title}“ erstellt`, [n.id]);

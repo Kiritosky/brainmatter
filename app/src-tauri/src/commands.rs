@@ -15,7 +15,7 @@ use crate::{
     McpStatus,
     error::{ApiError, ApiResult},
     integrations::{self as setup, Integrations, Target},
-    session::{Session, Settings, Status},
+    session::{ModelStatus, Session, Settings, Status},
 };
 
 type S<'a> = State<'a, Arc<Session>>;
@@ -152,7 +152,62 @@ pub fn node_detail(session: S<'_>, id: NodeId) -> ApiResult<NodeDetail> {
 #[tauri::command(async)]
 pub fn search(session: S<'_>, query: SearchQuery) -> ApiResult<Vec<SearchHit>> {
     let (engine, _) = session.engine()?;
-    Ok(engine.search(&query)?)
+    let vector = session.query_vector(&query.text);
+    Ok(engine.search_hybrid(&query, vector.as_deref())?)
+}
+
+#[tauri::command(async)]
+pub fn model_status(session: S<'_>) -> ModelStatus {
+    session.model_status()
+}
+
+#[tauri::command(async)]
+pub fn download_model(session: S<'_>) -> ApiResult<()> {
+    require_unlocked(&session)?;
+    session.download_model();
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn remove_model(session: S<'_>) -> ApiResult<()> {
+    require_unlocked(&session)?;
+    session.remove_model()
+}
+
+#[tauri::command(async)]
+pub fn link_suggestions(session: S<'_>, id: NodeId) -> ApiResult<Vec<Similar>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.link_suggestions(&id)?)
+}
+
+#[tauri::command(async)]
+pub fn dismiss_suggestion(session: S<'_>, a: NodeId, b: NodeId) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.dismiss_suggestion(&a, &b)?)
+}
+
+#[tauri::command(async)]
+pub fn accept_suggestion(session: S<'_>, src: NodeId, dst: NodeId) -> ApiResult<Edge> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.accept_suggestion(&ctx, &src, &dst, None)?)
+}
+
+#[tauri::command(async)]
+pub fn merge_nodes(session: S<'_>, keep: NodeId, others: Vec<NodeId>) -> ApiResult<Node> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.merge_nodes(&ctx, &keep, &others)?)
+}
+
+#[tauri::command(async)]
+pub fn orphans(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.orphans(limit.min(500))?)
+}
+
+#[tauri::command(async)]
+pub fn unreviewed(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.unreviewed(limit.min(500))?)
 }
 
 #[tauri::command(async)]

@@ -478,8 +478,8 @@ pub(crate) fn merge(cx: &ToolCx, a: MergeArgs) -> Out {
     }
     let n = cx.engine.merge_nodes(&cx.ctx, &keep, &others)?;
     Ok(format!(
-        "Merged {} entries into **{}** ({}). The user can undo this.",
-        others.len(),
+        "Merged {} into **{}** ({}). The user can undo this.",
+        a.merge.join(", "),
         n.title,
         format::short(&n.id)
     ))

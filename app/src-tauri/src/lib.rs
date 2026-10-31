@@ -8,7 +8,7 @@ pub mod session;
 
 use std::{sync::Arc, time::Duration};
 
-use bm_core::{Engine, vault::KdfParams};
+use bm_core::{Engine, semantic::Embedder, vault::KdfParams};
 use bm_mcp::{Client, ClientRegistry, Hub};
 use parking_lot::Mutex;
 use session::{Emit, Session};
@@ -37,6 +37,10 @@ struct SessionHub(Arc<Session>);
 impl Hub for SessionHub {
     fn engine(&self, client: &Client) -> Result<Arc<Engine>, String> {
         self.0.engine_for_client(&client.name)
+    }
+
+    fn embedder(&self) -> Option<Arc<dyn Embedder>> {
+        self.0.embedder()
     }
 }
 
@@ -118,6 +122,7 @@ pub fn run() {
                 loop {
                     tick.tick().await;
                     session.maybe_auto_lock();
+                    session.unload_idle_model();
                 }
             });
 
@@ -153,6 +158,15 @@ pub fn run() {
             commands::save_layout,
             commands::node_detail,
             commands::search,
+            commands::model_status,
+            commands::download_model,
+            commands::remove_model,
+            commands::link_suggestions,
+            commands::dismiss_suggestion,
+            commands::accept_suggestion,
+            commands::merge_nodes,
+            commands::orphans,
+            commands::unreviewed,
             commands::create_node,
             commands::update_node,
             commands::delete_node,

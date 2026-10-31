@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Network, FolderPlus, Lock, Search, Plus, Activity, Settings } from '@lucide/svelte';
+  import { Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks } from '@lucide/svelte';
   import { api, errorMessage, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -92,6 +92,13 @@
       {(userName ?? '?').slice(0, 1).toUpperCase()}
     </div>
     <span class="min-w-0 flex-1 truncate text-muted">{userName}</span>
+    <button class="icon-btn relative {ws.panel === 'review' ? '!bg-accent/15 !text-accent' : ''}" aria-label="Prüfen" title="Prüfen"
+      onclick={() => ((ws.panel = ws.panel === 'review' ? null : 'review'), ws.select(null))}>
+      <ListChecks size={15} />
+      {#if ws.unreviewed.length}
+        <span class="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-ai" in:pop={{ duration: 160, y: 0 }}></span>
+      {/if}
+    </button>
     <button class="icon-btn {ws.panel === 'activity' ? '!bg-accent/15 !text-accent' : ''}" aria-label="Aktivität" title="Aktivität"
       onclick={() => ((ws.panel = ws.panel === 'activity' ? null : 'activity'), ws.select(null))}><Activity size={15} /></button>
     <button class="icon-btn" aria-label="Einstellungen" title="Einstellungen (⌘,)" onclick={() => (ws.settingsOpen = true)}><Settings size={15} /></button>

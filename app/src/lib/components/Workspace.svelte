@@ -1,33 +1,27 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { ChevronRight, Sparkles } from '@lucide/svelte';
-  import { api, type Id, type Status } from '#lib/api.ts';
-  import { ws } from '#lib/workspace.svelte.ts';
+  import { api, type Status } from '#lib/api.ts';
+  import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
+  import Segmented from '#lib/ui/Segmented.svelte';
   import Sidebar from './Sidebar.svelte';
   import GraphView from './GraphView.svelte';
   import Inspector from './Inspector.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import ActivityPanel from './ActivityPanel.svelte';
+  import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
   import { pop, slideIn } from '#lib/ui/motion.ts';
 
   let { status }: { status: Status } = $props();
 
-  const KIND_COLORS: Record<string, string> = {
-    note: '#8f9bb3',
-    concept: '#5fd3a5',
-    task: '#f5c451',
-    person: '#ff6fb5',
-    source: '#4cc9f0',
-    decision: '#ffa24c',
-    snippet: '#c38bff',
-  };
+  const COLOR_MODES: { value: ColorMode; label: string }[] = [
+    { value: 'project', label: 'Projekt' },
+    { value: 'kind', label: 'Art' },
+    { value: 'theme', label: 'Thema' },
+  ];
 
-  function colorFor(projects: Id[], kind: string) {
-    // Inside a project view, colour by subproject; otherwise by first project.
-    const p = projects.find((id) => id !== ws.view) ?? projects[0];
-    return (p && ws.projectColor.get(p)) || KIND_COLORS[kind] || '#8f9bb3';
-  }
+  const suggested = $derived(ws.suggestions.map((s) => s.node.id));
 
   let lastTouch = 0;
   function activity() {
@@ -91,9 +85,16 @@
         snapshot={ws.graph}
         selected={ws.selected}
         focusTick={ws.focusTick}
-        {colorFor}
+        {suggested}
+        colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />
+
+      {#if ws.graph && ws.graph.nodes.length > 0}
+        <div class="absolute bottom-4 left-4 z-10 w-56">
+          <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
+        </div>
+      {/if}
 
       {#if ws.graph && ws.graph.nodes.length === 0}
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -122,6 +123,10 @@
     {:else if ws.panel === 'activity'}
       <div class="h-full w-100" in:slideIn>
         <ActivityPanel userName={status.user_name} />
+      </div>
+    {:else if ws.panel === 'review'}
+      <div class="h-full w-100" in:slideIn>
+        <ReviewPanel />
       </div>
     {/if}
   </div>

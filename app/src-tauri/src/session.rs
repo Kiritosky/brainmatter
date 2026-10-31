@@ -16,10 +16,13 @@ use std::{
 
 use bm_core::{
     Engine, Vault, VaultKeys,
+    engine::{Indexer, spawn_indexer},
     model::{ActorKind, Ctx},
+    semantic::Embedder,
     time::now_ms,
     vault::{KdfParams, RecoveryKey, SecretKey, SlotKind},
 };
+use bm_embed::{DOWNLOAD_BYTES, E5Embedder, ModelStore};
 use bm_macos::{biometrics, keychain, power::LockTrigger};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -36,6 +39,11 @@ const MIN_PASSWORD: usize = 8;
 const UNLOCK_WAIT: Duration = Duration::from_secs(30);
 /// After a dismissed prompt, this client does not trigger another one for a while.
 const PROMPT_COOLDOWN_MS: i64 = 5 * 60 * 1000;
+/// The model takes ~0.9 GB while loaded, so it leaves memory when unused.
+const MODEL_IDLE_MS: i64 = 5 * 60 * 1000;
+/// Shorter queries are prefixes of a word being typed; meaning adds only noise.
+const MIN_SEMANTIC_QUERY: usize = 3;
+const PROGRESS_INTERVAL_MS: i64 = 150;
 
 /// Sends a named event with a JSON payload to the UI.
 pub type Emit = Arc<dyn Fn(&'static str, serde_json::Value) + Send + Sync>;
@@ -79,6 +87,8 @@ enum State {
 }
 
 struct Unlocked {
+    /// First, so it stops before the engine goes away.
+    indexer: Option<Indexer>,
     vault: Vault,
     keys: VaultKeys,
     engine: Arc<Engine>,
@@ -97,6 +107,25 @@ pub struct Status {
     pub settings: Settings,
 }
 
+enum Download {
+    Idle,
+    Running(u64),
+    Failed(String),
+}
+
+/// The optional embedding model, for the settings page.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelStatus {
+    /// `"missing"`, `"downloading"` or `"ready"`.
+    pub state: &'static str,
+    pub downloaded: u64,
+    pub size: u64,
+    pub error: Option<String>,
+    /// Entries embedded so far, and entries overall (while unlocked).
+    pub indexed: usize,
+    pub total: usize,
+}
+
 pub struct Session {
     dir: PathBuf,
     emit: Emit,
@@ -108,6 +137,9 @@ pub struct Session {
     prompting: AtomicBool,
     /// Client name → no new prompt before this time (ms).
     prompt_blocked_until: Mutex<HashMap<String, i64>>,
+    models: ModelStore,
+    embedder: Arc<E5Embedder>,
+    download: Mutex<Download>,
 }
 
 impl Session {
@@ -116,7 +148,11 @@ impl Session {
     pub fn new(dir: PathBuf, emit: Emit, kdf: KdfParams) -> Self {
         let state = if Vault::exists(&dir) { State::Locked } else { State::NoVault };
         let settings = Settings::load(&dir);
+        let models = ModelStore::new(dir.join("models"));
         Self {
+            embedder: Arc::new(E5Embedder::new(models.clone())),
+            models,
+            download: Mutex::new(Download::Idle),
             dir,
             emit,
             kdf,
@@ -259,6 +295,7 @@ impl Session {
             u.forwarder.abort();
             drop(u);
             drop(state);
+            self.embedder.unload();
             tracing::info!("vault locked");
             self.emit_status();
         }
@@ -325,6 +362,121 @@ impl Session {
             std::thread::sleep(Duration::from_millis(100));
         }
         Err(LOCKED.into())
+    }
+
+    // ------------------------------------------------------------ model ---
+
+    /// The model for AI clients, once it is downloaded.
+    pub fn embedder(&self) -> Option<Arc<dyn Embedder>> {
+        self.models.is_ready().then(|| self.embedder.clone() as Arc<dyn Embedder>)
+    }
+
+    /// The vector for a search as you type. Never waits for the model to load:
+    /// until it is in memory, search works by words alone.
+    pub fn query_vector(&self, text: &str) -> Option<Vec<f32>> {
+        if text.trim().chars().count() < MIN_SEMANTIC_QUERY || !self.models.is_ready() {
+            return None;
+        }
+        if !self.embedder.is_loaded() {
+            self.embedder.warm();
+            return None;
+        }
+        self.embedder.embed_query(text).map_err(|e| tracing::warn!("query failed: {e}")).ok()
+    }
+
+    pub fn model_status(&self) -> ModelStatus {
+        let (state, downloaded, error) = match &*self.download.lock() {
+            Download::Running(bytes) => ("downloading", *bytes, None),
+            Download::Failed(e) => ("missing", 0, Some(e.clone())),
+            Download::Idle if self.models.is_ready() => ("ready", DOWNLOAD_BYTES, None),
+            Download::Idle => ("missing", 0, None),
+        };
+        let index = self.open_engine().and_then(|e| e.index_status().ok());
+        ModelStatus {
+            state,
+            downloaded,
+            size: DOWNLOAD_BYTES,
+            error,
+            indexed: index.as_ref().map_or(0, |i| i.indexed),
+            total: index.as_ref().map_or(0, |i| i.total),
+        }
+    }
+
+    /// Downloads in the background and reports through `bm:model`. Only the
+    /// user starts this: it is the app's only outgoing connection.
+    pub fn download_model(self: &Arc<Self>) {
+        {
+            let mut download = self.download.lock();
+            if matches!(*download, Download::Running(_)) {
+                return;
+            }
+            *download = Download::Running(0);
+        }
+        self.emit_model();
+        let session = self.clone();
+        std::thread::spawn(move || {
+            let last = AtomicI64::new(0);
+            let result = session.models.download(|bytes| {
+                *session.download.lock() = Download::Running(bytes);
+                let now = now_ms();
+                if now - last.load(Ordering::Relaxed) >= PROGRESS_INTERVAL_MS {
+                    last.store(now, Ordering::Relaxed);
+                    session.emit_model();
+                }
+            });
+            *session.download.lock() = match result {
+                Ok(()) => Download::Idle,
+                Err(e) => {
+                    tracing::warn!("model download failed: {e}");
+                    Download::Failed(e.to_string())
+                }
+            };
+            session.start_indexer();
+            session.emit_model();
+        });
+    }
+
+    pub fn remove_model(&self) -> ApiResult<()> {
+        if matches!(*self.download.lock(), Download::Running(_)) {
+            return Err(ApiError::new("invalid", "Der Download läuft noch."));
+        }
+        if let State::Unlocked(u) = &mut *self.state.lock() {
+            u.indexer = None;
+            u.engine.unload_vectors();
+        }
+        self.embedder.unload();
+        self.models.remove().map_err(ApiError::internal)?;
+        *self.download.lock() = Download::Idle;
+        self.emit_model();
+        Ok(())
+    }
+
+    /// Called periodically.
+    pub fn unload_idle_model(&self) {
+        self.embedder.unload_if_idle(MODEL_IDLE_MS);
+    }
+
+    fn spawn_indexer(&self, engine: &Arc<Engine>) -> Option<Indexer> {
+        if !self.models.is_ready() {
+            return None;
+        }
+        spawn_indexer(engine, self.embedder.clone())
+            .map_err(|e| tracing::warn!("indexer not started: {e}"))
+            .ok()
+    }
+
+    fn start_indexer(&self) {
+        let Some(engine) = self.open_engine() else { return };
+        let indexer = self.spawn_indexer(&engine);
+        if let State::Unlocked(u) = &mut *self.state.lock()
+            && Arc::ptr_eq(&u.engine, &engine)
+        {
+            u.indexer = indexer;
+        }
+    }
+
+    fn emit_model(&self) {
+        (self.emit)("bm:model", serde_json::to_value(self.model_status()).expect("model status"));
     }
 
     pub fn settings(&self) -> Settings {
@@ -406,6 +558,7 @@ impl Session {
             }
         });
         let unlocked = Unlocked {
+            indexer: self.spawn_indexer(&engine),
             vault,
             keys,
             engine,

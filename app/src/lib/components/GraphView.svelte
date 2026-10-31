@@ -5,12 +5,13 @@
   import forceAtlas2 from 'graphology-layout-forceatlas2';
   import FA2Layout from 'graphology-layout-forceatlas2/worker';
   import { Maximize, Minus, Plus } from '@lucide/svelte';
-  import { api, type GraphSnapshot, type Id } from '#lib/api.ts';
+  import { api, type GraphNode, type GraphSnapshot, type Id } from '#lib/api.ts';
 
   let {
     snapshot,
     selected,
     focusTick,
+    suggested,
     colorFor,
     onselect,
     onopen,
@@ -18,7 +19,9 @@
     snapshot: GraphSnapshot | null;
     selected: Id | null;
     focusTick: number;
-    colorFor: (projects: Id[], kind: string) => string;
+    /** Entries suggested as links for the selection, drawn as ghost edges. */
+    suggested: Id[];
+    colorFor: (node: GraphNode) => string;
     onselect: (id: Id | null) => void;
     onopen: (id: Id) => void;
   } = $props();
@@ -41,7 +44,11 @@
   const EDGE_DIM = css('--color-line-soft');
   const EDGE_ACTIVE = css('--color-muted');
 
-  const sizeFor = (degree: number) => Math.min(18, 3.5 + Math.sqrt(degree) * 2.2);
+  const EDGE_GHOST = css('--color-accent');
+  const GHOST = 'ghost:';
+
+  /** `rank * count` is 1 for an average entry, whatever the size of the view. */
+  const sizeFor = (rank: number, count: number) => Math.min(18, Math.max(3.5, 2 + Math.sqrt(rank * count) * 3.6));
 
   /** Highlight a node and its direct neighbours (hover wins over selection). */
   function applyHighlight() {
@@ -80,8 +87,8 @@
     for (const n of snap.nodes) {
       const attrs = {
         label: n.title,
-        size: sizeFor(n.degree),
-        color: colorFor(n.projects, n.kind),
+        size: sizeFor(n.rank, snap.nodes.length),
+        color: colorFor(n),
         reviewed: n.reviewed,
         fixed: n.pinned,
       };
@@ -96,7 +103,7 @@
 
     const wantedEdges = new Set(snap.edges.map((e) => e.id));
     graph.forEachEdge((e) => {
-      if (!wantedEdges.has(e)) graph.dropEdge(e);
+      if (!wantedEdges.has(e) && !e.startsWith(GHOST)) graph.dropEdge(e);
     });
     for (const e of snap.edges) {
       if (!graph.hasEdge(e.id) && graph.hasNode(e.src) && graph.hasNode(e.dst)) {
@@ -106,8 +113,23 @@
 
     placeNear(unplaced);
     if (unplaced.length > 0) runLayout(unplaced.length === graph.order ? 'full' : 'settle');
-    applyHighlight();
+    syncGhosts();
     if (viewChanged) renderer?.getCamera().reset({ duration: 300 });
+  }
+
+  /** Ghost edges carry no weight, so they never pull on the layout. */
+  function syncGhosts() {
+    graph.forEachEdge((e) => {
+      if (e.startsWith(GHOST)) graph.dropEdge(e);
+    });
+    if (selected && graph.hasNode(selected)) {
+      for (const id of suggested) {
+        if (graph.hasNode(id) && id !== selected) {
+          graph.addEdgeWithKey(`${GHOST}${id}`, selected, id, { ghost: true, weight: 0 });
+        }
+      }
+    }
+    applyHighlight();
   }
 
   /** New nodes start at the centroid of their placed neighbours. */
@@ -202,8 +224,8 @@
         edges: [
           DEFAULT_STYLES.edges,
           {
-            color: (_a, s, gs) => (s.isHighlighted ? EDGE_ACTIVE : gs.hasHighlighted ? EDGE_DIM : EDGE),
-            size: (_a, s) => (s.isHighlighted ? 1.5 : 0.6),
+            color: (a, s, gs) => (a.ghost ? EDGE_GHOST : s.isHighlighted ? EDGE_ACTIVE : gs.hasHighlighted ? EDGE_DIM : EDGE),
+            size: (a, s) => (a.ghost ? 1 : s.isHighlighted ? 1.5 : 0.6),
           },
         ],
       },
@@ -251,7 +273,8 @@
 
   $effect(() => {
     void selected;
-    applyHighlight();
+    void suggested;
+    syncGhosts();
   });
 
   $effect(() => {

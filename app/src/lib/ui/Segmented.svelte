@@ -3,10 +3,12 @@
     value = $bindable(),
     options,
     label,
+    onchange,
   }: {
     value: T;
     options: { value: T; label: string }[];
     label?: string;
+    onchange?: (value: T) => void;
   } = $props();
 
   const index = $derived(options.findIndex((o) => o.value === value));
@@ -28,7 +30,7 @@
       role="radio"
       aria-checked={opt.value === value}
       class="relative h-6.5 rounded-md px-3 text-xs font-medium transition-colors duration-150 {opt.value === value ? 'text-text' : 'text-muted hover:text-text'}"
-      onclick={() => (value = opt.value)}>
+      onclick={() => ((value = opt.value), onchange?.(opt.value))}>
       {opt.label}
     </button>
   {/each}

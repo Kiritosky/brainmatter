@@ -29,13 +29,17 @@ use crate::{
 /// high and close together, so these are hints, never automatic actions.
 pub const DUPLICATE_SCORE: f32 = 0.925;
 pub const SUGGEST_SCORE: f32 = 0.88;
-/// Query-to-passage similarity below which a hit is treated as noise.
-const QUERY_FLOOR: f32 = 0.77;
+/// Query-to-passage scores overlap: right hits measured 0.80–0.91, wrong ones
+/// up to 0.83. So a hit needs both this floor and to be close to the query's
+/// best hit, which keeps 9 of 10 right hits and 7 of 90 wrong ones (PLAN.md §17).
+const QUERY_FLOOR: f32 = 0.80;
+const QUERY_MARGIN: f32 = 0.02;
 /// Reciprocal rank fusion constant.
 const RRF_K: f64 = 60.0;
 const MAX_SUGGESTIONS: usize = 5;
 
-const INDEX_BATCH: usize = 32;
+/// Small, because locking the vault waits for the running batch.
+const INDEX_BATCH: usize = 8;
 const INDEX_DEBOUNCE: Duration = Duration::from_secs(2);
 const INDEX_TICK: Duration = Duration::from_millis(500);
 
@@ -66,6 +70,13 @@ impl Engine {
         *self.vectors.write() = index;
         *self.vector_model.write() = Some(model.to_string());
         Ok(())
+    }
+
+    /// Turns semantic features off again. Stored vectors stay: they are still
+    /// valid if the model comes back.
+    pub fn unload_vectors(&self) {
+        *self.vector_model.write() = None;
+        *self.vectors.write() = Default::default();
     }
 
     /// Keeps the in-memory index in line with committed changes: trashed
@@ -229,11 +240,16 @@ impl Engine {
             }
             let nearest = self.vectors.read().nearest(vector, (limit * 8).max(100));
             let mut rank = 0usize;
+            let mut cut = QUERY_FLOOR;
             for (id, score) in nearest {
-                if score < QUERY_FLOOR || rank >= limit * 3 {
+                if score < cut || rank >= limit * 3 {
                     break;
                 }
                 let Some(node) = allowed(&id)? else { continue };
+                // The best hit within the filters, not an excluded one, sets the bar.
+                if rank == 0 {
+                    cut = cut.max(score - QUERY_MARGIN);
+                }
                 *scores.entry(id.clone()).or_default() += 1.0 / (RRF_K + rank as f64 + 1.0);
                 rank += 1;
                 hits.entry(id).and_modify(|h| h.semantic = true).or_insert_with(|| SearchHit {
@@ -378,6 +394,8 @@ impl Drop for Indexer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(thread) = self.thread.take() {
+            // Locking waits here, so don't sit out the indexer's pause.
+            thread.thread().unpark();
             let _ = thread.join();
         }
     }
@@ -415,7 +433,7 @@ fn index_loop(engine: Weak<Engine>, embedder: Arc<dyn Embedder>, stop: Arc<Atomi
             || (changed_at.elapsed() >= INDEX_DEBOUNCE && indexed_generation != Some(generation));
         if !due {
             drop(engine);
-            std::thread::sleep(INDEX_TICK);
+            std::thread::park_timeout(INDEX_TICK);
             continue;
         }
 
@@ -428,7 +446,7 @@ fn index_loop(engine: Weak<Engine>, embedder: Arc<dyn Embedder>, stop: Arc<Atomi
             Err(e) => {
                 tracing::warn!("indexer scan failed: {e}");
                 drop(engine);
-                std::thread::sleep(INDEX_DEBOUNCE);
+                std::thread::park_timeout(INDEX_DEBOUNCE);
                 continue;
             }
         };
@@ -450,12 +468,12 @@ fn index_loop(engine: Weak<Engine>, embedder: Arc<dyn Embedder>, stop: Arc<Atomi
         }
         if failed {
             drop(engine);
-            std::thread::sleep(INDEX_DEBOUNCE * 5);
+            std::thread::park_timeout(INDEX_DEBOUNCE * 5);
             continue;
         }
         indexed_generation = Some(generation);
         last_scan = Some(started);
         drop(engine);
-        std::thread::sleep(INDEX_TICK);
+        std::thread::park_timeout(INDEX_TICK);
     }
 }

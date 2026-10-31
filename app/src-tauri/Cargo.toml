@@ -10,6 +10,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 bm-core.workspace = true
+bm-embed.workspace = true
 bm-macos.workspace = true
 bm-mcp.workspace = true
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }

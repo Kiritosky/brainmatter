@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { ArrowLeft, ArrowRight, Crosshair, Link2, Trash2, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
-  import { api, errorMessage, type EdgeView, type NodeRevision } from '#lib/api.ts';
+  import { ArrowLeft, ArrowRight, Crosshair, GitMerge, Link2, Sparkles, Trash2, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
+  import { api, errorMessage, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import MarkdownEditor from './MarkdownEditor.svelte';
@@ -116,6 +116,23 @@
     const tag = newTag.trim();
     newTag = '';
     if (tag) act(() => api.updateNode(node.id, { tags_add: [tag] }));
+  }
+
+  /** Merging is one click away from the list, so it asks once. */
+  let confirmMerge = $state<string | null>(null);
+
+  async function merge(s: Similar) {
+    await save();
+    await act(async () => {
+      await api.mergeNodes(nodeId, [s.node.id]);
+      ws.notify(`„${s.node.title}“ wurde hierher verschoben. Rückgängig im Verlauf.`);
+    });
+    confirmMerge = null;
+  }
+
+  async function dismiss(s: Similar) {
+    ws.suggestions = ws.suggestions.filter((o) => o.node.id !== s.node.id);
+    await act(() => api.dismissSuggestion(nodeId, s.node.id));
   }
 
   async function openHistory() {
@@ -261,6 +278,29 @@
           </div>
         {/each}
       </div>
+    {/if}
+
+    {#if ws.suggestions.length}
+      <div class="section-title mt-7 flex items-center gap-1.5"><Sparkles size={11} class="text-accent" /> Vorschläge</div>
+      {#each ws.suggestions as s (s.node.id)}
+        <div class="group flex h-8 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-elevated" in:pop={{ duration: 160, y: 3 }}>
+          <button class="min-w-0 flex-1 truncate text-left text-muted transition-colors hover:text-text" onclick={() => ws.select(s.node.id, true)}>{s.node.title}</button>
+          {#if s.likely_duplicate}
+            <span class="chip shrink-0 !h-5 !border-warn/30 !bg-warn/10 !text-warn group-hover:hidden">Duplikat?</span>
+          {/if}
+          <div class="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+            {#if confirmMerge === s.node.id}
+              <button class="btn-danger !h-6 !px-2 text-xs" onclick={() => merge(s)} onblur={() => (confirmMerge = null)}>Zusammenführen?</button>
+            {:else}
+              {#if s.likely_duplicate}
+                <button class="icon-btn !h-6 !w-6" aria-label="Hierher zusammenführen" title="Hierher zusammenführen" onclick={() => (confirmMerge = s.node.id)}><GitMerge size={13} /></button>
+              {/if}
+              <button class="icon-btn !h-6 !w-6 hover:!text-accent" aria-label="Verbinden" title="Verbinden" onclick={() => act(() => api.acceptSuggestion(nodeId, s.node.id))}><Link2 size={13} /></button>
+              <button class="icon-btn !h-6 !w-6" aria-label="Vorschlag ausblenden" title="Nicht mehr vorschlagen" onclick={() => dismiss(s)}><X size={13} /></button>
+            {/if}
+          </div>
+        </div>
+      {/each}
     {/if}
 
     {#if showHistory}

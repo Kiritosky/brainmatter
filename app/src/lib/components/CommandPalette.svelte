@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { CornerDownLeft, Link2, Plus, Search } from '@lucide/svelte';
+  import { CornerDownLeft, Link2, Plus, Search, Sparkles } from '@lucide/svelte';
   import { api, errorMessage, type SearchHit } from '#lib/api.ts';
-  import { ws } from '#lib/workspace.svelte.ts';
+  import { KIND_COLORS, ws } from '#lib/workspace.svelte.ts';
   import Select from '#lib/ui/Select.svelte';
   import { fadeQuick, pop } from '#lib/ui/motion.ts';
 
@@ -40,16 +40,6 @@
     { value: 'contradicts', label: 'widerspricht' },
     { value: 'derived_from', label: 'abgeleitet von' },
   ];
-
-  const KIND_COLORS: Record<string, string> = {
-    note: '#8f9bb3',
-    concept: '#5fd3a5',
-    task: '#f5c451',
-    person: '#ff6fb5',
-    source: '#4cc9f0',
-    decision: '#ffa24c',
-    snippet: '#c38bff',
-  };
 
   let list: HTMLDivElement | undefined = $state();
   $effect(() => {
@@ -123,6 +113,9 @@
               <div class="flex items-baseline gap-2">
                 <span class="truncate font-medium">{opt.hit.node.title}</span>
                 <span class="shrink-0 text-[11px] text-faint">{opt.hit.node.kind}</span>
+                {#if opt.hit.semantic}
+                  <span class="flex shrink-0 items-center gap-1 self-center text-[11px] text-accent" title="Passt vom Sinn her"><Sparkles size={10} /> ähnlich</span>
+                {/if}
               </div>
               {#if opt.hit.snippet}
                 <div class="mt-0.5 truncate text-xs text-muted">

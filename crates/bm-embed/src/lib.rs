@@ -8,7 +8,10 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicI64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicI64, Ordering},
+    },
 };
 
 use bm_core::{
@@ -104,6 +107,14 @@ impl ModelStore {
         }
         fs::write(self.marker(), REVISION)?;
         Ok(())
+    }
+
+    /// Deletes the downloaded files.
+    pub fn remove(&self) -> Result<(), ModelError> {
+        match fs::remove_dir_all(&self.dir) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -201,30 +212,62 @@ impl Loaded {
 pub struct E5Embedder {
     store: ModelStore,
     loaded: Mutex<Option<Loaded>>,
+    /// Readable while a long embedding holds the mutex.
+    is_loaded: AtomicBool,
+    warming: AtomicBool,
     last_used: AtomicI64,
 }
 
 impl E5Embedder {
     pub fn new(store: ModelStore) -> Self {
-        Self { store, loaded: Mutex::new(None), last_used: AtomicI64::new(0) }
+        Self {
+            store,
+            loaded: Mutex::new(None),
+            is_loaded: AtomicBool::new(false),
+            warming: AtomicBool::new(false),
+            last_used: AtomicI64::new(0),
+        }
     }
 
     fn with_model<T>(&self, f: impl FnOnce(&Loaded) -> Result<T, String>) -> Result<T, String> {
         let mut guard = self.loaded.lock();
         if guard.is_none() {
             *guard = Some(Loaded::load(&self.store).map_err(|e| e.to_string())?);
+            self.is_loaded.store(true, Ordering::Relaxed);
             tracing::info!("embedding model loaded");
         }
         self.last_used.store(now_ms(), Ordering::Relaxed);
         f(guard.as_ref().expect("just loaded"))
     }
 
-    pub fn unload_if_idle(&self, idle_ms: i64) {
-        if now_ms() - self.last_used.load(Ordering::Relaxed) > idle_ms
-            && let Some(mut guard) = self.loaded.try_lock()
-            && guard.take().is_some()
-        {
+    pub fn is_loaded(&self) -> bool {
+        self.is_loaded.load(Ordering::Relaxed)
+    }
+
+    /// Loads the model in the background, so that typing never waits for it.
+    pub fn warm(self: &Arc<Self>) {
+        if self.is_loaded() || self.warming.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let this = self.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = this.with_model(|_| Ok(())) {
+                tracing::warn!("embedding model not available: {e}");
+            }
+            this.warming.store(false, Ordering::Relaxed);
+        });
+    }
+
+    pub fn unload(&self) {
+        self.is_loaded.store(false, Ordering::Relaxed);
+        if self.loaded.lock().take().is_some() {
             tracing::info!("embedding model unloaded");
+        }
+    }
+
+    pub fn unload_if_idle(&self, idle_ms: i64) {
+        if self.is_loaded() && now_ms() - self.last_used.load(Ordering::Relaxed) > idle_ms {
+            self.unload();
         }
     }
 }

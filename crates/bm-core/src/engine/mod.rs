@@ -296,7 +296,11 @@ impl Engine {
     /// Merges several entries into `keep` as one undoable change set.
     pub fn merge_nodes(&self, ctx: &Ctx, keep: &NodeId, others: &[NodeId]) -> Result<Node> {
         let title = self.read(|c| Ok(rows::live_node(c, keep)?.title))?;
-        let summary = format!("{} Einträge in „{title}“ zusammengeführt", others.len());
+        let entries = match others.len() {
+            1 => "Ein Eintrag".to_string(),
+            n => format!("{n} Einträge"),
+        };
+        let summary = format!("{entries} in „{title}“ zusammengeführt");
         Ok(self.write(ctx, summary, |w| nodes::merge(w, keep, others))?.0)
     }
 

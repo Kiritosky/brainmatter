@@ -81,6 +81,10 @@ export interface GraphNode {
   created_by: Id;
   projects: Id[];
   degree: number;
+  /** PageRank within the view; sums to about 1. */
+  rank: number;
+  /** Topic cluster within the view; 0 is the largest. */
+  cluster: number;
   x: number | null;
   y: number | null;
   pinned: boolean;
@@ -104,6 +108,23 @@ export interface SearchHit {
   node: NodeBrief;
   snippet: string;
   score: number;
+  /** Found by meaning, not only by words. */
+  semantic: boolean;
+}
+
+export interface Similar {
+  node: NodeBrief;
+  score: number;
+  likely_duplicate: boolean;
+}
+
+export interface ModelStatus {
+  state: 'missing' | 'downloading' | 'ready';
+  downloaded: number;
+  size: number;
+  error: string | null;
+  indexed: number;
+  total: number;
 }
 
 export interface ChangeSetInfo {
@@ -218,7 +239,8 @@ export type DomainEvent =
   | { type: 'project_upserted'; id: Id }
   | { type: 'project_deleted'; id: Id }
   | { type: 'membership_changed'; project: Id; node: Id; member: boolean }
-  | { type: 'change_set_committed'; id: Id; actor: Id; summary: string };
+  | { type: 'change_set_committed'; id: Id; actor: Id; summary: string }
+  | { type: 'index_updated'; indexed: number; total: number };
 
 export function isApiError(e: unknown): e is ApiError {
   return typeof e === 'object' && e !== null && 'code' in e && 'message' in e;
@@ -276,6 +298,15 @@ export const api = {
         limit: opts.limit ?? 20,
       },
     }),
+  modelStatus: () => call<ModelStatus>('model_status'),
+  downloadModel: () => call<void>('download_model'),
+  removeModel: () => call<void>('remove_model'),
+  linkSuggestions: (id: Id) => call<Similar[]>('link_suggestions', { id }),
+  dismissSuggestion: (a: Id, b: Id) => call<void>('dismiss_suggestion', { a, b }),
+  acceptSuggestion: (src: Id, dst: Id) => call<Edge>('accept_suggestion', { src, dst }),
+  mergeNodes: (keep: Id, others: Id[]) => call<Node>('merge_nodes', { keep, others }),
+  orphans: (limit = 200) => call<NodeBrief[]>('orphans', { limit }),
+  unreviewed: (limit = 200) => call<NodeBrief[]>('unreviewed', { limit }),
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),
@@ -295,6 +326,10 @@ export function onDomainEvent(cb: (e: DomainEvent) => void): Promise<UnlistenFn>
 
 export function onSession(cb: (s: Status) => void): Promise<UnlistenFn> {
   return listen<Status>('bm:session', (e) => cb(e.payload));
+}
+
+export function onModel(cb: (m: ModelStatus) => void): Promise<UnlistenFn> {
+  return listen<ModelStatus>('bm:model', (e) => cb(e.payload));
 }
 
 export function onResync(cb: () => void): Promise<UnlistenFn> {

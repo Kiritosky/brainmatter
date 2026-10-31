@@ -514,6 +514,7 @@ name = "brainmatter"
 version = "0.1.0"
 dependencies = [
  "bm-core",
+ "bm-embed",
  "bm-macos",
  "bm-mcp",
  "parking_lot 0.13.0",

@@ -308,7 +308,7 @@ async fn similarity_says_when_the_model_is_missing_and_merge_needs_delete_scope(
         s.registry.create("Admin", &[Scope::Read, Scope::Write, Scope::Delete], &[]).unwrap();
     let a = connect(&s.url, &admin).await;
     let (t, err) = call(&a, "merge", json!({"keep": "A", "merge": ["B"]})).await;
-    assert!(!err && t.contains("Merged 1 entries"), "{t}");
+    assert!(!err && t.contains("Merged B into **A**"), "{t}");
     let (t, _) = call(&a, "search", json!({"query": ""})).await;
     assert!(!t.contains("**B**"), "{t}");
 

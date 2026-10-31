@@ -132,6 +132,65 @@ try {
   await shot(page, '12-settings-select');
   await page.keyboard.press('Escape');
 
+  await page.getByRole('button', { name: 'Suche nach Sinn' }).click();
+  await page.getByRole('button', { name: 'Laden', exact: true }).waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '18-model-missing');
+  await page.getByRole('button', { name: 'Laden', exact: true }).click();
+  await page.getByText('Wird geladen').waitFor();
+  await page.waitForTimeout(500);
+  await shot(page, '19-model-downloading');
+  await page.getByRole('button', { name: 'Modell entfernen' }).waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, '20-model-ready');
+  await page.keyboard.press('Escape');
+
+  // With the model: suggestions in the inspector, ghost edges in the graph.
+  await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
+  await page.waitForTimeout(800);
+  await page.keyboard.press('Meta+k');
+  await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill('Sauerteig');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Enter');
+  await page.getByText('Vorschläge').waitFor();
+  await page.getByText('Duplikat?').waitFor();
+  await page.waitForTimeout(800);
+  await shot(page, '21-suggestions');
+  await page.getByText('Sauerteig ansetzen').first().hover();
+  await page.waitForTimeout(200);
+  await shot(page, '22-suggestion-actions');
+  await page.getByLabel('Hierher zusammenführen').click();
+  await page.getByRole('button', { name: 'Zusammenführen?' }).click();
+  await page.getByText('wurde hierher verschoben').waitFor();
+  await page.waitForTimeout(400);
+  const merged = await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    const hits: any[] = await invoke('search', { query: { text: 'Sauerteig ansetzen', kinds: [], tags: [], limit: 50, include_subprojects: true } });
+    return hits.some((h) => h.node.title === 'Sauerteig ansetzen');
+  });
+  if (merged) errors.push('merged entry is still there');
+  await page.getByLabel('Schließen').first().click();
+
+  await page.getByRole('radio', { name: 'Thema' }).click();
+  await page.waitForTimeout(500);
+  await shot(page, '23-graph-themes');
+  await page.getByRole('radio', { name: 'Projekt' }).click();
+
+  await page.getByRole('button', { name: 'Prüfen' }).click();
+  await page.getByText('Hybrid-Suche').first().waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, '24-review');
+  await page.getByRole('radio', { name: 'Unverbunden' }).click();
+  await page.waitForTimeout(400);
+  await shot(page, '25-review-orphans');
+  await page.getByRole('radio', { name: 'Ungeprüft' }).click();
+  await page.locator('aside').getByText('Hybrid-Suche').hover();
+  await page.getByLabel('Als geprüft markieren').click();
+  await page.getByText('Alles geprüft').waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, '26-review-empty');
+
+  await page.keyboard.press('Meta+,');
   await page.getByRole('button', { name: 'KI-Verbindungen' }).click();
   await page.getByText('Server läuft').waitFor();
   await page.waitForTimeout(300);

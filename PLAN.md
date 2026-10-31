@@ -579,5 +579,36 @@ Das Token steht damit im Klartext in der Client-Konfiguration; es gilt aber nur 
 - Bridge ins `.app`-Bundle (`externalBin`) kommt mit Phase 5. Bis dahin fehlt sie im Release-Build, Claude Desktop und Codex lassen sich dort nicht einrichten. `tauri dev` baut sie automatisch.
 - Automatisches Einrichten ist nur gegen Wegwerf-Verzeichnisse getestet (Claude Code mit echter CLI), noch nicht an den echten Konfigurationen.
 - `resources` und `prompts` aus §7 fehlen noch. Die Tools decken die Funktion ab.
-- `merge` kommt mit der Duplikat-Erkennung in Phase 4.
 - `app/scripts/screens.ts` ist ein Durchklick-Skript gegen das Mock, noch keine Test-Suite in CI.
+
+## 17. Stand Phase 4: Intelligenz (2026-10-31)
+
+**Fertig**:
+- **`bm-embed`**: multilingual-e5-small (f32) auf candle/Metal. Download nur auf Wunsch, feste Revision und SHA-256 je Datei. Das Modell liegt unverschlüsselt in `<vault>/models` (keine Geheimnisse), Vektoren liegen verschlüsselt in der Datenbank. Es wird beim ersten Gebrauch geladen und nach 5 Minuten oder beim Sperren entladen.
+- **Kern**: Hybrid-Suche (BM25 + Vektoren per RRF), Hintergrund-Indexer, ähnliche Einträge, Link-Vorschläge (nur verworfene Paare werden gespeichert), `merge`, PageRank und Louvain im Graph-Snapshot.
+- **MCP**: `search` hybrid, `capture` meldet Duplikate und Verwandtes, neue Tools `similar` und `merge`, Themen in `project_overview`. Hinweise beachten Projekt-Scopes (Test mit Fake-Modell).
+- **App**: Einstellungsseite „Suche nach Sinn“, Vorschläge im Inspector mit Geisterkanten im Graph, Einfärben nach Projekt/Art/Thema, Knotengröße nach Rang, Panel „Prüfen“ (Ungeprüft/Unverbunden).
+- Beim Tippen wartet die Suche nie aufs Modell: Solange es nicht im Speicher ist, sucht sie nur nach Wörtern und lädt es im Hintergrund.
+
+**Schwellen** (`bm-embed --example calibrate`, kleine Stichprobe, darum nur Hinweise und nie automatische Aktionen):
+
+| Vergleich | Gemessen | Gewählt |
+|---|---|---|
+| Duplikate (Eintrag zu Eintrag) | 0,927–0,974 | ab 0,925 |
+| Verwandt | 0,861–0,920 (unverwandt 0,823–0,882) | ab 0,88 |
+| Suche (Anfrage zu Eintrag) | richtig 0,80–0,91, falsch bis 0,83 | ab 0,80 und höchstens 0,02 unter dem besten Treffer |
+
+Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur mit fester Schwelle 0,78 wären es 47 falsche. Die erste Schwelle 0,77 war nicht für Anfragen gemessen und zeigte im Test mit echtem Modell fast alles als „ähnlich“.
+
+**Messwerte** (M-Serie, 50k Einträge, 99k Kanten, 301 MB):
+- Graph-Snapshot mit PageRank und Clustern: 193 ms (vorher 478 ms). Der Gewinn kommt vom Covering-Index und größerem Reader-Cache. Analytics kosten nur etwa 45 ms, darum gibt es keinen Cache dafür.
+- Suche p95 12,4 ms, mit Filtern 21,5 ms, schlechtester Fall 57 ms. Einfügen etwa 3100/s.
+- Hybrid-Suche bei 5 Einträgen unter 1 ms (ohne Einbetten der Anfrage). Sperren während aktivem Indexer 110 ms.
+
+**Geprüft**: Unit- und Integrationstests, `app/src-tauri/tests/real_model.rs` mit echtem Modell auf Metal (Prüfsummen, Indexer, Suche, Duplikat, Sperren, Entfernen; manuell per `--ignored`), Durchklick gegen das Mock.
+
+**Offen**:
+- Noch nicht in der echten App geprüft: Oberfläche mit echtem Modell, Download mit Fortschritt über die Tauri-Events. Der Download selbst lief bisher nur über `calibrate`.
+- Die Schwellen beruhen auf 30 Paaren und 10 Anfragen. Mit echten Daten nachmessen.
+- Der Download lässt sich nicht abbrechen (`hf-hub` bietet das nicht an).
+- Der Speicherbedarf des Indexers bei 50k Einträgen ist nicht gemessen, ebenso die Dauer der Erstindizierung.
