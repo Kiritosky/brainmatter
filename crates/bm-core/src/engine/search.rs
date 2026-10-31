@@ -1,6 +1,6 @@
 //! Full-text search over the FTS5 index (title weighted 5×, tags 2×).
 
-use rusqlite::{Connection, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
 use super::projects;
 use crate::{
@@ -22,24 +22,61 @@ const STOPWORDS: &[&str] = &[
     "by", "from", "not", "but", "if", "then", "so",
 ];
 
-/// Turns free text into a safe FTS5 expression: every word becomes a quoted
-/// prefix term, all terms must match. Operators in user input are neutralized.
-/// Stopwords are dropped unless the query consists only of stopwords.
-pub(crate) fn fts_expression(text: &str) -> Option<String> {
+/// A term in more than this share of all entries says little and is slow to
+/// rank, since BM25 has to score nearly every row.
+const COMMON_TERM_SHARE: f64 = 0.4;
+
+fn content_terms(text: &str) -> Vec<&str> {
     let words: Vec<&str> =
         text.split(|c: char| !c.is_alphanumeric()).filter(|t| !t.is_empty()).collect();
     let content: Vec<&str> =
         words.iter().copied().filter(|w| !STOPWORDS.contains(&w.to_lowercase().as_str())).collect();
-    let terms = if content.is_empty() { words } else { content };
+    if content.is_empty() { words } else { content }
+}
+
+/// Quotes every word as a prefix term, which neutralizes FTS operators in user
+/// input. All terms must match.
+fn expression(terms: &[&str]) -> Option<String> {
     let terms: Vec<String> = terms.iter().map(|t| format!("\"{t}\"*")).collect();
     (!terms.is_empty()).then(|| terms.join(" "))
+}
+
+/// Turns free text into a safe FTS5 expression. Stopwords are dropped unless
+/// the query consists only of stopwords.
+#[cfg(test)]
+pub(crate) fn fts_expression(text: &str) -> Option<String> {
+    expression(&content_terms(text))
+}
+
+/// Same, but also drops terms occurring in most entries; if all of them do,
+/// only the rarest one stays.
+fn selective_expression(conn: &Connection, text: &str) -> Result<Option<String>> {
+    let terms = content_terms(text);
+    if terms.len() < 2 {
+        return Ok(expression(&terms));
+    }
+    let total: i64 = conn.query_row("SELECT coalesce(max(seq), 0) FROM nodes", [], |r| r.get(0))?;
+    let mut stmt = conn.prepare_cached("SELECT doc FROM nodes_fts_vocab WHERE term = ?1")?;
+    let mut counted = Vec::with_capacity(terms.len());
+    for term in &terms {
+        let doc: Option<i64> = stmt.query_row([term.to_lowercase()], |r| r.get(0)).optional()?;
+        counted.push((*term, doc.unwrap_or(0)));
+    }
+    let limit = (total as f64 * COMMON_TERM_SHARE) as i64;
+    let selective: Vec<&str> =
+        counted.iter().filter(|(_, d)| *d <= limit).map(|(t, _)| *t).collect();
+    if !selective.is_empty() {
+        return Ok(expression(&selective));
+    }
+    let rarest = counted.iter().min_by_key(|(_, d)| *d).map(|(t, _)| *t);
+    Ok(rarest.and_then(|t| expression(&[t])))
 }
 
 pub(crate) fn search(conn: &Connection, q: &SearchQuery) -> Result<Vec<SearchHit>> {
     let limit = q.limit.clamp(1, MAX_LIMIT) as i64;
     let mut params: Vec<Value> = Vec::new();
 
-    let expr = fts_expression(&q.text);
+    let expr = selective_expression(conn, &q.text)?;
     // Phase 1 ranks and filters on cheap columns only; phase 2 computes
     // snippets for the final page instead of for every match.
     let mut sql = match &expr {
@@ -112,6 +149,7 @@ pub(crate) fn search(conn: &Connection, q: &SearchQuery) -> Result<Vec<SearchHit
                 node: NodeBrief { id: r.get(0)?, title: r.get(1)?, kind: r.get(2)? },
                 snippet: r.get(3)?,
                 score: r.get(4)?,
+                semantic: false,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;

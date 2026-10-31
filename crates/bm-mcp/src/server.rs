@@ -53,7 +53,7 @@ impl BrainmatterMcp {
             let engine = hub.engine(&client).map_err(ToolError::Message)?;
             let actor = engine.ensure_actor(ActorKind::Ai, &client.name)?;
             let ctx = Ctx::new(actor.id.clone()).with_client(client.name.clone()).with_tool(tool);
-            let cx = ToolCx::new(engine.clone(), ctx, client)?;
+            let cx = ToolCx::new(engine.clone(), ctx, client, hub.embedder())?;
             let started = Instant::now();
             let result = f(&cx, args);
             let _ = engine.log_activity(&actor.id, tool, "", started.elapsed().as_millis() as i64);
@@ -76,8 +76,8 @@ fn error(text: String) -> CallToolResult {
 #[tool_router]
 impl BrainmatterMcp {
     #[tool(
-        description = "Full-text search over the knowledge graph (titles weigh most; German and English; prefix matching). \
-        Use this first before creating entries. Empty query lists recently changed entries."
+        description = "Search the knowledge graph by words and, when the model is set up, by meaning (German and English; \
+        titles weigh most). Use this first before creating entries. Empty query lists recently changed entries."
     )]
     async fn search(
         &self,
@@ -220,6 +220,30 @@ impl BrainmatterMcp {
         Parameters(args): Parameters<tools::PathArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         self.run(&parts, "find_path", Scope::Read, args, tools::find_path).await
+    }
+
+    #[tool(
+        description = "Entries similar in meaning to a given entry, with likely duplicates marked. \
+        Use it to find what to link or merge. Needs the embedding model; says so if it is not set up."
+    )]
+    async fn similar(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::SimilarArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "similar", Scope::Read, args, tools::similar).await
+    }
+
+    #[tool(
+        description = "Combine duplicates: moves links, projects, tags and text of `merge` entries onto `keep`, \
+        then trashes them. One undoable step."
+    )]
+    async fn merge(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::MergeArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "merge", Scope::Delete, args, tools::merge).await
     }
 
     #[tool(description = "Move an entry and its links to the trash (restorable by the user).")]

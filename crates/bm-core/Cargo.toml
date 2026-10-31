@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 rusqlite = { version = "0.41", features = ["bundled-sqlcipher"] }
 thiserror.workspace = true
+tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

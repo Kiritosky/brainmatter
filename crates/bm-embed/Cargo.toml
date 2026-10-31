@@ -1,15 +1,22 @@
 [package]
-name = "embed-bench"
+name = "bm-embed"
 version.workspace = true
 edition.workspace = true
-publish = false
+license.workspace = true
+publish.workspace = true
 
 [dependencies]
-fastembed = { version = "7.5", default-features = false, features = ["onnx", "ort-download-binaries-rustls-tls", "hf-hub-rustls-tls"] }
-anyhow.workspace = true
+bm-core.workspace = true
 candle-core = { version = "0.11", features = ["metal"] }
 candle-nn = { version = "0.11", features = ["metal"] }
 candle-transformers = { version = "0.11", features = ["metal"] }
 tokenizers = "0.22"
 hf-hub = { version = "0.5", default-features = false, features = ["ureq", "rustls-tls"] }
+sha2 = "0.10"
 serde_json.workspace = true
+thiserror.workspace = true
+parking_lot = "0.13"
+tracing.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true

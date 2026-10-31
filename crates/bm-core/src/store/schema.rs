@@ -9,8 +9,14 @@ type DataStep = fn(&Connection) -> rusqlite::Result<()>;
 /// Index `i` migrates the schema from version `i` to `i + 1`: DDL, then an
 /// optional Rust step for data that SQL cannot compute. Never edit a released
 /// migration; append a new one instead.
-const MIGRATIONS: &[(&str, Option<DataStep>)] =
-    &[(V1, None), (V2, Some(backfill_wikilink_refs)), (V3, None), (V4, None)];
+const MIGRATIONS: &[(&str, Option<DataStep>)] = &[
+    (V1, None),
+    (V2, Some(backfill_wikilink_refs)),
+    (V3, None),
+    (V4, None),
+    (V5, None),
+    (V6, None),
+];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     let current: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
@@ -260,4 +266,15 @@ INSERT INTO nodes_fts(nodes_fts, rank) VALUES ('rank', 'bm25(5.0, 1.0, 2.0)');
 // and multi-step AI edits stay one undo step.
 const V4: &str = r#"
 ALTER TABLE change_sets ADD COLUMN coalesce_key TEXT;
+"#;
+
+// Document frequency per term, to ignore words that occur nearly everywhere.
+const V5: &str = r#"
+CREATE VIRTUAL TABLE nodes_fts_vocab USING fts5vocab(nodes_fts, 'row');
+"#;
+
+// Lets graph snapshots read titles without decrypting every note body.
+const V6: &str = r#"
+CREATE INDEX nodes_graph_idx ON nodes(id, title, kind, reviewed, updated_at, created_by)
+    WHERE deleted_at IS NULL;
 "#;

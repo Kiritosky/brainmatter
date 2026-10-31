@@ -227,6 +227,17 @@ fn main() {
     }
     println!("worst case (2 top words):    {}", pct(times));
 
+    let t = Instant::now();
+    let snap = engine.graph_snapshot(None).unwrap();
+    println!(
+        "graph_snapshot ({} nodes, {} edges, with PageRank + clusters): {:?}",
+        snap.nodes.len(),
+        snap.edges.len(),
+        t.elapsed()
+    );
+    let clusters = snap.nodes.iter().map(|n| n.cluster).max().unwrap_or(0) + 1;
+    println!("clusters: {clusters}");
+
     let sample = engine.search(&SearchQuery { limit: 200, ..SearchQuery::new("") }).unwrap();
     let mut times = Vec::new();
     for hit in &sample {

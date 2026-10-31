@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use rusqlite::{Connection, params};
 
-use super::{edges, projects, rows, rows::EDGE_COLS, rows::edge_from_row};
+use super::{analytics, edges, projects, rows, rows::EDGE_COLS, rows::edge_from_row};
 use crate::{
     error::Result,
     ids::{NodeId, ProjectId},
@@ -42,7 +42,7 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
         let mut stmt = conn.prepare_cached(
             "SELECT n.id, n.title, n.kind, n.reviewed, n.updated_at, n.created_by,
                     lp.x, lp.y, coalesce(lp.pinned, 0)
-             FROM nodes n
+             FROM nodes n INDEXED BY nodes_graph_idx
              LEFT JOIN layout_positions lp ON lp.view_id = ?1 AND lp.node_id = n.id
              WHERE n.deleted_at IS NULL",
         )?;
@@ -56,6 +56,8 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
                 created_by: r.get(5)?,
                 projects: Vec::new(),
                 degree: 0,
+                rank: 0.0,
+                cluster: 0,
                 x: r.get(6)?,
                 y: r.get(7)?,
                 pinned: r.get::<_, i64>(8)? != 0,
@@ -92,6 +94,14 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
                 });
             }
         }
+    }
+
+    let links: Vec<(usize, usize)> = edges.iter().map(|e| (index[&e.src], index[&e.dst])).collect();
+    let ranks = analytics::pagerank(nodes.len(), &links);
+    let clusters = analytics::clusters(nodes.len(), &links);
+    for ((node, rank), cluster) in nodes.iter_mut().zip(ranks).zip(clusters) {
+        node.rank = rank;
+        node.cluster = cluster;
     }
 
     Ok(GraphSnapshot { view, nodes, edges })
@@ -229,16 +239,24 @@ pub(crate) fn project_overview(conn: &Connection, id: &ProjectId) -> Result<Proj
         all.iter().filter(|s| s.project.parent_id.as_ref() == Some(id)).cloned().collect();
 
     let snap = snapshot(conn, Some(id))?;
-    let mut hubs: Vec<(NodeBrief, i64)> = snap
-        .nodes
-        .iter()
-        .filter(|n| n.degree > 0)
-        .map(|n| {
-            (NodeBrief { id: n.id.clone(), title: n.title.clone(), kind: n.kind.clone() }, n.degree)
-        })
-        .collect();
-    hubs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.title.cmp(&b.0.title)));
-    hubs.truncate(10);
+    let brief = |n: &GraphNode| NodeBrief {
+        id: n.id.clone(),
+        title: n.title.clone(),
+        kind: n.kind.clone(),
+    };
+    let mut by_rank: Vec<&GraphNode> = snap.nodes.iter().filter(|n| n.degree > 0).collect();
+    by_rank.sort_by(|a, b| b.rank.total_cmp(&a.rank).then_with(|| a.title.cmp(&b.title)));
+    let hubs: Vec<(NodeBrief, i64)> =
+        by_rank.iter().take(10).map(|n| (brief(n), n.degree)).collect();
+
+    // Clusters are numbered by size; singletons are not a theme.
+    let mut themes: Vec<Vec<NodeBrief>> = Vec::new();
+    for cluster in 0..=snap.nodes.iter().map(|n| n.cluster).max().unwrap_or(0) {
+        let members: Vec<&&GraphNode> = by_rank.iter().filter(|n| n.cluster == cluster).collect();
+        if members.len() >= 3 && themes.len() < 6 {
+            themes.push(members.iter().take(5).map(|n| brief(n)).collect());
+        }
+    }
 
     let mut by_recency: Vec<_> = snap.nodes.iter().collect();
     by_recency.sort_by_key(|n| std::cmp::Reverse(n.updated_at));
@@ -266,6 +284,7 @@ pub(crate) fn project_overview(conn: &Connection, id: &ProjectId) -> Result<Proj
         node_count: snap.nodes.len(),
         edge_count: snap.edges.len(),
         hubs,
+        themes,
         recent,
         kinds,
         tasks,

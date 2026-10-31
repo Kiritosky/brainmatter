@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "spikes/*", "app/src-tauri"]
+members = ["crates/*", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +12,7 @@ publish = false
 bm-core = { path = "crates/bm-core" }
 bm-mcp = { path = "crates/bm-mcp" }
 bm-macos = { path = "crates/bm-macos" }
+bm-embed = { path = "crates/bm-embed" }
 
 anyhow = "1"
 thiserror = "2"

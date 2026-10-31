@@ -142,6 +142,56 @@ pub(crate) fn delete(w: &mut Writer<'_>, id: &NodeId) -> Result<()> {
     Ok(())
 }
 
+/// Moves everything from `others` onto `keep`: edges, project memberships, tags
+/// and text. The merged entries go to the trash, so the whole merge is undoable.
+pub(crate) fn merge(w: &mut Writer<'_>, keep: &NodeId, others: &[NodeId]) -> Result<Node> {
+    rows::live_node(w.conn, keep)?;
+    for other in others {
+        if other == keep {
+            return Err(CoreError::Invalid("an entry cannot be merged into itself".into()));
+        }
+        let source = rows::live_node(w.conn, other)?;
+        for edge in edges::active_edges_of(w.conn, other)? {
+            let (src, dst) = (
+                if edge.src == *other { keep } else { &edge.src },
+                if edge.dst == *other { keep } else { &edge.dst },
+            );
+            edges::soft_delete(w, &edge)?;
+            if src != dst && rows::active_edge(w.conn, src, dst, &edge.relation)?.is_none() {
+                // Not "wikilink": the other entry's text still names the old
+                // title, so a later sync of its links would remove this edge.
+                let origin = match edge.origin {
+                    EdgeOrigin::Wikilink => EdgeOrigin::Manual,
+                    origin => origin,
+                };
+                edges::insert(
+                    w,
+                    src,
+                    dst,
+                    &edge.relation,
+                    edge.weight,
+                    edge.note.as_deref(),
+                    origin,
+                )?;
+            }
+        }
+        for project in rows::projects_of(w.conn, other)? {
+            projects::add_member(w, &project.id, keep)?;
+        }
+        let current = rows::live_node(w.conn, keep)?;
+        let body = source.body.trim();
+        let patch = NodePatch {
+            body: (!body.is_empty() && !current.body.contains(body))
+                .then(|| BodyEdit::Append(source.body.clone())),
+            tags_add: source.tags.clone(),
+            ..Default::default()
+        };
+        update(w, keep, patch)?;
+        delete(w, other)?;
+    }
+    rows::live_node(w.conn, keep)
+}
+
 pub(crate) fn capture(w: &mut Writer<'_>, cap: Capture) -> Result<CaptureResult> {
     if cap.nodes.is_empty() && cap.links.is_empty() {
         return Err(CoreError::Invalid("capture needs at least one node or link".into()));

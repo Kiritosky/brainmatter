@@ -8,12 +8,41 @@ use crate::ids::{ActorId, ChangeSetId, EdgeId, NodeId, ProjectId};
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    NodeUpserted { id: NodeId },
-    NodeDeleted { id: NodeId },
-    EdgeUpserted { id: EdgeId, src: NodeId, dst: NodeId },
-    EdgeDeleted { id: EdgeId, src: NodeId, dst: NodeId },
-    ProjectUpserted { id: ProjectId },
-    ProjectDeleted { id: ProjectId },
-    MembershipChanged { project: ProjectId, node: NodeId, member: bool },
-    ChangeSetCommitted { id: ChangeSetId, actor: ActorId, summary: String },
+    NodeUpserted {
+        id: NodeId,
+    },
+    NodeDeleted {
+        id: NodeId,
+    },
+    EdgeUpserted {
+        id: EdgeId,
+        src: NodeId,
+        dst: NodeId,
+    },
+    EdgeDeleted {
+        id: EdgeId,
+        src: NodeId,
+        dst: NodeId,
+    },
+    ProjectUpserted {
+        id: ProjectId,
+    },
+    ProjectDeleted {
+        id: ProjectId,
+    },
+    MembershipChanged {
+        project: ProjectId,
+        node: NodeId,
+        member: bool,
+    },
+    ChangeSetCommitted {
+        id: ChangeSetId,
+        actor: ActorId,
+        summary: String,
+    },
+    /// New embeddings exist; similarity results may have changed.
+    IndexUpdated {
+        indexed: usize,
+        total: usize,
+    },
 }

@@ -5,6 +5,7 @@
 //!
 //! The API is synchronous; async callers should use `spawn_blocking`.
 
+mod analytics;
 mod edges;
 mod graph;
 mod history;
@@ -13,14 +14,15 @@ mod projects;
 mod refs;
 mod rows;
 mod search;
+mod semantic;
 mod writer;
 
 use std::{
     path::Path,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use tokio::sync::broadcast;
 
@@ -34,7 +36,10 @@ use crate::{
 };
 use writer::Writer;
 
+pub use semantic::{DUPLICATE_SCORE, Indexer, SUGGEST_SCORE, spawn_indexer};
+
 const EVENT_BUFFER: usize = 1024;
+const READER_CACHE_KIB: i64 = 32 * 1024;
 /// Edits of the same entry closer together than this share one change set.
 const COALESCE_WINDOW_MS: i64 = 5 * 60 * 1000;
 
@@ -43,6 +48,11 @@ pub struct Engine {
     readers: Vec<Mutex<Connection>>,
     next_reader: AtomicUsize,
     events: broadcast::Sender<Event>,
+    vectors: RwLock<crate::semantic::VectorIndex>,
+    /// Model of the loaded vectors, once semantic features are on.
+    vector_model: RwLock<Option<String>>,
+    /// Bumped by every committed change; the indexer watches it.
+    generation: AtomicU64,
 }
 
 impl Engine {
@@ -54,6 +64,9 @@ impl Engine {
             .map(|_| {
                 let conn = Db::open(path, key)?.into_conn();
                 conn.pragma_update(None, "query_only", "ON")?;
+                // Decrypted pages stay in RAM only while unlocked; re-decrypting
+                // them on every scan is what makes reads slow.
+                conn.pragma_update(None, "cache_size", -READER_CACHE_KIB)?;
                 Ok(Mutex::new(conn))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -62,6 +75,9 @@ impl Engine {
             readers,
             next_reader: AtomicUsize::new(0),
             events: broadcast::channel(EVENT_BUFFER).0,
+            vectors: RwLock::default(),
+            vector_model: RwLock::new(None),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -275,6 +291,15 @@ impl Engine {
         self.read(|c| search::search(c, query))
     }
 
+    // ---------------------------------------------------------- semantic ---
+
+    /// Merges several entries into `keep` as one undoable change set.
+    pub fn merge_nodes(&self, ctx: &Ctx, keep: &NodeId, others: &[NodeId]) -> Result<Node> {
+        let title = self.read(|c| Ok(rows::live_node(c, keep)?.title))?;
+        let summary = format!("{} Einträge in „{title}“ zusammengeführt", others.len());
+        Ok(self.write(ctx, summary, |w| nodes::merge(w, keep, others))?.0)
+    }
+
     // ------------------------------------------------------------- graph ---
 
     /// Everything needed to render a view: all live nodes, or a project with
@@ -467,6 +492,8 @@ impl Engine {
         tx.commit()?;
         drop(conn);
 
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        self.sync_vectors(&events);
         for e in events {
             let _ = self.events.send(e);
         }

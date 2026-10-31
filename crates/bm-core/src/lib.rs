@@ -8,6 +8,7 @@ pub mod error;
 pub mod events;
 pub mod ids;
 pub mod model;
+pub mod semantic;
 pub mod store;
 pub mod time;
 pub mod vault;

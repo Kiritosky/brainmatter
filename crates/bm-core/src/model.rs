@@ -147,6 +147,10 @@ pub struct GraphNode {
     pub projects: Vec<ProjectId>,
     /// Number of live edges within the view.
     pub degree: i64,
+    /// PageRank within the view; sums to about 1 over all nodes.
+    pub rank: f32,
+    /// Topic cluster within the view; 0 is the largest.
+    pub cluster: u32,
     /// Saved layout position for this view, if any.
     pub x: Option<f64>,
     pub y: Option<f64>,
@@ -207,8 +211,10 @@ pub struct ProjectOverview {
     /// Live nodes in the project and its subprojects.
     pub node_count: usize,
     pub edge_count: usize,
-    /// Most connected entries, with their degree inside the project.
+    /// Most important entries by PageRank, with their degree in the project.
     pub hubs: Vec<(NodeBrief, i64)>,
+    /// Topic clusters (largest first), each with its most important entries.
+    pub themes: Vec<Vec<NodeBrief>>,
     pub recent: Vec<NodeBrief>,
     pub kinds: Vec<(String, usize)>,
     pub tasks: Vec<NodeBrief>,
@@ -367,6 +373,25 @@ pub struct SearchHit {
     pub snippet: String,
     /// Higher is better.
     pub score: f64,
+    /// Found (also) by meaning rather than only by its words.
+    #[serde(default)]
+    pub semantic: bool,
+}
+
+/// An entry that seems related to another one, by meaning.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Similar {
+    pub node: NodeBrief,
+    pub score: f32,
+    /// Similar enough to probably say the same thing.
+    pub likely_duplicate: bool,
+}
+
+/// Progress of the background embedding of entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexStatus {
+    pub indexed: usize,
+    pub total: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

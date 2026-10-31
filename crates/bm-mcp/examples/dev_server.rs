@@ -21,7 +21,12 @@ async fn main() -> anyhow::Result<()> {
     let (_, token) =
         registry.create("Dev Client", &[Scope::Read, Scope::Write, Scope::Delete], &[])?;
     println!("TOKEN {token}");
-    bm_mcp::serve("127.0.0.1:47476", registry, Arc::new(StaticHub(engine)), Default::default())
-        .await?;
+    bm_mcp::serve(
+        "127.0.0.1:47476",
+        registry,
+        Arc::new(StaticHub(engine, None)),
+        Default::default(),
+    )
+    .await?;
     Ok(())
 }

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use bm_core::{
     Engine, Vault,
     model::{ActorKind, Ctx, NewNode, NewProject},
+    semantic::{Embedder, normalize},
     vault::KdfParams,
 };
 use bm_mcp::{ClientRegistry, Scope, StaticHub};
@@ -29,6 +30,10 @@ struct Server {
 }
 
 async fn start() -> Server {
+    start_with(None).await
+}
+
+async fn start_with(embedder: Option<Arc<dyn Embedder>>) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let (vault, keys, _) = Vault::create(dir.path(), "pw", KdfParams::insecure_fast()).unwrap();
     let engine = Arc::new(Engine::open(&vault.db_path(), &keys.db_key(), 2).unwrap());
@@ -36,7 +41,7 @@ async fn start() -> Server {
     let shutdown = CancellationToken::new();
     let app = bm_mcp::router(
         registry.clone(),
-        Arc::new(StaticHub(engine.clone())),
+        Arc::new(StaticHub(engine.clone(), embedder)),
         shutdown.child_token(),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -284,5 +289,117 @@ async fn rejects_bad_tokens_and_browser_origins() {
         post().bearer_auth(&token).header("origin", "https://evil.example").send().await.unwrap();
     assert_eq!(res.status(), 403);
     assert!(post().bearer_auth(&token).send().await.unwrap().status().is_success());
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn similarity_says_when_the_model_is_missing_and_merge_needs_delete_scope() {
+    let s = start().await;
+    let (_, writer) = s.registry.create("Writer", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let w = connect(&s.url, &writer).await;
+    call(&w, "capture", json!({"entries": [{"title": "A"}, {"title": "B"}]})).await;
+
+    let (t, err) = call(&w, "similar", json!({"entry": "A"})).await;
+    assert!(err && t.contains("embedding model"), "{t}");
+    let (t, err) = call(&w, "merge", json!({"keep": "A", "merge": ["B"]})).await;
+    assert!(err && t.contains("may not delete"), "{t}");
+
+    let (_, admin) =
+        s.registry.create("Admin", &[Scope::Read, Scope::Write, Scope::Delete], &[]).unwrap();
+    let a = connect(&s.url, &admin).await;
+    let (t, err) = call(&a, "merge", json!({"keep": "A", "merge": ["B"]})).await;
+    assert!(!err && t.contains("Merged 1 entries"), "{t}");
+    let (t, _) = call(&a, "search", json!({"query": ""})).await;
+    assert!(!t.contains("**B**"), "{t}");
+
+    w.cancel().await.unwrap();
+    a.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+/// Words hash into buckets, so shared words mean shared direction.
+struct FakeModel;
+
+impl FakeModel {
+    fn vector(text: &str) -> Vec<f32> {
+        let mut v = vec![0.0f32; 256];
+        for word in text.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
+            let bucket = word.bytes().fold(7usize, |h, b| h.wrapping_mul(31) + b as usize);
+            v[bucket % 256] += 1.0;
+        }
+        normalize(&mut v);
+        v
+    }
+}
+
+impl Embedder for FakeModel {
+    fn model_id(&self) -> &str {
+        "fake"
+    }
+
+    fn embed_passages(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        Ok(texts.iter().map(|t| Self::vector(t)).collect())
+    }
+
+    fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
+        Ok(Self::vector(text))
+    }
+}
+
+#[tokio::test]
+async fn similarity_hints_respect_project_scopes() {
+    const TEXT: &str = "tokio laufzeit rust asynchron scheduler work stealing threads tasks futures reactor timer netzwerk kanal puffer";
+    let s = start_with(Some(Arc::new(FakeModel))).await;
+    s.engine.load_vectors("fake").unwrap();
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Lasse").unwrap().id);
+    let open = s
+        .engine
+        .create_project(&user, NewProject { name: "Offen".into(), ..Default::default() })
+        .unwrap();
+    let secret = s
+        .engine
+        .create_project(&user, NewProject { name: "Geheim".into(), ..Default::default() })
+        .unwrap();
+    let add = |title: &str, project: &bm_core::model::Project| {
+        s.engine
+            .create_node(
+                &user,
+                NewNode {
+                    title: title.into(),
+                    body: TEXT.into(),
+                    projects: vec![project.id.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    let visible = add("Sichtbar", &open);
+    let hidden = add("Versteckt", &secret);
+    let model = FakeModel;
+    s.engine.index_now(&model, &[visible.id, hidden.id]).unwrap();
+
+    let (_, token) = s
+        .registry
+        .create("Scoped", &[Scope::Read, Scope::Write], std::slice::from_ref(&open.id))
+        .unwrap();
+    let c = connect(&s.url, &token).await;
+
+    let (t, err) = call(
+        &c,
+        "capture",
+        json!({"project": "Offen", "entries": [{"title": "Neu", "body": TEXT}]}),
+    )
+    .await;
+    assert!(!err && t.contains("Sichtbar") && t.contains("Likely duplicates"), "{t}");
+    assert!(!t.contains("Versteckt"), "{t}");
+
+    let (t, _) = call(&c, "similar", json!({"entry": "Sichtbar"})).await;
+    assert!(t.contains("Neu") && t.contains("likely duplicate"), "{t}");
+    assert!(!t.contains("Versteckt"), "{t}");
+
+    let (t, _) = call(&c, "search", json!({"query": TEXT})).await;
+    assert!(t.contains("Sichtbar") && !t.contains("Versteckt"), "{t}");
+
+    c.cancel().await.unwrap();
     s.shutdown.cancel();
 }

@@ -9,11 +9,13 @@ use std::{
 
 use bm_core::{
     CoreError, Engine,
+    engine::SUGGEST_SCORE,
     ids::{ChangeSetId, NodeId, ProjectId},
     model::{
         BodyEdit, Capture, CaptureLink, CaptureNode, Ctx, NewEdge, NewNode, NewProject, NodeBrief,
         NodePatch, SearchQuery,
     },
+    semantic::Embedder,
 };
 use rmcp::schemars::{self, JsonSchema};
 use serde::Deserialize;
@@ -26,6 +28,7 @@ pub(crate) struct ToolCx {
     pub client: Client,
     /// Projects (with subprojects) this client may see; `None` = all.
     pub scope: Option<HashSet<ProjectId>>,
+    pub embedder: Option<Arc<dyn Embedder>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -68,7 +71,12 @@ pub(crate) fn describe(e: &ToolError) -> String {
 }
 
 impl ToolCx {
-    pub(crate) fn new(engine: Arc<Engine>, ctx: Ctx, client: Client) -> Result<Self, ToolError> {
+    pub(crate) fn new(
+        engine: Arc<Engine>,
+        ctx: Ctx,
+        client: Client,
+        embedder: Option<Arc<dyn Embedder>>,
+    ) -> Result<Self, ToolError> {
         let scope = if client.projects.is_empty() {
             None
         } else {
@@ -95,7 +103,7 @@ impl ToolCx {
                 .collect();
             Some(visible)
         };
-        Ok(Self { engine, ctx, client, scope })
+        Ok(Self { engine, ctx, client, scope, embedder })
     }
 
     fn visible_project(&self, p: &ProjectId) -> bool {
@@ -174,7 +182,11 @@ pub(crate) fn search(cx: &ToolCx, a: SearchArgs) -> Out {
     q.limit = if cx.scope.is_some() { limit * 4 } else { limit };
 
     let mut hits = Vec::new();
-    for h in cx.engine.search(&q)? {
+    // A failing model must not break search: words still work.
+    let vector = cx.embedder.as_ref().and_then(|e| {
+        e.embed_query(&a.query).map_err(|err| tracing::warn!("query embedding failed: {err}")).ok()
+    });
+    for h in cx.engine.search_hybrid(&q, vector.as_deref())? {
         if cx.visible(&h.node.id)? {
             hits.push(h);
         }
@@ -194,7 +206,8 @@ pub(crate) fn search(cx: &ToolCx, a: SearchArgs) -> Out {
         format!("{} results for „{}“:\n", hits.len(), a.query)
     };
     for (i, h) in hits.iter().enumerate() {
-        let _ = writeln!(out, "{}. {}", i + 1, format::brief(&h.node));
+        let by_meaning = if h.semantic { " (related by meaning)" } else { "" };
+        let _ = writeln!(out, "{}. {}{by_meaning}", i + 1, format::brief(&h.node));
         let snippet = h.snippet.replace('\n', " ");
         if !snippet.trim().is_empty() {
             let _ = writeln!(out, "   {}", snippet.trim());
@@ -368,6 +381,7 @@ pub(crate) fn capture(cx: &ToolCx, a: CaptureArgs) -> Out {
             })
         );
     }
+    out.push_str(&similar_hints(cx, &r.nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>()));
     if !r.possible_duplicates.is_empty() {
         out.push_str("\nPossible duplicates (same title already existed) — consider `update` on the existing entry and `delete` of the new one:\n");
         for (new, old) in &r.possible_duplicates {
@@ -375,6 +389,100 @@ pub(crate) fn capture(cx: &ToolCx, a: CaptureArgs) -> Out {
         }
     }
     Ok(out)
+}
+
+/// What already exists that resembles new entries. Hints only: nothing here
+/// changes the graph. A failing model never fails to write that succeeded.
+fn similar_hints(cx: &ToolCx, new: &[NodeId]) -> String {
+    let Some(embedder) = &cx.embedder else { return String::new() };
+    if let Err(e) = cx.engine.index_now(embedder.as_ref(), new) {
+        tracing::warn!("embedding new entries failed: {e}");
+        return String::new();
+    }
+    let mut duplicates = String::new();
+    let mut related = String::new();
+    for id in new {
+        let Ok(similar) = cx.engine.similar_nodes(id, 8, SUGGEST_SCORE) else { continue };
+        let linked: HashSet<NodeId> = cx.engine.node_detail(id).map_or_else(
+            |_| HashSet::new(),
+            |d| d.outgoing.iter().chain(&d.incoming).map(|e| e.other.id.clone()).collect(),
+        );
+        for s in
+            similar.iter().filter(|s| !new.contains(&s.node.id) && !linked.contains(&s.node.id))
+        {
+            if !cx.visible(&s.node.id).unwrap_or(false) {
+                continue;
+            }
+            let target = if s.likely_duplicate { &mut duplicates } else { &mut related };
+            let _ = writeln!(target, "- {} ≈ {}", format::short(id), format::brief(&s.node));
+        }
+    }
+    let mut out = String::new();
+    if !duplicates.is_empty() {
+        let _ = write!(
+            out,
+            "\nLikely duplicates of existing entries — consider `merge`:\n{duplicates}"
+        );
+    }
+    if !related.is_empty() {
+        let _ =
+            write!(out, "\nRelated by meaning and not linked yet — consider `link`:\n{related}");
+    }
+    out
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SimilarArgs {
+    /// The entry: exact title, short id or full id.
+    pub entry: String,
+    /// Maximum results (default 8).
+    pub limit: Option<usize>,
+}
+
+pub(crate) fn similar(cx: &ToolCx, a: SimilarArgs) -> Out {
+    let Some(embedder) = &cx.embedder else {
+        return Err(fail(
+            "Similarity needs the embedding model. The user can set it up in Brainmatter → Einstellungen → Suche.",
+        ));
+    };
+    let id = cx.entry(&a.entry)?;
+    cx.engine.index_now(embedder.as_ref(), std::slice::from_ref(&id))?;
+    let limit = a.limit.unwrap_or(8).clamp(1, 30);
+    let mut lines = Vec::new();
+    for s in cx.engine.similar_nodes(&id, limit * 2, SUGGEST_SCORE)? {
+        if cx.visible(&s.node.id)? && lines.len() < limit {
+            let mark = if s.likely_duplicate { " — likely duplicate" } else { "" };
+            lines.push(format!("- {} ({:.2}){mark}", format::brief(&s.node), s.score));
+        }
+    }
+    Ok(if lines.is_empty() {
+        format!("Nothing clearly similar to „{}“.", a.entry)
+    } else {
+        format!("Similar to „{}“ (hints; 1.0 = identical):\n{}", a.entry, lines.join("\n"))
+    })
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MergeArgs {
+    /// The entry that remains (title, short id or id).
+    pub keep: String,
+    /// Entries to merge into it; they end up in the trash.
+    pub merge: Vec<String>,
+}
+
+pub(crate) fn merge(cx: &ToolCx, a: MergeArgs) -> Out {
+    let keep = cx.entry(&a.keep)?;
+    let others = a.merge.iter().map(|m| cx.entry(m)).collect::<Result<Vec<_>, _>>()?;
+    if others.is_empty() {
+        return Err(fail("`merge` needs at least one entry."));
+    }
+    let n = cx.engine.merge_nodes(&cx.ctx, &keep, &others)?;
+    Ok(format!(
+        "Merged {} entries into **{}** ({}). The user can undo this.",
+        others.len(),
+        n.title,
+        format::short(&n.id)
+    ))
 }
 
 // ------------------------------------------------------------------ update ---
@@ -587,6 +695,12 @@ pub(crate) fn project_overview(cx: &ToolCx, a: ProjectArgs) -> Out {
         "Most connected",
         o.hubs.iter().map(|(n, d)| format!("{} — {d} links", format::brief(n))).collect(),
     );
+    let themes: Vec<String> = o
+        .themes
+        .iter()
+        .map(|members| members.iter().map(|n| n.title.as_str()).collect::<Vec<_>>().join(", "))
+        .collect();
+    section(&mut out, "Themes (densely linked groups)", themes);
     section(&mut out, "Recently changed", o.recent.iter().map(format::brief).collect());
     section(&mut out, "Tasks", o.tasks.iter().map(format::brief).collect());
     section(&mut out, "Kinds", o.kinds.iter().map(|(k, n)| format!("{k}: {n}")).collect());
