@@ -10,6 +10,7 @@
   import CommandPalette from './CommandPalette.svelte';
   import ActivityPanel from './ActivityPanel.svelte';
   import DocsView from './DocsView.svelte';
+  import GraphFilter from './GraphFilter.svelte';
   import LibraryPanel from './LibraryPanel.svelte';
   import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
@@ -94,7 +95,8 @@
       {/each}
       <div class="h-full flex-1" data-tauri-drag-region></div>
       {#if ws.graph && ws.main === 'graph'}
-        <span class="text-[11px] text-faint tabular-nums">{ws.graph.nodes.length} Einträge · {ws.graph.edges.length} Verbindungen</span>
+        {@const edges = ws.graph.edges.filter((e) => !ws.hiddenNodes.has(e.src) && !ws.hiddenNodes.has(e.dst)).length}
+        <span class="text-[11px] text-faint tabular-nums">{ws.hiddenNodes.size ? `${ws.graph.nodes.length - ws.hiddenNodes.size} von ${ws.graph.nodes.length}` : ws.graph.nodes.length} Einträge · {edges} Verbindungen</span>
       {/if}
       {#if ws.view}
         <div class="ml-3 w-36"><Segmented bind:value={ws.main} options={MAIN_VIEWS} label="Ansicht" /></div>
@@ -108,6 +110,7 @@
         focusTick={ws.focusTick}
         {suggested}
         {until}
+        hidden={ws.hiddenNodes}
         colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />
@@ -117,6 +120,7 @@
           <div class="w-56">
             <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
           </div>
+          <GraphFilter />
           {#if until === null}
             <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs text-muted transition-colors hover:text-text" title="Das Wachstum des Graphen ansehen" onclick={openTimeSlider}>
               <Clock size={13} /> Zeitregler
@@ -124,7 +128,7 @@
           {/if}
         </div>
         {#if until !== null}
-          <div class="absolute right-34 bottom-4 left-64 z-10">
+          <div class="absolute right-34 bottom-4 left-[352px] z-10">
             <TimeSlider nodes={ws.graph.nodes} bind:until onclose={() => (until = null)} />
           </div>
         {/if}

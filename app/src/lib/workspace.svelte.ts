@@ -6,7 +6,9 @@ import {
   onModel,
   onResync,
   onUpdateAvailable,
+  type Actor,
   type AvailableUpdate,
+  type TagCount,
   type DomainEvent,
   type GraphNode,
   type GraphSnapshot,
@@ -36,12 +38,42 @@ export const KIND_COLORS: Record<string, string> = {
 
 const NEUTRAL = '#8f9bb3';
 const COLOR_MODE_KEY = 'bm.colorMode';
+const HIDDEN_PROJECTS_KEY = 'bm.hiddenProjects';
 const SEEN_VERSION_KEY = 'bm.seenVersion';
 /** Embedding runs in small batches; suggestions need not follow each one. */
 const INDEX_REFRESH_MS = 1500;
 
 export type PaletteMode = 'open' | 'link';
 export type ColorMode = 'project' | 'kind' | 'theme';
+
+/** Everything within `depth` links of `start`, in either direction. */
+function reachable(graph: GraphSnapshot, start: Id, depth: number): Set<Id> {
+  const neighbours = new Map<Id, Id[]>();
+  const add = (a: Id, b: Id) => {
+    const list = neighbours.get(a);
+    if (list) list.push(b);
+    else neighbours.set(a, [b]);
+  };
+  for (const e of graph.edges) {
+    add(e.src, e.dst);
+    add(e.dst, e.src);
+  }
+  const seen = new Set([start]);
+  let frontier = [start];
+  for (let i = 0; i < depth && frontier.length; i++) {
+    const next: Id[] = [];
+    for (const id of frontier) {
+      for (const other of neighbours.get(id) ?? []) {
+        if (!seen.has(other)) {
+          seen.add(other);
+          next.push(other);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return seen;
+}
 
 class Workspace {
   projects = $state<ProjectSummary[]>([]);
@@ -68,6 +100,99 @@ class Workspace {
   unreviewed = $state.raw<NodeBrief[]>([]);
   /** A newer version, once a check has found one. */
   update = $state<AvailableUpdate | null>(null);
+  favorites = $state.raw<NodeBrief[]>([]);
+  tagCounts = $state.raw<TagCount[]>([]);
+  actors = $state.raw<Actor[]>([]);
+  /** What the graph shows. Empty lists mean everything. */
+  filter = $state.raw<{ kinds: string[]; tags: string[]; actors: Id[] }>({ kinds: [], tags: [], actors: [] });
+  /** Local graph: only what is this many links away from the selected entry. */
+  neighbourhood = $state<number | null>(null);
+  /** Projects kept out of sight. Only a view: AIs and search still reach them. */
+  hiddenProjects = $state.raw(new Set<Id>(JSON.parse(localStorage.getItem(HIDDEN_PROJECTS_KEY) ?? '[]')));
+
+  /** Ignores leftovers of deleted projects. */
+  hiddenProjectCount = $derived(this.projects.filter((p) => this.hiddenProjects.has(p.project.id)).length);
+
+  /** Nodes the current filters hide. */
+  hiddenNodes = $derived.by(() => {
+    const hidden = new Set<Id>();
+    const graph = this.graph;
+    if (!graph) return hidden;
+    const { kinds, tags, actors } = this.filter;
+    // Opening a hidden project on purpose has to show what is in it.
+    const opened = this.view && this.hiddenProjects.has(this.view) ? this.subtreeOf(this.view) : null;
+    const concealed = (p: Id) => this.hiddenProjects.has(p) && !opened?.has(p);
+    for (const n of graph.nodes) {
+      const shown =
+        (!kinds.length || kinds.includes(n.kind)) &&
+        (!tags.length || n.tags.some((t) => tags.includes(t))) &&
+        (!actors.length || actors.includes(n.created_by)) &&
+        // An entry that is also in a visible project stays, as do those in none.
+        !(n.projects.length && n.projects.every(concealed));
+      if (!shown) hidden.add(n.id);
+    }
+    if (this.neighbourhood !== null && this.selected) {
+      const near = reachable(graph, this.selected, this.neighbourhood);
+      for (const n of graph.nodes) if (!near.has(n.id)) hidden.add(n.id);
+    }
+    return hidden;
+  });
+
+  activeFilters = $derived(
+    this.filter.kinds.length + this.filter.tags.length + this.filter.actors.length + (this.neighbourhood !== null ? 1 : 0),
+  );
+
+  toggleFilter(key: 'kinds' | 'tags' | 'actors', value: string) {
+    const list = this.filter[key];
+    const next = list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+    this.filter = { ...this.filter, [key]: next };
+  }
+
+  clearFilters() {
+    this.filter = { kinds: [], tags: [], actors: [] };
+    this.neighbourhood = null;
+  }
+
+  private setHiddenProjects(next: Set<Id>) {
+    this.hiddenProjects = next;
+    localStorage.setItem(HIDDEN_PROJECTS_KEY, JSON.stringify([...next]));
+  }
+
+  /** Subprojects go along either way; a hidden parent can still have a visible child. */
+  toggleProjectHidden(id: Id) {
+    const next = new Set(this.hiddenProjects);
+    const hide = !next.has(id);
+    for (const p of this.subtreeOf(id)) {
+      if (hide) next.add(p);
+      else next.delete(p);
+    }
+    this.setHiddenProjects(next);
+  }
+
+  /** Hides everything but this project and what is below it. */
+  showOnlyProject(id: Id) {
+    const keep = this.subtreeOf(id);
+    this.setHiddenProjects(new Set(this.projects.map((p) => p.project.id).filter((p) => !keep.has(p))));
+  }
+
+  showAllProjects() {
+    this.setHiddenProjects(new Set());
+  }
+
+  async toggleFavorite(id: Id) {
+    const favorite = !this.favorites.some((f) => f.id === id);
+    try {
+      await api.setFavorite(id, favorite);
+      this.favorites = await api.favorites();
+    } catch (e) {
+      this.notify(errorMessage(e));
+    }
+  }
+
+  async loadFilterData() {
+    [this.favorites, this.tagCounts, this.actors] = await Promise.all([api.favorites(), api.tagCounts(), api.actors()]);
+  }
+
   /** The changelog, while it is open. */
   changelog = $state.raw<{ heading: string; items: Release[] } | null>(null);
 
@@ -122,7 +247,7 @@ class Workspace {
         this.refreshSuggestions();
       }),
     );
-    await Promise.all([this.loadProjects(), this.loadGraph(), this.loadModel(), this.loadUnreviewed()]);
+    await Promise.all([this.loadProjects(), this.loadGraph(), this.loadModel(), this.loadUnreviewed(), this.loadFilterData()]);
     await this.showWhatsNew();
     // Here and not at launch: until the vault is unlocked, nothing could show it.
     const settings = await api.getSettings();
@@ -255,6 +380,7 @@ class Workspace {
         this.loadProjects(),
         this.loadGraph(),
         this.loadUnreviewed(),
+        this.loadFilterData(),
         this.refreshDetail(),
         this.refreshSuggestions(),
       ]);

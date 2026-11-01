@@ -224,9 +224,92 @@ try {
   await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
   await page.waitForTimeout(400);
 
+  // The palette also finds projects and actions.
+  await page.keyboard.press('Meta+k');
+  await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill('privat');
+  await page.getByRole('dialog', { name: 'Suche' }).getByText('Prüfen', { exact: false }).first().waitFor({ state: 'attached' }).catch(() => {});
+  await page.getByRole('dialog', { name: 'Suche' }).getByRole('button', { name: /Privat.*Projekt/ }).waitFor();
+  await page.waitForTimeout(200);
+  await shot(page, '55-palette-project');
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Privat', exact: true }).first().waitFor();
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Meta+k');
+  await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill('papierkorb');
+  await page.getByRole('dialog', { name: 'Suche' }).getByRole('button', { name: /Papierkorb öffnen/ }).click();
+  await page.getByText('Der Papierkorb ist leer').or(page.getByRole('heading', { name: 'Papierkorb' })).first().waitFor();
+  await page.getByLabel('Schließen').first().click();
+  await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
+  await page.waitForTimeout(300);
+
+  // Filters hide entries without moving the rest; the local graph follows the selection.
+  const countText = async () => (await page.getByRole('dialog', { name: 'Graph filtern' }).getByText(/von \d+ Einträgen/).innerText());
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  const total = await countText();
+  await page.getByRole('dialog', { name: 'Graph filtern' }).getByRole('button', { name: 'concept' }).click();
+  await page.waitForTimeout(250);
+  const filtered = await countText();
+  if (parseInt(filtered) >= parseInt(total.split(' von ')[1])) errors.push(`filter hid nothing: ${filtered}`);
+  await shot(page, '56-graph-filter');
+  await page.getByRole('dialog', { name: 'Graph filtern' }).getByRole('button', { name: 'Zurücksetzen' }).click();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  await openEntry('Tresor');
+  await page.getByRole('button', { name: 'Zu den Favoriten' }).click();
+  await sidebar.getByRole('button', { name: 'Tresor', exact: true }).waitFor();
+  await page.getByRole('button', { name: /^Filter/ }).click();
+  await page.getByRole('dialog', { name: 'Graph filtern' }).getByRole('button', { name: '1', exact: true }).click();
+  await page.waitForTimeout(300);
+  const near = await countText();
+  if (parseInt(near) < 2 || parseInt(near) > 6) errors.push(`local graph looks wrong: ${near}`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+  await shot(page, '57-local-graph');
+  await page.getByRole('button', { name: /^Filter/ }).click();
+  await page.getByRole('dialog', { name: 'Graph filtern' }).getByRole('button', { name: 'Zurücksetzen' }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Aus den Favoriten entfernen' }).click();
+  await sidebar.getByRole('button', { name: 'Tresor', exact: true }).waitFor({ state: 'detached' });
+  await page.getByLabel('Schließen').first().click();
+
   // Managing projects: rename, move by menu and by dragging, delete.
   const row = (name: string) => sidebar.getByRole('listitem').filter({ hasText: name }).last();
   const order = () => sidebar.getByRole('listitem').locator('span.truncate').allInnerTexts();
+
+  // Hiding projects: one away, only one left, and opening a hidden one on purpose.
+  const shownNow = async () => {
+    await page.getByRole('button', { name: /^Filter/ }).click();
+    const text = await countText();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    return parseInt(text);
+  };
+  await sidebar.getByRole('button', { name: 'Alles', exact: true }).click();
+  await page.waitForTimeout(500);
+  const everything = await shownNow();
+  await row('Privat').hover();
+  await page.getByRole('button', { name: 'Ausblenden: Privat' }).click();
+  await sidebar.getByText('1 ausgeblendet').waitFor();
+  await page.waitForTimeout(350);
+  await shot(page, '59-project-hidden');
+  const withoutPrivate = await shownNow();
+  if (withoutPrivate >= everything) errors.push(`hiding hid nothing: ${withoutPrivate} of ${everything}`);
+  if (await sidebar.getByRole('button', { name: /^Privat/ }).count()) errors.push('hidden project still listed');
+  await sidebar.getByText('1 ausgeblendet').click();
+  await sidebar.getByRole('button', { name: /^Privat/ }).first().click();
+  await page.waitForTimeout(500);
+  if ((await shownNow()) === 0) errors.push('an opened hidden project shows nothing');
+  await sidebar.getByRole('button', { name: 'Alles', exact: true }).click();
+  await sidebar.getByRole('button', { name: 'Alle zeigen' }).click();
+  await sidebar.getByText('ausgeblendet').waitFor({ state: 'detached' });
+  await row('Kern').hover();
+  await page.getByRole('button', { name: 'Mehr zu Kern' }).click();
+  await page.getByRole('menuitem', { name: 'Nur dieses anzeigen' }).click();
+  await page.waitForTimeout(350);
+  await shot(page, '60-project-only');
+  if ((await shownNow()) >= everything) errors.push('showing only one project hid nothing');
+  await sidebar.getByRole('button', { name: 'Alle zeigen' }).click();
+  if ((await shownNow()) !== everything) errors.push('showing all did not bring everything back');
   await row('Tresor-Details').hover();
   await sidebar.getByRole('button', { name: 'Mehr zu Tresor-Details' }).click();
   await page.getByRole('menu').waitFor();
@@ -289,6 +372,21 @@ try {
   // Documentation: read, navigate, write, and mirror a folder read-only.
   await sidebar.getByRole('button', { name: /^Brainmatter/ }).first().click();
   await page.getByRole('radio', { name: 'Doku' }).click();
+  await page.getByRole('heading', { name: 'Handbuch' }).waitFor();
+  await page.waitForTimeout(400);
+  // Doc tags: filter the page list, then add one to the open page.
+  const tagFilters = page.getByRole('group', { name: 'Nach Tag filtern' });
+  await tagFilters.getByRole('button', { name: /#start/ }).click();
+  await page.getByRole('navigation', { name: 'Seiten' }).getByText('Architektur').waitFor({ state: 'detached' });
+  await shot(page, '58-docs-tag-filter');
+  await tagFilters.getByRole('button', { name: /#start/ }).click();
+  await page.getByLabel('Tag hinzufügen').first().fill('neu');
+  await page.keyboard.press('Enter');
+  await tagFilters.getByRole('button', { name: /#neu/ }).waitFor();
+  await page.getByRole('button', { name: 'Tag neu entfernen' }).click();
+  await tagFilters.getByRole('button', { name: /#neu/ }).waitFor({ state: 'detached' });
+
+  await page.getByRole('button', { name: 'Bearbeiten' }).click();
   await page.getByRole('heading', { name: 'Handbuch' }).waitFor();
   await page.waitForTimeout(400);
   await shot(page, '48-docs-narrow');

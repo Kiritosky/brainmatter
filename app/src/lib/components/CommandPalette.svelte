@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { CornerDownLeft, Link2, Plus, Search, Sparkles } from '@lucide/svelte';
+  import { Activity, BookMarked, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Sparkles, Sun, Trash2 } from '@lucide/svelte';
+  import { releases } from '#lib/changelog.ts';
+  import { theme } from '#lib/theme.svelte.ts';
   import { api, errorMessage, type SearchHit } from '#lib/api.ts';
   import { KIND_COLORS, ws } from '#lib/workspace.svelte.ts';
   import Select from '#lib/ui/Select.svelte';
@@ -12,11 +14,56 @@
   let active = $state(0);
   let seq = 0;
 
-  // Entries + a "create" action as the last option.
-  const options = $derived([
-    ...hits.filter((h) => mode !== 'link' || h.node.id !== ws.selected).map((h) => ({ kind: 'hit' as const, hit: h })),
-    ...(text.trim() ? [{ kind: 'create' as const }] : []),
-  ]);
+  type Command = { label: string; icon: typeof Search; hint?: string; run: () => unknown };
+
+  const panel = (name: 'activity' | 'review' | 'library' | 'trash') => () => {
+    ws.select(null);
+    ws.panel = name;
+  };
+  const setTheme = (mode: 'system' | 'light' | 'dark') => async () => {
+    theme.apply(mode);
+    const settings = await api.getSettings();
+    await api.updateSettings({ ...settings, theme: mode });
+  };
+
+  const COMMANDS: Command[] = [
+    { label: 'Neuer Eintrag', icon: Plus, hint: '⌘N', run: () => ws.createNode('Neuer Eintrag') },
+    { label: 'Aktivität zeigen', icon: Activity, run: panel('activity') },
+    { label: 'Prüfen', icon: ListChecks, run: panel('review') },
+    { label: 'Bibliothek öffnen', icon: BookMarked, run: panel('library') },
+    { label: 'Papierkorb öffnen', icon: Trash2, run: panel('trash') },
+    { label: 'Einstellungen', icon: Settings, hint: '⌘,', run: () => (ws.settingsOpen = true) },
+    { label: 'Was ist neu', icon: Sparkles, run: () => (ws.changelog = { heading: 'Alle Änderungen', items: releases }) },
+    { label: 'Filter zurücksetzen', icon: ListFilter, run: () => ws.clearFilters() },
+    { label: 'Helles Design', icon: Sun, run: setTheme('light') },
+    { label: 'Dunkles Design', icon: Moon, run: setTheme('dark') },
+    { label: 'Design wie macOS', icon: Monitor, run: setTheme('system') },
+    { label: 'Sperren', icon: Lock, hint: '⌘⇧L', run: () => api.lock() },
+  ];
+
+  const matches = (label: string) => label.toLowerCase().includes(text.trim().toLowerCase());
+
+  // Projects and commands only when opening things, and only once there is
+  // something to match: an empty field shows the latest entries.
+  const projects = $derived(mode === 'open' && text.trim() ? ws.projects.filter((p) => matches(p.project.name)).slice(0, 5) : []);
+  const commands = $derived(mode === 'open' && text.trim() ? COMMANDS.filter((c) => matches(c.label)).slice(0, 5) : []);
+
+  // Entries first, since finding them is what the palette is for, then projects and
+  // commands, and "create" as the last option. Only a project named exactly what was
+  // typed goes ahead of them, unless an entry has that exact title too.
+  const options = $derived.by(() => {
+    const typed = text.trim().toLowerCase();
+    const exactEntry = hits.some((h) => h.node.title.toLowerCase() === typed);
+    const isFirst = (name: string) => !exactEntry && name.toLowerCase() === typed;
+    const project = (p: (typeof projects)[number]) => ({ kind: 'project' as const, project: p.project });
+    return [
+      ...projects.filter((p) => isFirst(p.project.name)).map(project),
+      ...hits.filter((h) => mode !== 'link' || h.node.id !== ws.selected).map((h) => ({ kind: 'hit' as const, hit: h })),
+      ...projects.filter((p) => !isFirst(p.project.name)).map(project),
+      ...commands.map((command) => ({ kind: 'command' as const, command })),
+      ...(text.trim() ? [{ kind: 'create' as const }] : []),
+    ];
+  });
 
   $effect(() => {
     const q = text;
@@ -58,7 +105,9 @@
     const title = text.trim();
     close();
     try {
-      if (current === 'open') {
+      if (opt.kind === 'project') await ws.setView(opt.project.id);
+      else if (opt.kind === 'command') await opt.command.run();
+      else if (current === 'open') {
         if (opt.kind === 'hit') await ws.select(opt.hit.node.id, true);
         else await ws.createNode(title);
       } else if (ws.selected) {
@@ -107,7 +156,15 @@
           class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-100 {i === active ? 'bg-accent/12' : ''}"
           onmouseenter={() => (active = i)}
           onclick={() => choose(i)}>
-          {#if opt.kind === 'hit'}
+          {#if opt.kind === 'project'}
+            <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(opt.project.id)}"></span>
+            <span class="min-w-0 flex-1 truncate font-medium">{opt.project.name}</span>
+            <span class="shrink-0 text-[11px] text-faint">Projekt</span>
+          {:else if opt.kind === 'command'}
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center text-faint"><opt.command.icon size={14} /></span>
+            <span class="min-w-0 flex-1 truncate">{opt.command.label}</span>
+            {#if opt.command.hint}<span class="kbd shrink-0">{opt.command.hint}</span>{:else}<span class="shrink-0 text-[11px] text-faint">Aktion</span>{/if}
+          {:else if opt.kind === 'hit'}
             <span class="h-2 w-2 shrink-0 rounded-full" style="background: {KIND_COLORS[opt.hit.node.kind] ?? KIND_COLORS.note}"></span>
             <div class="min-w-0 flex-1">
               <div class="flex items-baseline gap-2">

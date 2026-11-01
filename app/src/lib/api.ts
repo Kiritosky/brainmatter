@@ -76,6 +76,19 @@ export interface NodeDetail {
   read_only: boolean;
 }
 
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export interface Actor {
+  id: Id;
+  kind: 'user' | 'ai';
+  name: string;
+  color: string | null;
+  created_at: number;
+}
+
 export interface ProjectDeletePreview {
   subprojects: number;
   entries_only_here: number;
@@ -91,6 +104,7 @@ export interface DocPage {
   source_path: string | null;
   reviewed: boolean;
   updated_at: number;
+  tags: string[];
 }
 
 export interface DocSource {
@@ -151,6 +165,7 @@ export interface GraphNode {
   updated_at: number;
   created_by: Id;
   projects: Id[];
+  tags: string[];
   degree: number;
   /** PageRank within the view; sums to about 1. */
   rank: number;
@@ -434,6 +449,10 @@ export const api = {
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),
+  favorites: () => call<NodeBrief[]>('favorites'),
+  setFavorite: (id: Id, favorite: boolean) => call<void>('set_favorite', { id, favorite }),
+  tagCounts: () => call<TagCount[]>('tag_counts'),
+  actors: () => call<Actor[]>('actors'),
   docTree: (project: Id) => call<DocPage[]>('doc_tree', { project }),
   createDocPage: (project: Id, title: string, parent: Id | null = null) => call<Node>('create_doc_page', { project, title, parent }),
   placeDocPage: (id: Id, parent: Id | null, position: number) => call<void>('place_doc_page', { id, parent, position }),

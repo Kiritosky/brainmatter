@@ -3,7 +3,7 @@
   import { slide } from 'svelte/transition';
   import DeleteProjectDialog from './DeleteProjectDialog.svelte';
   import ProjectMenu from './ProjectMenu.svelte';
-  import { ArrowUpCircle, BookMarked, ChevronRight, Ellipsis, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
+  import { ArrowUpCircle, BookMarked, ChevronRight, Ellipsis, Eye, EyeOff, Star, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
   import { api, errorMessage, type Id, type Project } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -11,6 +11,7 @@
   let { userName }: { userName: string | null } = $props();
 
   const COLLAPSED_KEY = 'bm.collapsedProjects';
+  const MAX_TAGS = 24;
   const INDENT_PX = 12;
 
   let creatingUnder = $state<Id | null | undefined>(undefined);
@@ -31,7 +32,23 @@
     return parent ? [parent, ...ancestors(parent)] : [];
   };
   const depth = (id: Id) => ancestors(id).length;
-  const visible = $derived(ws.projects.filter((p) => !ancestors(p.project.id).some((a) => collapsed.has(a))));
+  let showHidden = $state(false);
+  /** Hidden, but needed to place something visible below it. */
+  const holdsVisible = $derived.by(() => {
+    const out = new Set<Id>();
+    // Children come after their parents, so backwards reaches every ancestor.
+    for (const { project } of [...ws.projects].reverse()) {
+      if (project.parent_id && (!ws.hiddenProjects.has(project.id) || out.has(project.id))) out.add(project.parent_id);
+    }
+    return out;
+  });
+  const listed = (id: Id) => showHidden || !ws.hiddenProjects.has(id) || holdsVisible.has(id) || ws.view === id;
+  const visible = $derived(ws.projects.filter((p) => listed(p.project.id) && !ancestors(p.project.id).some((a) => collapsed.has(a))));
+
+  // Nothing left to unfold once everything is visible again.
+  $effect(() => {
+    if (!ws.hiddenProjectCount) showHidden = false;
+  });
 
   /** A collapsed project answers for what it hides. An entry in two of its
    * subprojects counts twice here; for an overview that is close enough. */
@@ -190,6 +207,15 @@
       <Network size={14} class={ws.view === null ? 'text-accent' : ''} /> Alles
     </button>
 
+    {#if ws.favorites.length}
+      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">Favoriten</span></div>
+      {#each ws.favorites as favorite (favorite.id)}
+        <button class="nav-row {ws.selected === favorite.id ? 'active' : ''}" onclick={() => ws.select(favorite.id, true)}>
+          <Star size={13} class="shrink-0 fill-warn/70 text-warn" /> <span class="truncate">{favorite.title}</span>
+        </button>
+      {/each}
+    {/if}
+
     <!-- Dropping on the heading moves a project to the top level. -->
     <div class="mt-5 mb-1 flex items-center rounded-lg pr-1 pl-2 transition-colors {dropAt?.id === null && dragging ? 'bg-accent/15' : ''}"
       role="presentation"
@@ -244,7 +270,7 @@
             </div>
           {:else}
             <!-- The space for the arrow stays empty without subprojects, so the dots line up. -->
-            <button class="nav-row !pl-5.5 group-hover:!pr-14 {ws.view === project.id ? 'active' : ''} {dropAt?.id === project.id && dropAt.zone === 'inside' ? '!bg-accent/20 ring-1 ring-accent/60' : ''}"
+            <button class="nav-row !pl-5.5 group-hover:!pr-20 {ws.hiddenProjects.has(project.id) ? 'opacity-50' : ''} {ws.view === project.id ? 'active' : ''} {dropAt?.id === project.id && dropAt.zone === 'inside' ? '!bg-accent/20 ring-1 ring-accent/60' : ''}"
               onclick={() => ws.setView(project.id)} ondblclick={() => startRename(project)}>
               <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(project.id)}"></span>
               <span class="truncate">{project.name}</span>
@@ -260,6 +286,12 @@
             </button>
           {/if}
           {#if renaming !== project.id}
+            {@const isHidden = ws.hiddenProjects.has(project.id)}
+            <button class="icon-btn absolute top-1 right-13 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              aria-label="{isHidden ? 'Einblenden' : 'Ausblenden'}: {project.name}" aria-pressed={isHidden} title={isHidden ? 'Einblenden' : 'Ausblenden'}
+              onclick={() => ws.toggleProjectHidden(project.id)}>
+              {#if isHidden}<Eye size={12} />{:else}<EyeOff size={12} />{/if}
+            </button>
             <button class="icon-btn absolute top-1 right-7 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               aria-label="Unterprojekt in {project.name} anlegen" title="Unterprojekt" onclick={() => (reveal(project.id, true), (creatingUnder = project.id))}>
               <Plus size={12} />
@@ -278,6 +310,29 @@
         {/if}
       </div>
     {/each}
+
+    {#if ws.hiddenProjectCount}
+      <div class="mt-1 flex items-center gap-1 pr-1 pl-2 text-xs text-faint" in:pop={{ duration: 140, y: -3 }}>
+        <button class="flex h-6.5 min-w-0 flex-1 items-center gap-1.5 text-left transition-colors hover:text-text" aria-expanded={showHidden} onclick={() => (showHidden = !showHidden)}>
+          <EyeOff size={12} class="shrink-0" /> <span class="truncate">{ws.hiddenProjectCount} ausgeblendet</span>
+          <ChevronRight size={12} class="shrink-0 transition-transform duration-150 ease-(--ease-out-soft) {showHidden ? 'rotate-90' : ''}" />
+        </button>
+        <button class="shrink-0 transition-colors hover:text-text" onclick={() => ws.showAllProjects()}>Alle zeigen</button>
+      </div>
+    {/if}
+
+    {#if ws.tagCounts.length}
+      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">Tags</span></div>
+      <div class="flex flex-wrap gap-1 px-1.5 pb-2">
+        {#each ws.tagCounts.slice(0, MAX_TAGS) as { tag, count: uses } (tag)}
+          {@const active = ws.filter.tags.includes(tag)}
+          <button class="flex h-6 max-w-full items-center gap-1 rounded-md px-1.5 text-xs transition-colors {active ? 'bg-accent/15 text-text' : 'text-muted hover:bg-elevated hover:text-text'}"
+            aria-pressed={active} title="Im Graph filtern" onclick={() => ws.toggleFilter('tags', tag)}>
+            <span class="truncate">#{tag}</span><span class="text-[10px] text-faint tabular-nums">{uses}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <div class="px-2 pb-1.5">

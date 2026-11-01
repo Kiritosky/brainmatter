@@ -14,10 +14,13 @@
     focusTick,
     suggested,
     until,
+    hidden,
     colorFor,
     onselect,
     onopen,
   }: {
+    /** Entries the filters hide. They keep their place in the layout. */
+    hidden: Set<Id>;
     /** Time slider: show only what existed at this time (ms). */
     until: number | null;
     snapshot: GraphSnapshot | null;
@@ -56,6 +59,9 @@
   // Read by the styles below; a plain variable, so a drag on the slider costs
   // one refresh and not a reactive update per node.
   let visibleUntil = Infinity;
+  // Likewise, and not node attributes: Sigma would have to repaint nodes the sync
+  // just added and hasn't processed yet, and throws.
+  let filteredOut: Set<Id> = new Set();
 
   /** `rank * count` is 1 for an average entry, whatever the size of the view. */
   const sizeFor = (rank: number, count: number) => Math.min(18, Math.max(3.5, 2 + Math.sqrt(rank * count) * 3.6));
@@ -100,6 +106,7 @@
         size: sizeFor(n.rank, snap.nodes.length),
         color: colorFor(n),
         born: createdAt(n.id),
+        key: n.id,
         reviewed: n.reviewed,
         fixed: n.pinned,
       };
@@ -118,7 +125,7 @@
     });
     for (const e of snap.edges) {
       if (!graph.hasEdge(e.id) && graph.hasNode(e.src) && graph.hasNode(e.dst)) {
-        graph.addEdgeWithKey(e.id, e.src, e.dst, { relation: e.relation, origin: e.origin, born: createdAt(e.id) });
+        graph.addEdgeWithKey(e.id, e.src, e.dst, { relation: e.relation, origin: e.origin, born: createdAt(e.id), src: e.src, dst: e.dst });
       }
     }
 
@@ -224,7 +231,7 @@
         nodes: [
           DEFAULT_STYLES.nodes,
           {
-            visibility: (a) => ((a.born as number) > visibleUntil ? 'hidden' : 'visible'),
+            visibility: (a) => (filteredOut.has(a.key as Id) || (a.born as number) > visibleUntil ? 'hidden' : 'visible'),
             color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? colors.dimNode : (a.color as string)),
             labelColor: (a, s, gs) =>
               gs.hasHighlighted && !s.isHighlighted ? colors.dimLabel : a.reviewed === false ? colors.labelAi : colors.label,
@@ -236,7 +243,8 @@
         edges: [
           DEFAULT_STYLES.edges,
           {
-            visibility: (a) => ((a.born as number) > visibleUntil ? 'hidden' : 'visible'),
+            visibility: (a) =>
+              filteredOut.has(a.src as Id) || filteredOut.has(a.dst as Id) || (a.born as number) > visibleUntil ? 'hidden' : 'visible',
             color: (a, s, gs) => (a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : gs.hasHighlighted ? colors.edgeDim : colors.edge),
             size: (a, s) => (a.ghost ? 1 : s.isHighlighted ? 1.5 : 0.6),
           },
@@ -292,6 +300,11 @@
 
   $effect(() => {
     visibleUntil = until ?? Infinity;
+    renderer?.refresh();
+  });
+
+  $effect(() => {
+    filteredOut = hidden;
     renderer?.refresh();
   });
 

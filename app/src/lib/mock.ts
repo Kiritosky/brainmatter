@@ -76,7 +76,7 @@ function docTree(project: string) {
   const visit = (parent: string | null, depth: number) => {
     for (const d of live.filter((x) => (x.parent && ids.has(x.parent) ? x.parent : null) === parent).sort((a, b) => a.sort - b.sort)) {
       const n = nodes.get(d.node)!;
-      out.push({ node: { id: n.id, title: n.title, kind: n.kind }, parent, depth, read_only: !!d.source, source_path: d.path, reviewed: n.reviewed, updated_at: n.updated_at });
+      out.push({ node: { id: n.id, title: n.title, kind: n.kind }, parent, depth, read_only: !!d.source, source_path: d.path, reviewed: n.reviewed, updated_at: n.updated_at, tags: [...n.tags] });
       visit(d.node, depth + 1);
     }
   };
@@ -84,6 +84,7 @@ function docTree(project: string) {
   return out;
 }
 
+const favorites = new Set<string>();
 let updateChecks = 0;
 const fileLinks: FileLinkStatus[] = [];
 const MODEL_BYTES = 487_724_985;
@@ -282,7 +283,7 @@ function graph(project: string | null): GraphSnapshot {
     nodes: ns.map((n) => {
       const l = layouts.get(`${view}|${n.id}`);
       return {
-        id: n.id, title: n.title, kind: n.kind, reviewed: n.reviewed, updated_at: n.updated_at, created_by: n.created_by,
+        id: n.id, title: n.title, kind: n.kind, reviewed: n.reviewed, updated_at: n.updated_at, created_by: n.created_by, tags: n.tags,
         projects: projectsOf(n.id).map((p) => p.id), degree: degree.get(n.id) ?? 0, ...measure(n.id), x: l?.x ?? null, y: l?.y ?? null, pinned: l?.pinned ?? false,
       };
     }),
@@ -365,7 +366,9 @@ function seed() {
   const ids = [...nodes.values()];
   const guide = addDoc(bm.id, 'Handbuch', '# Überblick\n\nBrainmatter hält dein Wissen lokal und verschlüsselt. Diese Seite erklärt, wie die Teile zusammenspielen.\n\n## Der Tresor\n\nAlles liegt in einem Tresor, den dein Passwort oder Touch ID öffnet. Ohne eines von beiden kommt niemand an die Daten, auch keine KI.\n\n## Verbindungen\n\nEinträge verbinden sich über Links im Text oder über benannte Beziehungen.\n\n```sh\nbun run tauri dev\n```\n\n## KI-Zugriff\n\nJede KI bekommt ihr eigenes Token und sieht nur, was du erlaubst.');
   addDoc(bm.id, 'Installation', '# Installation\n\nZiehe die App in den Programme-Ordner und starte sie.', guide.id);
-  addDoc(bm.id, 'Architektur', '# Architektur\n\nDer Kern ist in Rust geschrieben.');
+  const architecture = addDoc(bm.id, 'Architektur', '# Architektur\n\nDer Kern ist in Rust geschrieben.');
+  guide.tags = ['handbuch', 'start'];
+  architecture.tags = ['handbuch'];
   addEdge(ids[3].id, ids[1].id, 'depends_on');
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
   const H = 3_600_000;
@@ -477,6 +480,20 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  favorites: () =>
+    [...favorites]
+      .map((fid) => nodes.get(fid))
+      .filter((n): n is Node => !!n && !n.deleted_at)
+      .map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
+  set_favorite: (a) => void (a.favorite ? favorites.add(a.id) : favorites.delete(a.id)),
+  tag_counts: () => {
+    const counts = new Map<string, number>();
+    for (const n of nodes.values()) {
+      if (!n.deleted_at && n.kind !== 'doc' && n.kind !== 'template') n.tags.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1));
+    }
+    return [...counts].map(([tag, count]) => ({ tag, count })).sort((x, y) => y.count - x.count);
+  },
+  actors: () => [{ id: USER, kind: 'user', name: userName, color: null, created_at: 0 }],
   rename_project: (a) => {
     const p = projects.get(a.id);
     if (!p) fail('not_found', 'Projekt nicht gefunden');
@@ -608,7 +625,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     nodes.delete(n.id);
     notify({ type: 'node_deleted', id: n.id });
   },
-  app_version: () => '0.4.0',
+  app_version: () => '0.5.0',
   // Only when asked, so screenshots do not all show an update.
   check_update: () => (updateChecks++ > 0 ? { version: '0.5.0', notes: '### Neu\n- **Etwas Schönes:** Ein Beispiel für Update-Notizen.' } : null),
   install_update: () => undefined,

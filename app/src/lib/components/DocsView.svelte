@@ -21,8 +21,17 @@
   let scroller: HTMLElement | undefined = $state();
   let headings = $state.raw<{ id: string; title: string; level: number }[]>([]);
   let loaded = $state(false);
+  let tagFilter = $state<string | null>(null);
+  let newTag = $state('');
 
-  const index = $derived(pages.findIndex((p) => p.node.id === currentId));
+  const tagCounts = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const p of pages) for (const tag of p.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    return [...counts].sort(([a], [b]) => a.localeCompare(b, 'de'));
+  });
+  const shown = $derived(tagFilter ? pages.filter((p) => p.tags.includes(tagFilter!)) : pages);
+
+  const index =$derived(pages.findIndex((p) => p.node.id === currentId));
   const previous = $derived(index > 0 ? pages[index - 1] : null);
   const next = $derived(index >= 0 && index < pages.length - 1 ? pages[index + 1] : null);
   const page = $derived(index >= 0 ? pages[index] : null);
@@ -48,6 +57,8 @@
   async function load() {
     [pages, sources] = await Promise.all([api.docTree(project), api.docSources(project)]);
     loaded = true;
+    // The last page with this tag may just have lost it.
+    if (tagFilter && !pages.some((p) => p.tags.includes(tagFilter!))) tagFilter = null;
     if (!pages.some((p) => p.node.id === currentId)) currentId = pages[0]?.node.id ?? null;
     await loadCurrent();
   }
@@ -77,6 +88,7 @@
     void project;
     untrack(() => {
       currentId = null;
+      tagFilter = null;
       load().then(syncSources).then(load);
     });
   });
@@ -105,8 +117,9 @@
       hits = [];
       return;
     }
+    const tags = tagFilter ? [tagFilter] : [];
     const timer = setTimeout(async () => {
-      hits = await api.search(q, { project, kinds: ['doc'], limit: 30 }).catch(() => []);
+      hits = await api.search(q, { project, kinds: ['doc'], tags, limit: 30 }).catch(() => []);
     }, 80);
     return () => clearTimeout(timer);
   });
@@ -126,6 +139,16 @@
   function move(p: DocPage, by: number) {
     const position = siblings(p).findIndex((o) => o.node.id === p.node.id) + by;
     return act(() => api.placeDocPage(p.node.id, p.parent, position));
+  }
+
+  function addTag(e: SubmitEvent) {
+    e.preventDefault();
+    const tag = newTag.trim();
+    newTag = '';
+    if (tag && currentId) {
+      const id = currentId;
+      act(() => api.updateNode(id, { tags_add: [tag] }));
+    }
   }
 
   function onArticleClick(e: MouseEvent) {
@@ -155,6 +178,17 @@
       <button class="icon-btn shrink-0" aria-label="Neue Seite" title="Neue Seite" onclick={() => newPage()}><FilePlus size={15} /></button>
     </div>
 
+    {#if tagCounts.length}
+      <div class="flex max-h-20 flex-wrap gap-1 overflow-y-auto px-3 pb-2" role="group" aria-label="Nach Tag filtern">
+        {#each tagCounts as [tag, count] (tag)}
+          <button class="chip transition-colors {tagFilter === tag ? '!border-accent/40 !bg-accent/15 !text-accent' : 'hover:!border-faint hover:text-text'}"
+            aria-pressed={tagFilter === tag} onclick={() => (tagFilter = tagFilter === tag ? null : tag)}>
+            #{tag}<span class="text-faint tabular-nums">{count}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       {#if query.trim()}
         {#each hits as hit (hit.node.id)}
@@ -168,15 +202,16 @@
           <p class="px-2 py-6 text-center text-xs text-faint">Nichts gefunden.</p>
         {/each}
       {:else}
-        {#each pages as p (p.node.id)}
+        {#each shown as p (p.node.id)}
           {@const list = siblings(p)}
           {@const position = list.findIndex((o) => o.node.id === p.node.id)}
-          <div class="group relative" style="padding-left: {p.depth * INDENT_PX}px">
+          <!-- Under a filter the parents are missing, so nesting would only mislead. -->
+          <div class="group relative" style="padding-left: {tagFilter ? 0 : p.depth * INDENT_PX}px">
             <button class="nav-row {currentId === p.node.id ? 'active' : ''}" onclick={() => open(p.node.id)}>
               <FileText size={13} class="shrink-0 {currentId === p.node.id ? 'text-accent' : 'text-faint'}" />
               <span class="truncate">{p.node.title}</span>
             </button>
-            {#if !p.read_only}
+            {#if !p.read_only && !tagFilter}
               <div class="absolute top-1 right-1 flex items-center rounded-md bg-elevated opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
                 <button class="icon-btn !h-6 !w-6" aria-label="„{p.node.title}“ nach oben" title="Nach oben" disabled={position === 0} onclick={() => move(p, -1)}><ArrowUp size={12} /></button>
                 <button class="icon-btn !h-6 !w-6" aria-label="„{p.node.title}“ nach unten" title="Nach unten" disabled={position === list.length - 1} onclick={() => move(p, 1)}><ArrowDown size={12} /></button>
@@ -230,6 +265,17 @@
                   <button class="icon-btn hover:!text-danger" aria-label="In den Papierkorb" title="In den Papierkorb" onclick={() => act(() => api.deleteNode(page.node.id))}><Trash2 size={14} /></button>
                 </div>
               {/if}
+            </div>
+            <div class="mt-2 flex flex-wrap items-center gap-1">
+              {#each current.node.tags as tag (tag)}
+                <span class="chip">
+                  <button class="transition-colors hover:text-accent" title="Nach #{tag} filtern" onclick={() => (tagFilter = tag)}>#{tag}</button>
+                  <button class="-mr-0.5 text-faint transition-colors hover:text-danger" aria-label="Tag {tag} entfernen" onclick={() => act(() => api.updateNode(page.node.id, { tags_remove: [tag] }))}><X size={11} /></button>
+                </span>
+              {/each}
+              <form onsubmit={addTag}>
+                <input class="h-6 w-20 rounded-md bg-transparent px-1 text-xs text-muted outline-none placeholder:text-faint focus:bg-elevated" placeholder="+ Tag" aria-label="Tag hinzufügen" bind:value={newTag} />
+              </form>
             </div>
           </header>
 

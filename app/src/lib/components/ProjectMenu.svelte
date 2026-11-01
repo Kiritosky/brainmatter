@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, CornerLeftUp, FolderInput, FolderPlus, Pencil, Trash2 } from '@lucide/svelte';
+  import { ArrowLeft, CornerLeftUp, Eye, EyeOff, Focus, FolderInput, FolderPlus, Pencil, Trash2 } from '@lucide/svelte';
   import type { Id, Project } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -79,6 +79,11 @@
     <button class="menu-row" role="menuitem" onclick={onrename}><Pencil size={13} class="text-faint" /> Umbenennen</button>
     <button class="menu-row" role="menuitem" onclick={onsubproject}><FolderPlus size={13} class="text-faint" /> Unterprojekt anlegen</button>
     <button class="menu-row" role="menuitem" onclick={() => (moving = true)}><FolderInput size={13} class="text-faint" /> Verschieben nach …</button>
+    <div class="my-1 h-px bg-line-soft"></div>
+    <button class="menu-row" role="menuitem" onclick={() => (ws.toggleProjectHidden(project.id), onclose())}>
+      {#if ws.hiddenProjects.has(project.id)}<Eye size={13} class="text-faint" /> Einblenden{:else}<EyeOff size={13} class="text-faint" /> Ausblenden{/if}
+    </button>
+    <button class="menu-row" role="menuitem" onclick={() => (ws.showOnlyProject(project.id), onclose())}><Focus size={13} class="text-faint" /> Nur dieses anzeigen</button>
     <div class="my-1 h-px bg-line-soft"></div>
     <button class="menu-row hover:!bg-danger/12 hover:!text-danger" role="menuitem" onclick={ondelete}><Trash2 size={13} /> Löschen …</button>
   {/if}

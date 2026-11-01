@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { ArrowLeft, ArrowRight, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Sparkles, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
+  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Sparkles, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
   import { api, errorMessage, TEMPLATE_KIND, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
   import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, previewKind } from '#lib/attachments.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
@@ -33,6 +33,7 @@
   // and would write this draft there.
   const nodeId = untrack(() => node.id);
   let saved = { title: '', body: '' };
+  const favorite = $derived(ws.favorites.some((f) => f.id === nodeId));
 
   untrack(() => {
     editing = node.body.trim() === '' && !detail.read_only;
@@ -242,6 +243,10 @@
       </button>
     {/if}
     <div class="h-full flex-1" data-tauri-drag-region></div>
+    <button class="icon-btn" aria-label={favorite ? 'Aus den Favoriten entfernen' : 'Zu den Favoriten'} aria-pressed={favorite}
+      title={favorite ? 'Aus den Favoriten entfernen' : 'Zu den Favoriten'} onclick={() => ws.toggleFavorite(nodeId)}>
+      <Star size={15} class={favorite ? 'fill-warn/70 text-warn' : ''} />
+    </button>
     <button class="icon-btn" aria-label="Im Graph zeigen" title="Im Graph zeigen" onclick={() => ws.focusTick++}><Crosshair size={15} /></button>
     <button class="icon-btn" aria-label="Verbinden" title="Verbinden (⌘L)" onclick={() => (ws.palette = 'link')}><Link2 size={15} /></button>
     <button class="icon-btn {showHistory ? '!bg-accent/15 !text-accent' : ''}" aria-label="Verlauf" title="Verlauf" onclick={openHistory}><History size={15} /></button>
