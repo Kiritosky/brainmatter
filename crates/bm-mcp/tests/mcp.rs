@@ -12,7 +12,9 @@ use bm_core::{
 use bm_mcp::{ClientRegistry, Scope, StaticHub};
 use rmcp::{
     ServiceExt,
-    model::{CallToolRequestParams, ClientConfig, GetPromptRequestParams},
+    model::{
+        CallToolRequestParams, ClientConfig, GetPromptRequestParams, ReadResourceRequestParams,
+    },
     service::{RoleClient, RunningService},
     transport::{
         StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
@@ -711,6 +713,13 @@ async fn commands_work_while_the_vault_is_locked_and_templates_do_not() {
     });
     let c = connect(&url, &token).await;
 
+    // Asked for on connecting, so it must not wake Touch ID or fail.
+    let listed = c.list_resources(None).await.unwrap().resources;
+    assert!(listed.is_empty(), "{listed:?}");
+    assert!(
+        c.read_resource(ReadResourceRequestParams::new("brainmatter://projects")).await.is_err()
+    );
+
     assert_eq!(all_prompt_names(&c).await, COMMANDS);
     assert!(c.get_prompt(GetPromptRequestParams::new("setup-project")).await.is_ok());
     let missing = c.get_prompt(GetPromptRequestParams::new("code-review")).await;
@@ -768,6 +777,124 @@ async fn templates_become_prompts_only_once_the_user_has_seen_them() {
     assert!(missing.is_err());
 
     c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+/// Records what a client is told without asking.
+#[derive(Clone, Default)]
+struct PromptWatcher(Arc<tokio::sync::Notify>);
+
+impl rmcp::ClientHandler for PromptWatcher {
+    async fn on_prompt_list_changed(&self, _: rmcp::service::NotificationContext<RoleClient>) {
+        self.0.notify_one();
+    }
+}
+
+#[tokio::test]
+async fn a_client_hears_when_its_prompts_change() {
+    let s = start().await;
+    let (_, token) = s.registry.create("KI", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let watcher = PromptWatcher::default();
+    let told = watcher.0.clone();
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(s.url.as_str()).auth_header(token.clone()),
+    );
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let c = watcher.serve(transport).await.unwrap();
+    let wait = std::time::Duration::from_secs(10);
+
+    // An entry that changes nothing about the prompts stays silent.
+    let entry = json!({"entries": [{"title": "Nur ein Eintrag"}]});
+    let result = c
+        .call_tool(
+            CallToolRequestParams::new("capture")
+                .with_arguments(entry.as_object().cloned().unwrap()),
+        )
+        .await
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false), "{result:?}");
+    let quiet = tokio::time::timeout(std::time::Duration::from_secs(3), told.notified()).await;
+    assert!(quiet.is_err(), "nothing about the prompts changed");
+
+    // Written by an AI it is no prompt yet, so still nothing to tell.
+    let args = json!({"title": "Code Review", "body": "Prüfe {{datei}}."});
+    c.call_tool(
+        CallToolRequestParams::new("save_template")
+            .with_arguments(args.as_object().cloned().unwrap()),
+    )
+    .await
+    .unwrap();
+    let quiet = tokio::time::timeout(std::time::Duration::from_secs(3), told.notified()).await;
+    assert!(quiet.is_err(), "an unreviewed template is not offered");
+
+    // The user has looked at it: now it is.
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let id = s.engine.resolve_node("Code Review").unwrap();
+    let seen = bm_core::model::NodePatch { reviewed: Some(true), ..Default::default() };
+    s.engine.update_node(&user, &id, seen).unwrap();
+    tokio::time::timeout(wait, told.notified()).await.expect("told about the new prompt");
+    let names: Vec<_> =
+        c.list_prompts(None).await.unwrap().prompts.into_iter().map(|p| p.name).collect();
+    assert!(names.contains(&"code-review".to_string()), "{names:?}");
+
+    c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn resources_show_only_what_the_client_may_read() {
+    let s = start().await;
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let project = |name: &str| {
+        let input = NewProject { name: name.into(), ..Default::default() };
+        s.engine.create_project(&user, input).unwrap().id
+    };
+    let open = project("Offen");
+    let closed = project("Geheim");
+    let (_, token) = s
+        .registry
+        .create("Begrenzt", &[Scope::Read, Scope::Write], std::slice::from_ref(&open))
+        .unwrap();
+    let (_, all) = s.registry.create("Alles", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let everything = connect(&s.url, &all).await;
+    for (project, title) in [("Offen", "Handbuch"), ("Geheim", "Tresor")] {
+        let page = json!({"project": project, "title": title, "body": format!("# {title}\nINHALT {title}")});
+        let (t, err) = call(&everything, "write_doc", page).await;
+        assert!(!err, "{t}");
+    }
+
+    let c = connect(&s.url, &token).await;
+    let listed = c.list_resources(None).await.unwrap().resources;
+    let uris: Vec<_> = listed.iter().map(|r| r.uri.as_str()).collect();
+    assert!(uris.contains(&"brainmatter://projects"), "{uris:?}");
+    assert!(uris.contains(&format!("brainmatter://project/{open}").as_str()), "{uris:?}");
+    assert!(!uris.contains(&format!("brainmatter://project/{closed}").as_str()), "{uris:?}");
+    let names = serde_json::to_string(&listed).unwrap();
+    assert!(names.contains("Handbuch") && !names.contains("Tresor"), "{names}");
+
+    let read = async |c: &RunningService<RoleClient, ClientConfig>, uri: &str| {
+        let params = ReadResourceRequestParams::new(uri);
+        c.read_resource(params).await.map(|r| serde_json::to_string(&r.contents).unwrap())
+    };
+    let projects = read(&c, "brainmatter://projects").await.unwrap();
+    assert!(projects.contains("Offen") && !projects.contains("Geheim"), "{projects}");
+    let overview = read(&c, &format!("brainmatter://project/{open}")).await.unwrap();
+    assert!(overview.contains("Offen"), "{overview}");
+
+    let doc = listed.iter().find(|r| r.name.contains("Handbuch")).unwrap();
+    let page = read(&c, &doc.uri).await.unwrap();
+    assert!(page.contains("INHALT Handbuch"), "{page}");
+    assert!(page.contains("entry-content"), "page text stays marked as data: {page}");
+
+    // Knowing the address is not enough.
+    assert!(read(&c, &format!("brainmatter://project/{closed}")).await.is_err());
+    let hidden = everything.list_resources(None).await.unwrap().resources;
+    let secret = hidden.iter().find(|r| r.name.contains("Tresor")).unwrap();
+    assert!(read(&c, &secret.uri).await.is_err(), "a page outside the scope must not be read");
+    assert!(read(&c, "brainmatter://nothing").await.is_err());
+
+    c.cancel().await.unwrap();
+    everything.cancel().await.unwrap();
     s.shutdown.cancel();
 }
 
