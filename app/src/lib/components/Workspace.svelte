@@ -33,6 +33,14 @@
   ];
 
   const suggested = $derived(ws.suggestions.map((s) => s.node.id));
+  const graphProjects = $derived(
+    ws.projects.map(({ project }) => ({
+      id: project.id,
+      parent: project.parent_id,
+      name: project.name,
+      color: ws.projectColor.get(project.id) ?? 'var(--color-faint)',
+    })),
+  );
 
   /** The time slider's position; null while it is closed. */
   let until = $state<number | null>(null);
@@ -112,6 +120,8 @@
         {until}
         hidden={ws.hiddenNodes}
         pulsing={ws.pulsing}
+        projects={graphProjects}
+        onopenproject={(id) => ws.setView(id)}
         colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />

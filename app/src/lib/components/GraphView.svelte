@@ -2,10 +2,10 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import Graph from 'graphology';
   import Sigma, { DEFAULT_STYLES } from 'sigma';
-  import forceAtlas2 from 'graphology-layout-forceatlas2';
-  import FA2Layout from 'graphology-layout-forceatlas2/worker';
   import { Maximize, Minus, Plus } from '@lucide/svelte';
   import { api, createdAt, type GraphNode, type GraphSnapshot, type Id } from '#lib/api.ts';
+  import { assignGroups, NO_PROJECT, type Circle, type LayoutInput, type LayoutResult } from '#lib/grouped-layout.ts';
+  import LayoutWorker from '#lib/grouped-layout.worker.ts?worker';
   import { theme } from '#lib/theme.svelte.ts';
 
   let {
@@ -16,10 +16,14 @@
     until,
     hidden,
     pulsing,
+    projects,
     colorFor,
     onselect,
     onopen,
+    onopenproject,
   }: {
+    projects: { id: Id; parent: Id | null; name: string; color: string }[];
+    onopenproject: (id: Id) => void;
     /** Entries the filters hide. They keep their place in the layout. */
     hidden: Set<Id>;
     /** Entries to point out for a moment, because an AI just changed them. */
@@ -38,8 +42,6 @@
 
   let container: HTMLDivElement;
   let renderer: Sigma | undefined;
-  let layout: FA2Layout | undefined;
-  let layoutTimer: ReturnType<typeof setTimeout> | undefined;
   let currentView: string | null = null;
   let hovered: string | null = null;
   let resizeObserver: ResizeObserver | undefined;
@@ -56,6 +58,7 @@
     edgeDim: css('--color-line-soft'),
     edgeActive: css('--color-muted'),
     edgeGhost: css('--color-accent'),
+    edgeBridge: css('--color-faint'),
   });
   let colors = readColors();
   const GHOST = 'ghost:';
@@ -86,6 +89,239 @@
     rings = placed;
   }
 
+  // ------------------------------------------------- project groups ---
+
+  /** Saved positions from before grouping would mix the projects, so each view starts over once. */
+  const GROUPED_KEY = 'bm.groupedViews';
+  /** Beyond this many, moving entries smoothly costs more than it shows. */
+  const MAX_ANIMATED = 3000;
+  const MOVE_MS = 480;
+  /** Too small on screen to read a name in. */
+  const MIN_LABELLED_PX = 42;
+  const MIN_DRAWN_PX = 10;
+  const FRAME_MS = 300;
+  /** One entry alone would otherwise fill the screen. */
+  const MIN_FRAME_RATIO = 0.15;
+
+  const worker = new LayoutWorker();
+  let layoutRun = 0;
+  let moveFrame = 0;
+  let groupOf = new Map<Id, string>();
+  let structure = '';
+  let circles: Circle[] = [];
+  /** Where the last layout put each entry; the graph holds in-between places during a move. */
+  let placed = new Map<string, { x: number; y: number }>();
+  let parents = new Map<string, string | null>();
+  let framed = '';
+  let frameNext = false;
+  /** Groups with at least one entry showing, and their ancestors. */
+  let shownGroups = new Set<string>();
+  let onScreen = $state.raw<{ id: string; x: number; y: number; r: number; depth: number; color: string; name: string; labelled: boolean }[]>([]);
+
+  const isBridge = (a: Record<string, unknown>) =>
+    !!a.src && groupOf.get(a.src as Id) !== groupOf.get(a.dst as Id);
+
+  function placeCircles() {
+    if (!renderer) return;
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    const next: typeof onScreen = [];
+    // Outer circles first, so inner ones are drawn on top.
+    for (const c of circles) {
+      if (!shownGroups.has(c.id)) continue;
+      const centre = renderer.graphToViewport({ x: c.x, y: c.y });
+      const edge = renderer.graphToViewport({ x: c.x + c.r, y: c.y });
+      const r = Math.hypot(edge.x - centre.x, edge.y - centre.y);
+      if (r < MIN_DRAWN_PX) continue;
+      const project = byId.get(c.id);
+      next.push({
+        id: c.id,
+        x: centre.x,
+        y: centre.y,
+        r,
+        depth: c.depth,
+        color: project?.color ?? 'var(--color-faint)',
+        name: project?.name ?? 'Ohne Projekt',
+        labelled: r >= MIN_LABELLED_PX,
+      });
+    }
+    onScreen = next;
+  }
+
+  function updateShownGroups() {
+    const up = new Map(circles.map((c) => [c.id, c.parent]));
+    const shown = new Set<string>();
+    const holdsEntries = new Set<string>();
+    const lostSome = new Set<string>();
+    const climb = (from: string | undefined, into: Set<string>) => {
+      let group: string | null | undefined = from;
+      while (group !== undefined && group !== null && !into.has(group)) {
+        into.add(group);
+        group = up.get(group);
+      }
+    };
+    graph.forEachNode((id, a) => {
+      const group = groupOf.get(id);
+      if (filteredOut.has(id)) climb(group, lostSome);
+      else if ((a.born as number) <= visibleUntil) {
+        if (group !== undefined) holdsEntries.add(group);
+        climb(group, shown);
+      }
+    });
+    // A parent emptied by hiding, around one project left, would only be a big empty ring.
+    const shownChildren = new Map<string, number>();
+    for (const c of circles) {
+      if (c.parent && shown.has(c.id)) shownChildren.set(c.parent, (shownChildren.get(c.parent) ?? 0) + 1);
+    }
+    for (const c of circles) {
+      if (lostSome.has(c.id) && !holdsEntries.has(c.id) && shownChildren.get(c.id) === 1) shown.delete(c.id);
+    }
+    shownGroups = shown;
+    placeCircles();
+  }
+
+  /** The box around top-level circles and the view's own entries, which sit outside any circle. */
+  function boxAround(tops: Circle[], entries: { x: number; y: number }[]) {
+    const box = { x: [Infinity, -Infinity] as [number, number], y: [Infinity, -Infinity] as [number, number] };
+    const grow = (x: number, y: number, r: number) => {
+      box.x = [Math.min(box.x[0], x - r), Math.max(box.x[1], x + r)];
+      box.y = [Math.min(box.y[0], y - r), Math.max(box.y[1], y + r)];
+    };
+    for (const c of tops) grow(c.x, c.y, c.r);
+    for (const e of entries) grow(e.x, e.y, 0);
+    return box;
+  }
+
+  function fitToCircles() {
+    if (!renderer) return;
+    if (!circles.length) {
+      renderer.setCustomBBox(null);
+      return;
+    }
+    renderer.setCustomBBox(boxAround(circles.filter((c) => c.parent === null), [...placed.values()]));
+    // Only a refresh rescales; `frameShown` converts coordinates right after this.
+    renderer.refresh();
+  }
+
+  /** The outermost circles still drawn, which need not be top-level ones. */
+  function shownTops() {
+    const up = new Map(circles.map((c) => [c.id, c.parent]));
+    const insideShown = (c: Circle) => {
+      for (let p = c.parent; p; p = up.get(p) ?? null) if (shownGroups.has(p)) return true;
+      return false;
+    };
+    return circles.filter((c) => shownGroups.has(c.id) && !insideShown(c));
+  }
+
+  /** Looks at what is showing, so hiding a project leaves no hole in the picture. */
+  function frameShown() {
+    if (!renderer) return;
+    const camera = renderer.getCamera();
+    const full = renderer.getCustomBBox();
+    const circled = new Set(circles.map((c) => c.id));
+    const entries: { x: number; y: number }[] = [];
+    graph.forEachNode((id, a) => {
+      if (!filteredOut.has(id) && (a.born as number) <= visibleUntil && !circled.has(groupOf.get(id) ?? '')) {
+        entries.push(placed.get(id) ?? { x: a.x, y: a.y });
+      }
+    });
+    const tops = shownTops();
+    if (!full || (!tops.length && !entries.length)) {
+      camera.reset({ duration: FRAME_MS });
+      return;
+    }
+    const box = boxAround(tops, entries);
+    const extent = (b: { x: [number, number]; y: [number, number] }) => Math.max(b.x[1] - b.x[0], b.y[1] - b.y[0]);
+    const centre = renderer.viewportToFramedGraph(
+      renderer.graphToViewport({ x: (box.x[0] + box.x[1]) / 2, y: (box.y[0] + box.y[1]) / 2 }),
+    );
+    const ratio = Math.min(1, Math.max(MIN_FRAME_RATIO, extent(box) / extent(full)));
+    camera.animate({ ...centre, ratio }, { duration: FRAME_MS });
+  }
+
+  /** Which top-level circles show, to tell a real change from a refresh of the same filter. */
+  const shownKey = () => shownTops().map((c) => c.id).sort().join();
+
+  function requestLayout(snap: GraphSnapshot, dirty: string[], fresh: boolean) {
+    const input: LayoutInput = {
+      nodes: snap.nodes
+        .filter((n) => graph.hasNode(n.id))
+        .map((n) => {
+          const a = graph.getNodeAttributes(n.id);
+          return { id: n.id, projects: n.projects, x: a.x, y: a.y, pinned: !fresh && !!a.fixed };
+        }),
+      edges: snap.edges.map((e) => ({ src: e.src, dst: e.dst })),
+      projects: projects.map((p) => ({ id: p.id, parent: p.parent })),
+      root: snap.view === 'all' ? null : snap.view,
+      dirty,
+    };
+    worker.postMessage({ run: ++layoutRun, input });
+    pendingFresh = pendingFresh || fresh;
+    pendingView = snap.view;
+  }
+  let pendingFresh = false;
+  let pendingView = '';
+
+  worker.onmessage = (e: MessageEvent<{ run: number; result: LayoutResult }>) => {
+    if (e.data.run !== layoutRun) return;
+    applyLayout(e.data.result);
+  };
+
+  function markGrouped(view: string) {
+    const views = new Set<string>(JSON.parse(localStorage.getItem(GROUPED_KEY) ?? '[]'));
+    if (views.has(view)) return;
+    views.add(view);
+    localStorage.setItem(GROUPED_KEY, JSON.stringify([...views]));
+  }
+
+  function applyLayout({ positions, circles: next }: LayoutResult) {
+    const fresh = pendingFresh;
+    pendingFresh = false;
+    circles = [...next].sort((a, b) => a.depth - b.depth);
+    cancelAnimationFrame(moveFrame);
+
+    const target = new Map(positions.map((p) => [p.id, p]));
+    placed = target;
+    const finish = () => {
+      markGrouped(pendingView);
+      saveLayout();
+      updateShownGroups();
+    };
+    fitToCircles();
+    updateShownGroups();
+    const reframe = fresh || frameNext;
+    frameNext = false;
+    framed = shownKey();
+    if (reframe) frameShown();
+
+    const start = new Map<string, { x: number; y: number }>();
+    graph.forEachNode((id, a) => {
+      if (target.has(id)) start.set(id, { x: a.x, y: a.y });
+    });
+    const motion = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : MOVE_MS;
+    if (!motion || start.size > MAX_ANIMATED) {
+      graph.updateEachNodeAttributes((id, a) => {
+        const p = target.get(id);
+        return p ? { ...a, x: p.x, y: p.y } : a;
+      });
+      finish();
+      return;
+    }
+    const began = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - began) / motion);
+      const eased = 1 - (1 - t) ** 3;
+      graph.updateEachNodeAttributes((id, a) => {
+        const from = start.get(id);
+        const to = target.get(id);
+        if (!from || !to) return a;
+        return { ...a, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
+      });
+      if (t < 1) moveFrame = requestAnimationFrame(step);
+      else finish();
+    };
+    moveFrame = requestAnimationFrame(step);
+  }
+
   /** `rank * count` is 1 for an average entry, whatever the size of the view. */
   const sizeFor = (rank: number, count: number) => Math.min(18, Math.max(3.5, 2 + Math.sqrt(rank * count) * 3.6));
 
@@ -112,8 +348,13 @@
   function sync(snap: GraphSnapshot) {
     const viewChanged = snap.view !== currentView;
     if (viewChanged) {
-      stopLayout(false);
+      cancelAnimationFrame(moveFrame);
       graph.clear();
+      circles = [];
+      placed = new Map();
+      onScreen = [];
+      groupOf = new Map();
+      structure = '';
       currentView = snap.view;
     }
 
@@ -153,8 +394,34 @@
     }
 
     placeNear(unplaced);
-    if (unplaced.length > 0) runLayout(unplaced.length === graph.order ? 'full' : 'settle');
+
+    const root = snap.view === 'all' ? null : snap.view;
+    const tree = projects.map((p) => ({ id: p.id, parent: p.parent }));
+    const groups = assignGroups(snap.nodes, snap.edges, tree, root);
+    const dirty = new Set(unplaced);
+    for (const [id, group] of groups) {
+      const was = groupOf.get(id);
+      if (was !== undefined && was !== group) dirty.add(id);
+    }
+    groupOf = groups;
+
+    const grouped = (JSON.parse(localStorage.getItem(GROUPED_KEY) ?? '[]') as string[]).includes(snap.view);
+    const shape = `${[...groups].map(([id, group]) => `${id}:${group}`).join()}|${tree.map((p) => `${p.id}<${p.parent}`).join()}`;
+    // Places from before a project moved would leave its new parent far too roomy.
+    const moved = !viewChanged && tree.some((p) => parents.has(p.id) && parents.get(p.id) !== p.parent);
+    parents = new Map(tree.map((p) => [p.id, p.parent]));
+    if (!grouped) {
+      requestLayout(snap, snap.nodes.map((n) => n.id), true);
+    } else if (moved) {
+      frameNext = true;
+      requestLayout(snap, snap.nodes.map((n) => n.id), false);
+    } else if (dirty.size || shape !== structure) {
+      requestLayout(snap, [...dirty], unplaced.length === graph.order);
+    }
+    structure = shape;
+
     syncGhosts();
+    updateShownGroups();
     if (viewChanged) renderer?.getCamera().reset({ duration: 300 });
   }
 
@@ -189,37 +456,6 @@
       const jitter = () => (Math.random() - 0.5) * (k ? 10 : radius);
       graph.mergeNodeAttributes(id, { x: (k ? x / k : 0) + jitter(), y: (k ? y / k : 0) + jitter() });
       pending.delete(id);
-    }
-  }
-
-  function runLayout(kind: 'full' | 'settle') {
-    stopLayout(false);
-    if (graph.order < 2) {
-      saveLayout();
-      return;
-    }
-    const settings = forceAtlas2.inferSettings(graph);
-    layout = new FA2Layout(graph, {
-      settings: {
-        ...settings,
-        barnesHutOptimize: graph.order > 400,
-        // Overlap prevention is incompatible with Barnes-Hut; fine for small graphs.
-        adjustSizes: graph.order <= 400,
-        gravity: 1,
-        slowDown: kind === 'full' ? 2 : 8,
-      },
-    });
-    layout.start();
-    const ms = kind === 'full' ? Math.min(6000, 1500 + graph.order) : 1200;
-    layoutTimer = setTimeout(() => stopLayout(true), ms);
-  }
-
-  function stopLayout(save: boolean) {
-    clearTimeout(layoutTimer);
-    if (layout) {
-      layout.kill();
-      layout = undefined;
-      if (save) saveLayout();
     }
   }
 
@@ -268,8 +504,9 @@
           {
             visibility: (a) =>
               filteredOut.has(a.src as Id) || filteredOut.has(a.dst as Id) || (a.born as number) > visibleUntil ? 'hidden' : 'visible',
-            color: (a, s, gs) => (a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : gs.hasHighlighted ? colors.edgeDim : colors.edge),
-            size: (a, s) => (a.ghost ? 1 : s.isHighlighted ? 1.5 : 0.6),
+            color: (a, s, gs) =>
+              a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : gs.hasHighlighted ? colors.edgeDim : isBridge(a) ? colors.edgeBridge : colors.edge,
+            size: (a, s) => (a.ghost ? 1 : s.isHighlighted ? 1.5 : isBridge(a) ? 0.9 : 0.6),
           },
         ],
       },
@@ -277,7 +514,12 @@
 
     // Untracked: effects call refresh(), which can render right there, and must not
     // come to depend on the rings this writes.
-    renderer.on('afterRender', () => untrack(() => rings.length && placeRings()));
+    renderer.on('afterRender', () =>
+      untrack(() => {
+        if (rings.length) placeRings();
+        if (circles.length) placeCircles();
+      }),
+    );
     renderer.on('clickNode', ({ node }) => onselect(node));
     renderer.on('doubleClickNode', ({ node, preventSigmaDefault }) => {
       preventSigmaDefault?.();
@@ -292,10 +534,11 @@
       hovered = null;
       applyHighlight();
     });
-    renderer.on('nodeDragStart', () => stopLayout(false));
+    renderer.on('nodeDragStart', () => cancelAnimationFrame(moveFrame));
     renderer.on('nodeDragEnd', ({ node }) => {
       graph.setNodeAttribute(node, 'fixed', true);
-      saveLayout();
+      // The circle follows what it contains.
+      if (snapshot) requestLayout(snapshot, [], false);
     });
 
     // Sigma only reacts to window resizes; panels also change the container.
@@ -310,7 +553,8 @@
 
   onDestroy(() => {
     resizeObserver?.disconnect();
-    stopLayout(false);
+    cancelAnimationFrame(moveFrame);
+    worker.terminate();
     renderer?.kill();
   });
 
@@ -326,11 +570,18 @@
 
   $effect(() => {
     visibleUntil = until ?? Infinity;
+    untrack(updateShownGroups);
     renderer?.refresh();
   });
 
   $effect(() => {
     filteredOut = hidden;
+    untrack(() => {
+      updateShownGroups();
+      const key = shownKey();
+      if (key !== framed && circles.length) frameShown();
+      framed = key;
+    });
     renderer?.refresh();
   });
 
@@ -354,7 +605,28 @@
   });
 </script>
 
+<!-- Beneath the canvas, whose background is transparent. -->
+<div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+  {#each onScreen as c (c.id)}
+    <div class="group-circle" style="left: {c.x - c.r}px; top: {c.y - c.r}px; width: {c.r * 2}px; height: {c.r * 2}px; --group: {c.color}"></div>
+  {/each}
+</div>
+
 <div class="absolute inset-0" bind:this={container}></div>
+
+<!-- Above it, so that the names can be clicked. -->
+<div class="pointer-events-none absolute inset-0 overflow-hidden">
+  {#each onScreen as c (c.id)}
+    {#if c.labelled}
+      {#if c.id === NO_PROJECT}
+        <span class="group-label" style="left: {c.x}px; top: {c.y - c.r + 7}px; max-width: {c.r * 1.5}px; --group: {c.color}">{c.name}</span>
+      {:else}
+        <button class="group-label group-link" style="left: {c.x}px; top: {c.y - c.r + 7}px; max-width: {c.r * 1.5}px; --group: {c.color}"
+          title="„{c.name}“ öffnen" onclick={() => onopenproject(c.id)}>{c.name}</button>
+      {/if}
+    {/if}
+  {/each}
+</div>
 
 {#each rings as ring (ring.id)}
   <span class="pulse-ring" style="left: {ring.x}px; top: {ring.y}px"></span>
@@ -370,6 +642,32 @@
 {/if}
 
 <style>
+  .group-circle {
+    position: absolute;
+    border: 1px solid color-mix(in srgb, var(--group) 28%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--group) 5%, transparent);
+  }
+  .group-label {
+    position: absolute;
+    overflow: hidden;
+    transform: translateX(-50%);
+    color: color-mix(in srgb, var(--group) 85%, var(--color-text));
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .group-link {
+    pointer-events: auto;
+    border-radius: 4px;
+    padding: 0 4px;
+    transition: background-color 120ms;
+  }
+  .group-link:hover {
+    background: color-mix(in srgb, var(--group) 16%, transparent);
+  }
   .pulse-ring {
     position: absolute;
     width: 30px;

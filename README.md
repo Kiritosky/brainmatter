@@ -26,6 +26,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - Markdown entries linked with `[[wikilinks]]` or typed relations such as `depends_on` and `contradicts`
 - Projects nested to any depth, and an entry can be in several of them
 - A graph that stays smooth with 50,000 entries, coloured by project, kind or automatically detected theme
+- Projects drawn as separate groups, nested for subprojects, with lines only where entries are actually linked
 - A time slider that replays how your graph grew
 - Quick capture from anywhere with <kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd>
 

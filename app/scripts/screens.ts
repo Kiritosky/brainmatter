@@ -318,9 +318,16 @@ try {
   await row('Kern').hover();
   await page.getByRole('button', { name: 'Mehr zu Kern' }).click();
   await page.getByRole('menuitem', { name: 'Nur dieses anzeigen' }).click();
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(450);
   await shot(page, '60-project-only');
   if ((await shownNow()) >= everything) errors.push('showing only one project hid nothing');
+  // The one project left must fill the picture, not sit in a corner of the old one.
+  const onlyCircles = page.locator('.group-circle');
+  const canvas = await page.locator('main').boundingBox();
+  if ((await onlyCircles.count()) !== 1) errors.push(`showing one project draws ${await onlyCircles.count()} circles`);
+  if (!(await page.locator('.group-label', { hasText: 'Kern' }).count())) errors.push('the only project shown has no name');
+  const onlyCircle = await onlyCircles.first().boundingBox();
+  if (onlyCircle && canvas && onlyCircle.width < canvas.height * 0.6) errors.push(`the only project shown stays small: ${Math.round(onlyCircle.width)}px`);
   await sidebar.getByRole('button', { name: 'Alle zeigen' }).click();
   if ((await shownNow()) !== everything) errors.push('showing all did not bring everything back');
   await row('Tresor-Details').hover();
@@ -533,6 +540,16 @@ try {
   await shot(page, '34-light-settings');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
+  // Opening an entry earlier moved the camera; the fit button has to bring every circle back.
+  await page.getByRole('button', { name: 'Alles zeigen' }).click();
+  await page.waitForTimeout(500);
+  const stage = await page.locator('main').boundingBox();
+  for (const ring of await page.locator('.group-circle').all()) {
+    const box = await ring.boundingBox();
+    if (stage && box && (box.x < stage.x - 1 || box.y < stage.y - 1 || box.x + box.width > stage.x + stage.width + 1 || box.y + box.height > stage.y + stage.height + 1)) {
+      errors.push(`a circle stays out of view after fitting: ${JSON.stringify(box)}`);
+    }
+  }
   await shot(page, '35-light-graph');
   await openEntry('Brainmatter');
   await page.waitForTimeout(600);
