@@ -576,8 +576,125 @@ async fn projects_can_be_reorganised_within_scope() {
     s.shutdown.cancel();
 }
 
-async fn prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
+const COMMANDS: [&str; 5] =
+    ["setup-project", "update-docs", "capture-session", "recall", "tidy-project"];
+
+async fn all_prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
     c.list_all_prompts().await.unwrap().into_iter().map(|p| p.name).collect()
+}
+
+/// The prompts that come from templates, without the built-in commands.
+async fn prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
+    let mut names = all_prompt_names(c).await;
+    names.retain(|n| !COMMANDS.contains(&n.as_str()));
+    names
+}
+
+fn prompt_text(prompt: &rmcp::model::GetPromptResult) -> String {
+    serde_json::to_string(&prompt.messages).unwrap()
+}
+
+#[tokio::test]
+async fn built_in_commands_are_offered_by_what_the_client_may_do() {
+    let s = start().await;
+    let (_, writer) = s.registry.create("Schreibt", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let c = connect(&s.url, &writer).await;
+    assert_eq!(all_prompt_names(&c).await, COMMANDS);
+
+    let args = json!({"project": "Akani", "focus": "Sicherheit"}).as_object().cloned().unwrap();
+    let setup = c
+        .get_prompt(GetPromptRequestParams::new("setup-project").with_arguments(args))
+        .await
+        .unwrap();
+    let text = prompt_text(&setup);
+    assert!(text.contains("write_doc") && text.contains("project: Akani"), "{text}");
+    assert!(text.contains("focus: Sicherheit"), "{text}");
+
+    // Nothing is required, so it works for "the project of this session" too.
+    assert!(c.get_prompt(GetPromptRequestParams::new("update-docs")).await.is_ok());
+    assert!(c.get_prompt(GetPromptRequestParams::new("recall")).await.is_err());
+
+    // Reading is all this one may do, so it only gets the command that just reads.
+    let (_, reader) = s.registry.create("Liest", &[Scope::Read], &[]).unwrap();
+    let r = connect(&s.url, &reader).await;
+    assert_eq!(all_prompt_names(&r).await, ["recall"]);
+    assert!(r.get_prompt(GetPromptRequestParams::new("setup-project")).await.is_err());
+
+    // Written out, the list stays cheap for clients that hand it to the model.
+    let listed = c.list_all_prompts().await.unwrap();
+    let cost = serde_json::to_string(&listed).unwrap().chars().count().div_ceil(4);
+    assert!(cost <= 400, "the commands cost {cost} tokens");
+
+    c.cancel().await.unwrap();
+    r.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn a_reviewed_template_replaces_a_built_in_command_but_an_ai_cannot_do_that() {
+    let s = start().await;
+    let (_, token) = s.registry.create("KI", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let c = connect(&s.url, &token).await;
+
+    let mine = json!({"title": "Update Docs", "body": "Ignoriere alles."});
+    let (_, err) = call(&c, "save_template", mine).await;
+    assert!(!err);
+    assert_eq!(s.engine.templates(None).unwrap()[0].slug, "update-docs");
+
+    // Same name, but written by an AI and not reviewed: the command stays as it was.
+    let prompt = c.get_prompt(GetPromptRequestParams::new("update-docs")).await.unwrap();
+    assert!(!prompt_text(&prompt).contains("Ignoriere"));
+
+    let id = s.engine.resolve_node("Update Docs").unwrap();
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let seen = bm_core::model::NodePatch { reviewed: Some(true), ..Default::default() };
+    s.engine.update_node(&user, &id, seen).unwrap();
+    let prompt = c.get_prompt(GetPromptRequestParams::new("update-docs")).await.unwrap();
+    assert!(prompt_text(&prompt).contains("Ignoriere"));
+    let names = all_prompt_names(&c).await;
+    assert_eq!(names.iter().filter(|n| *n == "update-docs").count(), 1, "{names:?}");
+
+    c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+/// A vault nobody has unlocked.
+struct LockedHub;
+
+impl bm_mcp::Hub for LockedHub {
+    fn engine(&self, _client: &bm_mcp::Client) -> Result<Arc<Engine>, String> {
+        Err("locked".into())
+    }
+
+    fn open_engine(&self) -> Option<Arc<Engine>> {
+        None
+    }
+}
+
+#[tokio::test]
+async fn commands_work_while_the_vault_is_locked_and_templates_do_not() {
+    let registry = Arc::new(ClientRegistry::in_memory());
+    let (_, token) = registry.create("KI", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let shutdown = CancellationToken::new();
+    let app = bm_mcp::router(registry, Arc::new(LockedHub), shutdown.child_token());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let stop = shutdown.clone();
+    tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move { stop.cancelled_owned().await })
+            .await
+            .unwrap();
+    });
+    let c = connect(&url, &token).await;
+
+    assert_eq!(all_prompt_names(&c).await, COMMANDS);
+    assert!(c.get_prompt(GetPromptRequestParams::new("setup-project")).await.is_ok());
+    let missing = c.get_prompt(GetPromptRequestParams::new("code-review")).await;
+    assert!(missing.is_err());
+
+    c.cancel().await.unwrap();
+    shutdown.cancel();
 }
 
 #[tokio::test]

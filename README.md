@@ -98,7 +98,19 @@ Clients that only speak stdio can use the bridge inside the app bundle, `Brainma
 | `delete`, `trash`, `restore`, `revert` | Removing and undoing |
 | `list_templates`, `get_template`, `save_template` | Reusable templates and prompts |
 
-Templates you have reviewed also appear as MCP prompts, so in Claude Code a template called "Code Review" becomes `/mcp__brainmatter__code-review`. Whatever an AI writes or changes in a template stays out of that list until you have looked at it.
+Connected models also get commands you can call by name, in Claude Code as `/mcp__brainmatter__setup-project`:
+
+| Command | What the model does |
+|---|---|
+| `setup-project` | Builds a project's structure, docs and entries from the code and the conversation |
+| `update-docs` | Compares a project's docs with its actual state and corrects them |
+| `capture-session` | Saves what this session established, for later sessions and other models |
+| `recall` | Answers a question from what Brainmatter knows |
+| `tidy-project` | Merges duplicates, links loose entries and sorts them into subprojects |
+
+Models are also told to save decisions, findings and your corrections without being asked, so what one model learns is there for the next.
+
+Templates you have reviewed also appear as MCP prompts, so in Claude Code a template called "Code Review" becomes `/mcp__brainmatter__code-review`. A reviewed template named like a command replaces it, which is how you adapt one. Whatever an AI writes or changes in a template stays out of that list until you have looked at it.
 
 Entries can link to files and folders on your Mac; the link follows a file when it moves, and only the reference is stored. AI clients can read only linked text files, and a link an AI creates itself stays unreadable until you approve it.
 

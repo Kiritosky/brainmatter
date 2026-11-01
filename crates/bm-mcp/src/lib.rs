@@ -4,6 +4,7 @@ mod auth;
 mod clients;
 mod format;
 mod hub;
+mod prompts;
 mod schema;
 mod server;
 mod tools;

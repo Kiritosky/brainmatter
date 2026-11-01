@@ -17,6 +17,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 
+use crate::prompts::{self, COMMANDS};
 use crate::{
     Client, Hub, Scope,
     tools::{self, ToolCx, ToolError},
@@ -417,10 +418,11 @@ impl BrainmatterMcp {
 }
 
 /// Clients ask for the prompt list on their own as soon as they connect, so this
-/// never triggers Touch ID: while locked, the list is simply empty. A template
-/// becomes a prompt only after the user has seen it. Otherwise an AI could plant
-/// text that later arrives in another session looking like the user's request.
-fn prompt_list(engine: &Engine, client: &Client) -> Result<Vec<Prompt>, CoreError> {
+/// never triggers Touch ID: while locked, only the built-in commands are offered.
+/// A template becomes a prompt only after the user has seen it. Otherwise an AI
+/// could plant text that later arrives in another session looking like the
+/// user's request.
+fn template_prompts(engine: &Engine, client: &Client) -> Result<Vec<Prompt>, CoreError> {
     let scope = tools::project_scope(engine, client)?;
     let templates = engine.templates(None)?;
     Ok(templates
@@ -439,6 +441,8 @@ fn prompt_list(engine: &Engine, client: &Client) -> Result<Vec<Prompt>, CoreErro
 
 const INSTRUCTIONS: &str = "Brainmatter is the user's encrypted knowledge graph and your long-term memory across sessions: \
 entries linked by typed relations, in nested projects. An entry can be in several projects.
+- Other sessions and models share this memory. Unasked, save what they will need: decisions with reasons, findings, conventions, \
+the user's corrections, open tasks. Use the fitting project, else one called `AI Memory`. No secrets, nothing code or git already records.
 - Refer to entries and projects by exact title or name, short id (#a1b2c3d4) or full id.
 - Read cheaply: `project_overview` first, `list_docs` and `read_doc` for how a project works, `search` for the rest, `get` only \
 for what you need in full.
@@ -469,9 +473,19 @@ impl ServerHandler for BrainmatterMcp {
             return Ok(ListPromptsResult::default());
         }
         let hub = self.hub.clone();
-        let prompts = tokio::task::spawn_blocking(move || match hub.open_engine() {
-            Some(engine) => prompt_list(&engine, &client).unwrap_or_default(),
-            None => Vec::new(),
+        let prompts = tokio::task::spawn_blocking(move || {
+            let templates = match hub.open_engine() {
+                Some(engine) => template_prompts(&engine, &client).unwrap_or_default(),
+                None => Vec::new(),
+            };
+            let replaced = |name: &str| templates.iter().any(|t| t.name == name);
+            let mut prompts: Vec<Prompt> = COMMANDS
+                .iter()
+                .filter(|c| c.usable_by(&client) && !replaced(c.name))
+                .map(|c| c.prompt())
+                .collect();
+            prompts.extend(templates);
+            prompts
         })
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -489,26 +503,39 @@ impl ServerHandler for BrainmatterMcp {
         }
         let hub = self.hub.clone();
         let invalid = |m: String| ErrorData::invalid_params(m, None);
-        // Asked for explicitly by the user, so here waiting for Touch ID is fine.
         let result = tokio::task::spawn_blocking(move || {
-            let engine = hub.engine(&client)?;
-            let scope = tools::project_scope(&engine, &client).map_err(|e| e.to_string())?;
-            let found = engine.templates(None).map_err(|e| e.to_string())?;
-            let template = found
-                .into_iter()
-                .find(|t| {
-                    t.slug == request.name
-                        && t.reviewed
-                        && tools::template_in_scope(scope.as_ref(), t)
-                })
-                .ok_or_else(|| format!("No prompt „{}“.", request.name))?;
+            let command = prompts::find(&request.name).filter(|c| c.usable_by(&client));
+            // A template is asked for explicitly by the user, so waiting for Touch ID
+            // is fine. A built-in command needs nothing from the vault yet, and the
+            // tools it leads to will ask anyway.
+            let engine = match command {
+                Some(_) => hub.open_engine(),
+                None => Some(hub.engine(&client)?),
+            };
+            let template = match engine {
+                Some(engine) => {
+                    let scope =
+                        tools::project_scope(&engine, &client).map_err(|e| e.to_string())?;
+                    let found = engine.templates(None).map_err(|e| e.to_string())?;
+                    found.into_iter().find(|t| {
+                        t.slug == request.name
+                            && t.reviewed
+                            && tools::template_in_scope(scope.as_ref(), t)
+                    })
+                }
+                None => None,
+            };
             let values: HashMap<String, String> = request
                 .arguments
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|(k, v)| v.as_str().map(|v| (k, v.to_string())))
                 .collect();
-            Ok::<_, String>((template.node.title, render(&template.body, &values)))
+            match (template, command) {
+                (Some(t), _) => Ok::<_, String>((t.node.title, render(&t.body, &values))),
+                (None, Some(c)) => Ok((c.name.to_string(), c.render(&values)?)),
+                (None, None) => Err(format!("No prompt „{}“.", request.name)),
+            }
         })
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;

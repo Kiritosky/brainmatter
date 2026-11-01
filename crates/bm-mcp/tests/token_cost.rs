@@ -32,7 +32,8 @@ const BODY: &str = "Dieser Eintrag beschreibt eine Entscheidung im Projekt. Wir 
 /// Raising one of these should be a decision, not something that happens unnoticed.
 const BUDGETS: &[(&str, usize)] = &[
     ("all tool definitions", 3000),
-    ("server instructions", 350),
+    // Raised from 350 so that every model is told to save what others will need.
+    ("server instructions", 380),
     ("search (default)", 450),
     ("project_overview", 450),
     ("recent_changes (default)", 400),
