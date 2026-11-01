@@ -40,16 +40,29 @@ pub(crate) fn tree(conn: &Connection, project: &ProjectId) -> Result<Vec<DocPage
                     source_path: r.get(6)?,
                     reviewed: r.get::<_, i64>(7)? != 0,
                     updated_at: r.get(8)?,
+                    tags: Vec::new(),
                 },
                 sort: r.get(4)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
 
+    let mut tags: HashMap<NodeId, Vec<String>> = HashMap::new();
+    let mut stmt = conn.prepare_cached(
+        "SELECT t.node_id, t.tag FROM node_tags t JOIN doc_pages d ON d.node_id = t.node_id
+         WHERE d.project_id = ?1 ORDER BY t.tag",
+    )?;
+    let found = stmt.query_map([project], |r| Ok((r.get::<_, NodeId>(0)?, r.get(1)?)))?;
+    for row in found {
+        let (id, tag) = row?;
+        tags.entry(id).or_default().push(tag);
+    }
+
     let live: HashSet<NodeId> = rows.iter().map(|r| r.page.node.id.clone()).collect();
     let mut children: HashMap<Option<NodeId>, Vec<Row>> = HashMap::new();
     for mut row in rows {
         row.page.parent = row.page.parent.filter(|p| live.contains(p));
+        row.page.tags = tags.remove(&row.page.node.id).unwrap_or_default();
         children.entry(row.page.parent.clone()).or_default().push(row);
     }
     for list in children.values_mut() {
@@ -122,6 +135,7 @@ pub(crate) fn create(
     title: &str,
     body: &str,
     parent: Option<&NodeId>,
+    tags: Vec<String>,
 ) -> Result<Node> {
     rows::live_project(w.conn, project)?;
     if let Some(parent) = parent {
@@ -133,6 +147,7 @@ pub(crate) fn create(
         body: body.to_string(),
         kind: Some(DOC_KIND.to_string()),
         projects: vec![project.clone()],
+        tags,
         ..Default::default()
     };
     let node = nodes::create(w, input)?;

@@ -180,7 +180,7 @@ pub(crate) fn snake(value: Option<&str>, default: &str) -> String {
 }
 
 /// Lowercase, no leading `#`, spaces become dashes, deduplicated and sorted.
-pub(crate) fn clean_tags<S: AsRef<str>>(tags: &[S]) -> Vec<String> {
+pub fn clean_tags<S: AsRef<str>>(tags: &[S]) -> Vec<String> {
     let mut out: Vec<String> = tags
         .iter()
         .map(|t| t.as_ref().trim().trim_start_matches('#').trim().to_lowercase().replace(' ', "-"))

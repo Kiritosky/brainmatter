@@ -194,7 +194,7 @@ fn a_project_template_does_not_turn_global_when_its_project_goes() {
     let gone = f.project("Weg", None);
     f.entry("Projektvorlage", TEMPLATE_KIND, &[&gone]);
     f.entry("Global", TEMPLATE_KIND, &[]);
-    f.e.create_doc_page(&f.user, &gone, "Handbuch", "", None).unwrap();
+    f.e.create_doc_page(&f.user, &gone, "Handbuch", "", None, vec![]).unwrap();
 
     let preview = f.e.project_delete_preview(&gone).unwrap();
     assert_eq!((preview.documents, preview.entries_only_here), (2, 0));

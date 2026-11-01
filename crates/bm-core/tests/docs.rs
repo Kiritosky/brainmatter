@@ -24,7 +24,14 @@ fn setup() -> Fixture {
 impl Fixture {
     fn page(&self, title: &str, parent: Option<&Node>) -> Node {
         self.engine
-            .create_doc_page(&self.user, &self.project, title, "Text", parent.map(|p| &p.id))
+            .create_doc_page(
+                &self.user,
+                &self.project,
+                title,
+                "Text",
+                parent.map(|p| &p.id),
+                vec![],
+            )
             .unwrap()
     }
 
@@ -89,14 +96,14 @@ fn a_parent_must_be_in_the_same_project() {
         .create_project(&f.user, NewProject { name: "Q".into(), ..Default::default() })
         .unwrap()
         .id;
-    let foreign = f.engine.create_doc_page(&f.user, &other, "Fremd", "", None).unwrap();
-    let result = f.engine.create_doc_page(&f.user, &f.project, "X", "", Some(&foreign.id));
+    let foreign = f.engine.create_doc_page(&f.user, &other, "Fremd", "", None, vec![]).unwrap();
+    let result = f.engine.create_doc_page(&f.user, &f.project, "X", "", Some(&foreign.id), vec![]);
     assert!(matches!(result, Err(CoreError::Invalid(_))));
     let note = f
         .engine
         .create_node(&f.user, NewNode { title: "Notiz".into(), ..Default::default() })
         .unwrap();
-    let result = f.engine.create_doc_page(&f.user, &f.project, "Y", "", Some(&note.id));
+    let result = f.engine.create_doc_page(&f.user, &f.project, "Y", "", Some(&note.id), vec![]);
     assert!(matches!(result, Err(CoreError::Invalid(_))), "a parent must be a page");
 }
 
@@ -118,7 +125,9 @@ fn deleted_parents_leave_their_children_readable_and_undo_restores_them() {
 #[test]
 fn pages_stay_out_of_the_graph_but_can_be_searched() {
     let f = setup();
-    f.engine.create_doc_page(&f.user, &f.project, "Handbuch", "einzigartigeswort", None).unwrap();
+    f.engine
+        .create_doc_page(&f.user, &f.project, "Handbuch", "einzigartigeswort", None, vec![])
+        .unwrap();
     assert!(f.engine.graph_snapshot(None).unwrap().nodes.is_empty());
     assert!(f.engine.orphans(10).unwrap().is_empty());
     assert_eq!(f.engine.projects().unwrap()[0].node_count, 0, "the count means graph entries");
@@ -230,4 +239,36 @@ fn removing_a_source_trashes_its_pages_and_keeps_the_files() {
     assert!(f.engine.doc_sources(&f.project).unwrap().is_empty());
     assert!(folder.path().join("a.md").exists());
     assert!(f.engine.sync_doc_source(&f.user, &source, folder.path()).is_err());
+}
+
+#[test]
+fn pages_carry_their_tags() {
+    let f = setup();
+    let tags = vec!["setup".to_string(), "api".to_string()];
+    f.engine.create_doc_page(&f.user, &f.project, "Tagged", "Text", None, tags).unwrap();
+    f.page("Plain", None);
+    let tree = f.engine.doc_tree(&f.project).unwrap();
+    let tagged = tree.iter().find(|p| p.node.title == "Tagged").unwrap();
+    assert_eq!(tagged.tags, ["api", "setup"]);
+    assert!(tree.iter().find(|p| p.node.title == "Plain").unwrap().tags.is_empty());
+}
+
+#[test]
+fn a_mirrored_page_can_be_tagged_and_keeps_its_tags_through_a_sync() {
+    let f = setup();
+    let folder = tempfile::tempdir().unwrap();
+    write(folder.path(), "guide.md", "# Guide\n\nAlt");
+    let path = folder.path().to_str().unwrap();
+    let source = f.engine.add_doc_source(&f.user, &f.project, path, None).unwrap();
+    f.engine.sync_doc_source(&f.user, &source, folder.path()).unwrap();
+    let id = f.engine.doc_tree(&f.project).unwrap()[0].node.id.clone();
+
+    let patch = NodePatch { tags_add: vec!["handbuch".into()], ..Default::default() };
+    f.engine.update_node(&f.user, &id, patch).unwrap();
+
+    write(folder.path(), "guide.md", "# Guide\n\nNeu");
+    f.engine.sync_doc_source(&f.user, &source, folder.path()).unwrap();
+    let page = f.engine.doc_tree(&f.project).unwrap().remove(0);
+    assert_eq!(page.tags, ["handbuch"]);
+    assert!(f.engine.node_detail(&id).unwrap().node.body.contains("Neu"));
 }

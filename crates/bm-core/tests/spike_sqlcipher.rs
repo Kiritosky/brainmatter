@@ -44,7 +44,7 @@ fn encrypted_roundtrip_and_fts() {
 
     {
         let db = Db::open(&path, &key(1)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 8);
+        assert_eq!(db.schema_version().unwrap(), 9);
         seed(&db);
 
         assert_eq!(fts(&db, "tokio"), ["n1"]);

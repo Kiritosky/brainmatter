@@ -18,6 +18,7 @@ const MIGRATIONS: &[(&str, Option<DataStep>)] = &[
     (V6, None),
     (V7, None),
     (V8, None),
+    (V9, None),
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
@@ -295,6 +296,14 @@ CREATE TABLE file_links (
     deleted_at      INTEGER
 );
 CREATE INDEX file_links_node_idx ON file_links(node_id);
+"#;
+
+// Entries the user wants at hand. View state, so not part of the undo history.
+const V9: &str = r#"
+CREATE TABLE favorites (
+    node_id    TEXT PRIMARY KEY REFERENCES nodes(id),
+    created_at INTEGER NOT NULL
+) WITHOUT ROWID;
 "#;
 
 // Documentation: a page is an entry of kind `doc` with a place in a project's tree.

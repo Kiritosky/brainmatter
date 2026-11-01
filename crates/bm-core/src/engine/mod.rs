@@ -20,6 +20,8 @@ mod search;
 mod semantic;
 mod writer;
 
+pub use rows::clean_tags;
+
 use std::{
     collections::HashSet,
     path::Path,
@@ -196,6 +198,61 @@ impl Engine {
         Ok(())
     }
 
+    // ------------------------------------------------- favorites and tags ---
+
+    /// The user's favorites, by title. Those in the trash wait there.
+    pub fn favorites(&self) -> Result<Vec<NodeBrief>> {
+        self.read(|c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT n.id, n.title, n.kind FROM favorites f JOIN nodes n ON n.id = f.node_id
+                 WHERE n.deleted_at IS NULL ORDER BY n.title COLLATE NOCASE",
+            )?;
+            let rows = stmt.query_map([], rows::brief_from_row)?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+    }
+
+    pub fn set_favorite(&self, id: &NodeId, favorite: bool) -> Result<()> {
+        self.read(|c| rows::live_node(c, id).map(|_| ()))?;
+        let conn = self.writer.lock();
+        if favorite {
+            conn.execute(
+                "INSERT OR IGNORE INTO favorites (node_id, created_at) VALUES (?1, ?2)",
+                params![id, now_ms()],
+            )?;
+        } else {
+            conn.execute("DELETE FROM favorites WHERE node_id = ?1", [id])?;
+        }
+        Ok(())
+    }
+
+    /// Tags of graph entries, the most used first.
+    pub fn tag_counts(&self) -> Result<Vec<TagCount>> {
+        self.read(|c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT t.tag, count(*) FROM node_tags t JOIN nodes n ON n.id = t.node_id
+                 WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')
+                 GROUP BY t.tag ORDER BY count(*) DESC, t.tag",
+            )?;
+            let rows = stmt.query_map([], |r| Ok(TagCount { tag: r.get(0)?, count: r.get(1)? }))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+    }
+
+    /// Everyone who has written here: the user and AI clients.
+    pub fn actors(&self) -> Result<Vec<Actor>> {
+        let ids: Vec<ActorId> = self.read(|c| {
+            let mut stmt = c.prepare_cached("SELECT id FROM actors ORDER BY created_at, id")?;
+            let rows = stmt.query_map([], |r| r.get(0))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            out.extend(self.actor(&id)?);
+        }
+        Ok(out)
+    }
+
     // ------------------------------------------------------ documentation ---
 
     /// A project's documentation pages in reading order.
@@ -210,9 +267,10 @@ impl Engine {
         title: &str,
         body: &str,
         parent: Option<&NodeId>,
+        tags: Vec<String>,
     ) -> Result<Node> {
         let summary = format!("Doku-Seite „{}“ erstellt", title.trim());
-        Ok(self.write(ctx, summary, |w| docs::create(w, project, title, body, parent))?.0)
+        Ok(self.write(ctx, summary, |w| docs::create(w, project, title, body, parent, tags))?.0)
     }
 
     /// Moves a page in the tree. Like a graph layout, this is not undoable.

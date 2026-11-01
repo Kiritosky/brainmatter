@@ -442,6 +442,30 @@ pub fn open_file(session: S<'_>, id: FileLinkId) -> ApiResult<()> {
 }
 
 #[tauri::command(async)]
+pub fn favorites(session: S<'_>) -> ApiResult<Vec<NodeBrief>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.favorites()?)
+}
+
+#[tauri::command(async)]
+pub fn set_favorite(session: S<'_>, id: NodeId, favorite: bool) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.set_favorite(&id, favorite)?)
+}
+
+#[tauri::command(async)]
+pub fn tag_counts(session: S<'_>) -> ApiResult<Vec<TagCount>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.tag_counts()?)
+}
+
+#[tauri::command(async)]
+pub fn actors(session: S<'_>) -> ApiResult<Vec<Actor>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.actors()?)
+}
+
+#[tauri::command(async)]
 pub fn doc_tree(session: S<'_>, project: ProjectId) -> ApiResult<Vec<DocPage>> {
     let (engine, _) = session.engine()?;
     Ok(engine.doc_tree(&project)?)
@@ -455,7 +479,7 @@ pub fn create_doc_page(
     parent: Option<NodeId>,
 ) -> ApiResult<Node> {
     let (engine, ctx) = session.engine()?;
-    Ok(engine.create_doc_page(&ctx, &project, &title, "", parent.as_ref())?)
+    Ok(engine.create_doc_page(&ctx, &project, &title, "", parent.as_ref(), Vec::new())?)
 }
 
 #[tauri::command(async)]

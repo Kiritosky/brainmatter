@@ -141,6 +141,7 @@ pub struct DocPage {
     pub source_path: Option<String>,
     pub reviewed: bool,
     pub updated_at: i64,
+    pub tags: Vec<String>,
 }
 
 /// A folder or file whose Markdown a project's documentation mirrors.
@@ -175,6 +176,12 @@ pub struct FileLink {
     pub created_at: i64,
     pub created_by: ActorId,
     pub deleted_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TagCount {
+    pub tag: String,
+    pub count: i64,
 }
 
 /// What deleting a project would affect.
@@ -245,6 +252,7 @@ pub struct GraphNode {
     pub updated_at: i64,
     pub created_by: ActorId,
     pub projects: Vec<ProjectId>,
+    pub tags: Vec<String>,
     /// Number of live edges within the view.
     pub degree: i64,
     /// PageRank within the view; sums to about 1 over all nodes.

@@ -412,7 +412,7 @@ async fn documentation_can_be_browsed_and_read_section_by_section() {
             .id
     };
     let (open, secret) = (project("Offen"), project("Geheim"));
-    s.engine.create_doc_page(&user, &secret, "Internes", "VERBORGEN", None).unwrap();
+    s.engine.create_doc_page(&user, &secret, "Internes", "VERBORGEN", None, vec![]).unwrap();
 
     let (_, token) =
         s.registry.create("KI", &[Scope::Read, Scope::Write], std::slice::from_ref(&open)).unwrap();
@@ -434,6 +434,28 @@ async fn documentation_can_be_browsed_and_read_section_by_section() {
 
     let (t, _) = call(&c, "list_docs", json!({"project": "Offen"})).await;
     assert!(t.contains("[installation]") && t.contains("[nutzung]"), "{t}");
+
+    let tagged =
+        json!({"project": "Offen", "title": "Betrieb", "body": "Text", "tags": ["#Ops", "wiki"]});
+    let (t, err) = call(&c, "write_doc", tagged).await;
+    assert!(!err, "{t}");
+    let filter = json!({"project": "Offen", "tag": "#ops"});
+    let (t, _) = call(&c, "list_docs", filter.clone()).await;
+    assert!(
+        t.contains("Betrieb") && t.contains("tags: ops, wiki") && !t.contains("Handbuch"),
+        "{t}"
+    );
+    let retag = json!({"project": "Offen", "title": "Betrieb", "body": "Neu", "tags": ["wiki"]});
+    let (t, err) = call(&c, "write_doc", retag).await;
+    assert!(!err, "{t}");
+    let (t, _) = call(&c, "list_docs", filter).await;
+    assert!(t.contains("tagged „ops“"), "{t}");
+    let keep = json!({"project": "Offen", "title": "Betrieb", "body": "Neuer"});
+    call(&c, "write_doc", keep).await;
+    let (t, _) = call(&c, "list_docs", json!({"project": "Offen", "tag": "wiki"})).await;
+    assert!(t.contains("Betrieb"), "{t}");
+
+    let (t, _) = call(&c, "list_docs", json!({"project": "Offen"})).await;
     assert!(t.contains("  - **Details**"), "subpages are indented: {t}");
     assert!(!t.contains("[handbuch]"), "the page's own title is no section: {t}");
 

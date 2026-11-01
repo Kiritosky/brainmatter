@@ -37,6 +37,16 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
         }
     }
 
+    let mut tags: HashMap<NodeId, Vec<String>> = HashMap::new();
+    {
+        let mut stmt = conn.prepare_cached("SELECT node_id, tag FROM node_tags ORDER BY tag")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, NodeId>(0)?, r.get::<_, String>(1)?)))?;
+        for row in rows {
+            let (node, tag) = row?;
+            tags.entry(node).or_default().push(tag);
+        }
+    }
+
     let mut nodes = Vec::new();
     {
         let mut stmt = conn.prepare_cached(
@@ -55,6 +65,7 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
                 updated_at: r.get(4)?,
                 created_by: r.get(5)?,
                 projects: Vec::new(),
+                tags: Vec::new(),
                 degree: 0,
                 rank: 0.0,
                 cluster: 0,
@@ -66,6 +77,7 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
         for row in rows {
             let mut node = row?;
             node.projects = memberships.remove(&node.id).unwrap_or_default();
+            node.tags = tags.remove(&node.id).unwrap_or_default();
             let in_scope =
                 scope.as_ref().is_none_or(|s| node.projects.iter().any(|p| s.contains(p)));
             if in_scope {

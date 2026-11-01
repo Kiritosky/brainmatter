@@ -18,7 +18,7 @@ pub mod time;
 pub mod vault;
 pub mod wikilinks;
 
-pub use engine::Engine;
+pub use engine::{Engine, clean_tags};
 pub use error::{CoreError, Result};
 pub use events::Event;
 pub use store::{Db, DbKey, StoreError};

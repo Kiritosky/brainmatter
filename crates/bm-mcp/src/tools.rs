@@ -162,19 +162,18 @@ fn strings(v: &[String]) -> Vec<String> {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchArgs {
-    /// Words to search for (full-text, prefix matching, German and English).
-    /// Empty: most recently changed entries.
+    /// Words to search for.
     #[serde(default)]
     pub query: String,
-    /// Limit to a project (name or id), including its subprojects.
+    /// Only in this project and below it.
     pub project: Option<String>,
-    /// Only these kinds, e.g. ["concept", "task"].
+    /// Only these kinds.
     #[serde(default)]
     pub kinds: Vec<String>,
-    /// Only entries with any of these tags.
+    /// Only with any of these tags.
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Maximum results (default 10, max 50).
+    /// Default 10, max 50.
     pub limit: Option<usize>,
 }
 
@@ -226,7 +225,7 @@ pub(crate) fn search(cx: &ToolCx, a: SearchArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetArgs {
-    /// The entry: exact title, short id (#a1b2c3d4) or full id.
+    /// Entry.
     pub entry: String,
 }
 
@@ -246,11 +245,11 @@ pub(crate) fn get(cx: &ToolCx, a: GetArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExploreArgs {
-    /// Start entry: exact title, short id or full id.
+    /// Start entry.
     pub entry: String,
     /// Hops to follow (1–3, default 2).
     pub depth: Option<usize>,
-    /// Maximum entries (default 40).
+    /// Default 40.
     pub limit: Option<usize>,
 }
 
@@ -308,7 +307,7 @@ pub struct CaptureEntry {
     pub kind: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Project names or ids, in addition to the capture-level `project`.
+    /// Further projects.
     #[serde(default)]
     pub projects: Vec<String>,
 }
@@ -330,7 +329,7 @@ pub struct CaptureArgs {
     pub entries: Vec<CaptureEntry>,
     #[serde(default)]
     pub links: Vec<CaptureLinkArgs>,
-    /// Project (name or id) for all entries.
+    /// Project for all entries.
     pub project: Option<String>,
 }
 
@@ -439,9 +438,9 @@ fn similar_hints(cx: &ToolCx, new: &[NodeId]) -> String {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SimilarArgs {
-    /// The entry: exact title, short id or full id.
+    /// Entry.
     pub entry: String,
-    /// Maximum results (default 8).
+    /// Default 8.
     pub limit: Option<usize>,
 }
 
@@ -470,9 +469,9 @@ pub(crate) fn similar(cx: &ToolCx, a: SimilarArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MergeArgs {
-    /// The entry that remains (title, short id or id).
+    /// The entry that remains.
     pub keep: String,
-    /// Entries to merge into it; they end up in the trash.
+    /// Entries merged into it.
     pub merge: Vec<String>,
 }
 
@@ -493,9 +492,9 @@ pub(crate) fn merge(cx: &ToolCx, a: MergeArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AttachArgs {
-    /// The entry: exact title, short id or full id.
+    /// Entry.
     pub entry: String,
-    /// File name including its extension, e.g. `notes.md`.
+    /// File name with extension.
     pub file: String,
     /// The text to store.
     pub text: String,
@@ -509,7 +508,7 @@ pub(crate) fn attach(cx: &ToolCx, a: AttachArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListArgs {
-    /// Maximum results (default 30).
+    /// Default 30.
     pub limit: Option<usize>,
 }
 
@@ -570,7 +569,7 @@ pub(crate) fn trash(cx: &ToolCx, a: ListArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RestoreArgs {
-    /// Short id or full id of the entry, as listed by `trash`.
+    /// Id from `trash`.
     pub entry: String,
 }
 
@@ -590,12 +589,12 @@ pub(crate) fn restore(cx: &ToolCx, a: RestoreArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdateProjectArgs {
-    /// The project (name or id).
+    /// Project.
     pub project: String,
     /// A new name.
     pub name: Option<String>,
     pub description: Option<String>,
-    /// Move it under this project (name or id).
+    /// Move it under this project.
     pub parent: Option<String>,
     /// Move it to the top level instead.
     #[serde(default)]
@@ -634,7 +633,7 @@ pub(crate) fn update_project(cx: &ToolCx, a: UpdateProjectArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteProjectArgs {
-    /// The project (name or id).
+    /// Project.
     pub project: String,
 }
 
@@ -649,19 +648,32 @@ pub(crate) fn delete_project(cx: &ToolCx, a: DeleteProjectArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListDocsArgs {
-    /// The project (name or id).
+    /// Project.
     pub project: String,
+    /// Only pages with this tag.
+    pub tag: Option<String>,
 }
 
 pub(crate) fn list_docs(cx: &ToolCx, a: ListDocsArgs) -> Out {
     let project = cx.project(&a.project)?;
+    let wanted = a.tag.as_ref().and_then(|t| bm_core::clean_tags(&[t]).pop());
     let mut out = String::new();
     for page in cx.engine.doc_tree(&project)? {
-        let indent = "  ".repeat(page.depth as usize);
+        if wanted.as_ref().is_some_and(|tag| !page.tags.contains(tag)) {
+            continue;
+        }
+        // Under a filter the parents are missing, so nesting would only mislead.
+        let indent =
+            if wanted.is_some() { String::new() } else { "  ".repeat(page.depth as usize) };
         let origin = if page.read_only { " (from a file, read-only)" } else { "" };
+        let tags = if page.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" tags: {}", page.tags.join(", "))
+        };
         let _ = writeln!(
             out,
-            "{indent}- **{}** ({}){origin}",
+            "{indent}- **{}** ({}){origin}{tags}",
             page.node.title,
             format::short(&page.node.id)
         );
@@ -672,7 +684,9 @@ pub(crate) fn list_docs(cx: &ToolCx, a: ListDocsArgs) -> Out {
             let _ = writeln!(out, "{indent}{depth}· {} [{}]", s.title, s.id);
         }
     }
-    Ok(if out.is_empty() {
+    Ok(if let (true, Some(tag)) = (out.is_empty(), &wanted) {
+        format!("No page in „{}“ is tagged „{tag}“.", a.project)
+    } else if out.is_empty() {
         format!("„{}“ has no documentation yet. `write_doc` adds a page.", a.project)
     } else {
         format!("Documentation (`read_doc` takes a page and optionally a [section]):\n{out}")
@@ -681,9 +695,9 @@ pub(crate) fn list_docs(cx: &ToolCx, a: ListDocsArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadDocArgs {
-    /// The page: exact title, short id or full id.
+    /// Page.
     pub page: String,
-    /// A section id from `list_docs`. Reads just that part, with its subsections.
+    /// Section id from `list_docs`.
     pub section: Option<String>,
 }
 
@@ -707,13 +721,15 @@ pub(crate) fn read_doc(cx: &ToolCx, a: ReadDocArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WriteDocArgs {
-    /// The project (name or id).
+    /// Project.
     pub project: String,
     pub title: String,
-    /// Markdown. Replaces the page's text if the title already exists in this project.
+    /// Markdown.
     pub body: String,
-    /// Title of the page to put it under, for new pages.
+    /// Parent page, for new pages.
     pub parent: Option<String>,
+    /// Replaces the page's tags. Omit to keep them.
+    pub tags: Option<Vec<String>>,
 }
 
 pub(crate) fn write_doc(cx: &ToolCx, a: WriteDocArgs) -> Out {
@@ -721,7 +737,20 @@ pub(crate) fn write_doc(cx: &ToolCx, a: WriteDocArgs) -> Out {
     let tree = cx.engine.doc_tree(&project)?;
     let same = |title: &str, wanted: &str| title.eq_ignore_ascii_case(wanted.trim());
     if let Some(page) = tree.iter().find(|p| same(&p.node.title, &a.title)) {
-        let patch = NodePatch { body: Some(BodyEdit::Replace(a.body)), ..Default::default() };
+        let (tags_add, tags_remove) = match a.tags {
+            Some(tags) => {
+                let tags = bm_core::clean_tags(&tags);
+                let gone = page.tags.iter().filter(|t| !tags.contains(*t)).cloned().collect();
+                (tags, gone)
+            }
+            None => (Vec::new(), Vec::new()),
+        };
+        let patch = NodePatch {
+            body: Some(BodyEdit::Replace(a.body)),
+            tags_add,
+            tags_remove,
+            ..Default::default()
+        };
         let n = cx.engine.update_node(&cx.ctx, &page.node.id, patch)?;
         return Ok(format!("Updated the page **{}** ({}).", n.title, format::short(&n.id)));
     }
@@ -733,7 +762,9 @@ pub(crate) fn write_doc(cx: &ToolCx, a: WriteDocArgs) -> Out {
         }
         None => None,
     };
-    let n = cx.engine.create_doc_page(&cx.ctx, &project, &a.title, &a.body, parent.as_ref())?;
+    let tags = a.tags.unwrap_or_default();
+    let n =
+        cx.engine.create_doc_page(&cx.ctx, &project, &a.title, &a.body, parent.as_ref(), tags)?;
     Ok(format!("Added the page **{}** ({}).", n.title, format::short(&n.id)))
 }
 
@@ -742,11 +773,11 @@ const MAX_LINKED_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct LinkFileArgs {
-    /// The entry: exact title, short id or full id.
+    /// Entry.
     pub entry: String,
-    /// Absolute path of the file or folder.
+    /// Absolute path.
     pub path: String,
-    /// What to call it; defaults to the file name.
+    /// Name; defaults to the file name.
     pub label: Option<String>,
 }
 
@@ -765,9 +796,9 @@ pub(crate) fn link_file(cx: &ToolCx, a: LinkFileArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadLinkedFileArgs {
-    /// The entry: exact title, short id or full id.
+    /// Entry.
     pub entry: String,
-    /// The link's label or path, as listed by `get`.
+    /// Label or path from `get`.
     pub file: String,
 }
 
@@ -829,7 +860,7 @@ fn sees_template(cx: &ToolCx, t: &TemplateInfo) -> bool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListTemplatesArgs {
-    /// Only what applies in this project (name or id).
+    /// Only what applies in this project.
     pub project: Option<String>,
     /// Only templates whose title contains this.
     pub query: Option<String>,
@@ -859,7 +890,7 @@ pub(crate) fn list_templates(cx: &ToolCx, a: ListTemplatesArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetTemplateArgs {
-    /// The template's title or short id.
+    /// Template.
     pub template: String,
     /// Values for its placeholders.
     #[serde(default)]
@@ -893,9 +924,9 @@ pub(crate) fn get_template(cx: &ToolCx, a: GetTemplateArgs) -> Out {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SaveTemplateArgs {
     pub title: String,
-    /// Markdown, with {{placeholders}} for what changes on each use.
+    /// Markdown with {{placeholders}}.
     pub body: String,
-    /// Project (name or id). Without one the template is available everywhere.
+    /// Project. Without one it applies everywhere.
     pub project: Option<String>,
 }
 
@@ -935,9 +966,9 @@ const MAX_ATTACHMENT_CHARS: usize = 100_000;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadAttachmentArgs {
-    /// The entry: exact title, short id or full id.
+    /// Entry.
     pub entry: String,
-    /// The attachment's file name, as listed by `get`.
+    /// File name from `get`.
     pub file: String,
 }
 
@@ -974,7 +1005,7 @@ pub(crate) fn read_attachment(cx: &ToolCx, a: ReadAttachmentArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdateArgs {
-    /// The entry: exact title, short id or full id.
+    /// Entry.
     pub entry: String,
     pub title: Option<String>,
     /// New Markdown content, applied according to `body_mode`.
@@ -1093,7 +1124,7 @@ pub(crate) fn list_projects(cx: &ToolCx, _a: NoArgs) -> Out {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateProjectArgs {
     pub name: String,
-    /// Parent project (name or id) to create a subproject.
+    /// Parent project.
     pub parent: Option<String>,
     #[serde(default)]
     pub description: String,
@@ -1196,14 +1227,14 @@ pub(crate) fn project_overview(cx: &ToolCx, a: ProjectArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RecentArgs {
-    /// Maximum change sets (default 15).
+    /// Default 10.
     pub limit: Option<usize>,
     /// Only changes after this Unix time in milliseconds.
     pub since: Option<i64>,
 }
 
 pub(crate) fn recent_changes(cx: &ToolCx, a: RecentArgs) -> Out {
-    let changes = cx.engine.recent_changes(a.limit.unwrap_or(15).clamp(1, 100), a.since)?;
+    let changes = cx.engine.recent_changes(a.limit.unwrap_or(10).clamp(1, 100), a.since)?;
     let mut out = String::new();
     for c in changes {
         let nodes: Vec<_> = c.nodes.iter().filter(|n| cx.visible(&n.id).unwrap_or(false)).collect();
@@ -1272,7 +1303,7 @@ pub(crate) fn find_path(cx: &ToolCx, a: PathArgs) -> Out {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteArgs {
-    /// The entry: exact title, short id or full id. Moves it to the trash.
+    /// Entry. Moves it to the trash.
     pub entry: String,
 }
 
