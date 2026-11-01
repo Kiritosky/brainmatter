@@ -178,7 +178,7 @@
           bind:this={pickerField} bind:value={pickerQuery} oninput={() => (pickerIndex = 0)} />
         <div class="min-h-0 flex-1 overflow-y-auto p-1" role="listbox" aria-label="Projekte">
           {#each pickable as option, i (option.id ?? 'none')}
-            <button class="flex w-full items-center gap-2 rounded-md px-3 py-1 text-left transition-colors {i === pickerIndex ? 'bg-accent/15 text-text' : 'text-muted'}"
+            <button class="flex w-full items-center gap-2 rounded-md px-3 py-1 text-left transition-colors {i === pickerIndex ? 'bg-text/8 text-text' : 'text-muted'}"
               role="option" aria-selected={i === pickerIndex} onmouseenter={() => (pickerIndex = i)} onclick={() => pick(option.id)}>
               <span class="truncate">{option.name}</span>
               {#if option.id === project}<Check size={13} class="ml-auto shrink-0 text-accent" />{/if}

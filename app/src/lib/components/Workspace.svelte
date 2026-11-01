@@ -8,6 +8,9 @@
   import Sidebar from './Sidebar.svelte';
   import GraphView from './GraphView.svelte';
   import Inspector from './Inspector.svelte';
+  import TemplateWizard from './TemplateWizard.svelte';
+  import Tour from './Tour.svelte';
+  import { TOUR_SEEN_KEY } from '#lib/help.ts';
   import CommandPalette from './CommandPalette.svelte';
   import ActivityPanel from './ActivityPanel.svelte';
   import DocsView from './DocsView.svelte';
@@ -106,6 +109,14 @@
   }
 
   onMount(() => ws.start());
+
+  // Once, when the workspace has something to show and "what's new" is out of the way.
+  let tourOffered = false;
+  $effect(() => {
+    if (tourOffered || !ws.graph || ws.changelog) return;
+    tourOffered = true;
+    if (!localStorage.getItem(TOUR_SEEN_KEY)) ws.tourOpen = true;
+  });
   onDestroy(() => ws.stop());
 </script>
 
@@ -132,7 +143,7 @@
       {/if}
     </header>
 
-    <div class="relative min-h-0 flex-1">
+    <div class="relative min-h-0 flex-1" data-tour="graph">
       <GraphView
         snapshot={ws.graph}
         selected={ws.selected}
@@ -157,7 +168,7 @@
       {/if}
 
       {#if ws.graph && ws.graph.nodes.length > 0}
-        <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2">
+        <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2" data-tour="tools">
           {#if !narrow}
             <div class="w-56">
               <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
@@ -234,6 +245,14 @@
 
 {#if ws.settingsOpen}
   <SettingsDialog />
+{/if}
+
+{#if ws.templateWizard}
+  <TemplateWizard />
+{/if}
+
+{#if ws.tourOpen}
+  <Tour />
 {/if}
 
 {#if ws.changelog}

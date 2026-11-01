@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
+  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, FilePlus, FolderPlus, GitMerge, Link2, Paperclip, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
   import { api, errorMessage, TEMPLATE_KIND, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
-  import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, previewKind } from '#lib/attachments.ts';
+  import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, pastedAttachmentMarkdown, pastedFile, previewKind } from '#lib/attachments.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
+  import { EntryDraft } from '#lib/autosave.svelte.ts';
+  import ProjectPicker from '#lib/ui/ProjectPicker.svelte';
+  import TagInput from '#lib/ui/TagInput.svelte';
   import { ws } from '#lib/workspace.svelte.ts';
   import AttachmentPreview from './AttachmentPreview.svelte';
   import FileLinks from './FileLinks.svelte';
@@ -16,23 +19,16 @@
   const detail = $derived(ws.detail!);
   const node = $derived(detail.node);
 
-  // Local drafts: server updates only replace them while nothing is unsaved.
-  let draftTitle = $state('');
-  let draftBody = $state('');
-  let dirty = $state(false);
-  let saving = $state(false);
   let editing = $state(false);
   let confirmDelete = $state(false);
-  let newTag = $state('');
   let showHistory = $state(false);
   let history = $state<NodeRevision[]>([]);
-  let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   // The workspace creates one Inspector per entry ({#key}). Saving must not
   // read `node`: a pending save can run after ws.detail moved to another entry,
   // and would write this draft there.
   const nodeId = untrack(() => node.id);
-  let saved = { title: '', body: '' };
+  const draft = new EntryDraft(nodeId, (message) => ws.notify(message));
   const favorite = $derived(ws.favorites.some((f) => f.id === nodeId));
 
   untrack(() => {
@@ -41,15 +37,11 @@
 
   $effect(() => {
     const n = node;
-    saved = { title: n.title, body: n.body };
-    if (!dirty) {
-      draftTitle = n.title;
-      draftBody = n.body;
-    }
+    untrack(() => draft.accept(n));
   });
 
   // Leaving the entry within the autosave delay must not lose the last edit.
-  onDestroy(save);
+  onDestroy(() => draft.save());
 
   const knownTitles = $derived(new Set(detail.outgoing.map((e) => e.other.title.toLowerCase())));
   const html = $derived(renderMarkdown(node.body, (t) => knownTitles.has(t.toLowerCase())));
@@ -79,35 +71,6 @@
   const relationLabel = (relation: string, out: boolean) =>
     RELATIONS[relation]?.[out ? 0 : 1] ?? relation.replaceAll('_', ' ');
 
-  const availableProjects = $derived(
-    ws.projects.filter((p) => !detail.projects.some((dp) => dp.id === p.project.id)),
-  );
-
-  function scheduleSave() {
-    dirty = true;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 900);
-  }
-
-  async function save() {
-    clearTimeout(saveTimer);
-    if (!dirty) return;
-    const patch: Parameters<typeof api.updateNode>[1] = {};
-    if (draftTitle.trim() && draftTitle !== saved.title) patch.title = draftTitle;
-    if (draftBody !== saved.body) patch.body = { mode: 'replace', text: draftBody };
-    dirty = false;
-    if (!patch.title && !patch.body) return;
-    saved = { title: patch.title ?? saved.title, body: patch.body?.text ?? saved.body };
-    saving = true;
-    try {
-      await api.updateNode(nodeId, patch);
-    } catch (e) {
-      ws.notify(errorMessage(e));
-    } finally {
-      saving = false;
-    }
-  }
-
   async function act(fn: () => Promise<unknown>) {
     try {
       await fn();
@@ -116,18 +79,11 @@
     }
   }
 
-  function addTag(e: SubmitEvent) {
-    e.preventDefault();
-    const tag = newTag.trim();
-    newTag = '';
-    if (tag) act(() => api.updateNode(node.id, { tags_add: [tag] }));
-  }
-
   /** Merging is one click away from the list, so it asks once. */
   let confirmMerge = $state<string | null>(null);
 
   async function merge(s: Similar) {
-    await save();
+    await draft.save();
     await act(async () => {
       await api.mergeNodes(nodeId, [s.node.id]);
       ws.notify(`„${s.node.title}“ wurde hierher verschoben. Rückgängig im Verlauf.`);
@@ -144,6 +100,7 @@
   let dragging = $state(false);
   let uploading = $state(0);
   let filePicker: HTMLInputElement | undefined = $state();
+  let fileLinks: FileLinks | undefined = $state();
   let preview: HTMLDivElement | undefined = $state();
   const inlineUrls = new Map<string, Promise<string>>();
 
@@ -173,13 +130,9 @@
     return e.dataTransfer?.types.includes('Files') ?? false;
   }
 
-  /** Pasted screenshots have no useful name, so they get the time as one. */
   async function pasteFile(file: File) {
-    const stamp = new Date().toLocaleString('sv-SE').replaceAll(':', '-');
-    const named = file.name && file.name !== 'image.png' ? file : new File([file], `Bild ${stamp}.png`, { type: file.type });
-    const a = await attach(named);
-    if (!a) return null;
-    return `${previewKind(a.mime) === 'image' ? '!' : ''}[${a.filename}](attachment:${a.id})`;
+    const a = await attach(pastedFile(file));
+    return a && pastedAttachmentMarkdown(a);
   }
 
   // Images in the text. Only attachments of this entry: a note written by an AI
@@ -253,7 +206,7 @@
     {#if detail.read_only}
       <!-- Goes away with its file. -->
     {:else if confirmDelete}
-      <button class="btn-danger !h-7" in:pop={{ duration: 120, y: 0 }} onclick={() => ((dirty = false), act(() => api.deleteNode(nodeId)))} onblur={() => (confirmDelete = false)}>Löschen?</button>
+      <button class="btn-danger !h-7" in:pop={{ duration: 120, y: 0 }} onclick={() => (draft.discard(), act(() => api.deleteNode(nodeId)))} onblur={() => (confirmDelete = false)}>Löschen?</button>
     {:else}
       <button class="icon-btn hover:!text-danger" aria-label="In den Papierkorb" title="In den Papierkorb" onclick={() => (confirmDelete = true)}><Trash2 size={15} /></button>
     {/if}
@@ -265,9 +218,9 @@
       class="mb-2.5 w-full bg-transparent text-lg leading-snug font-semibold tracking-tight outline-none"
       aria-label="Titel"
       readonly={detail.read_only}
-      bind:value={draftTitle}
-      oninput={scheduleSave}
-      onblur={save}
+      bind:value={draft.title}
+      oninput={() => draft.changed()}
+      onblur={() => draft.save()}
       onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()} />
 
     <div class="mb-1.5 flex flex-wrap items-center gap-1">
@@ -277,25 +230,21 @@
           <button class="-mr-0.5 text-faint transition-colors hover:text-danger" aria-label="Aus Projekt entfernen" onclick={() => act(() => api.removeFromProject(p.id, [node.id]))}><X size={11} /></button>
         </span>
       {/each}
-      {#if availableProjects.length}
-        <div class="relative">
-          <button class="chip gap-1 !border-dashed !bg-transparent transition-colors hover:!border-faint hover:text-text" onclick={() => (pickingProject = !pickingProject)}>
-            <Plus size={11} /> Projekt
-          </button>
-          {#if pickingProject}
-            <div class="fixed inset-0 z-40" role="presentation" onclick={() => (pickingProject = false)}></div>
-            <div class="surface absolute top-7 left-0 z-50 max-h-56 min-w-44 overflow-y-auto rounded-xl p-1" transition:pop={{ duration: 140, y: -4 }}>
-              {#each availableProjects as p (p.project.id)}
-                <button class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-accent/12"
-                  onclick={() => ((pickingProject = false), act(() => api.addToProject(p.project.id, [node.id])))}>
-                  <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(p.project.id)}"></span>
-                  <span class="truncate">{p.project.name}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
+      <div class="relative">
+        <button class="chip gap-1 !border-dashed !bg-transparent transition-colors hover:!border-faint hover:text-text" onclick={() => (pickingProject = !pickingProject)}>
+          <Plus size={11} /> Projekt
+        </button>
+        {#if pickingProject}
+          <div class="fixed inset-0 z-40" role="presentation" onclick={() => (pickingProject = false)}></div>
+          <div class="surface absolute top-7 left-0 z-50 w-64 rounded-xl p-1" transition:pop={{ duration: 140, y: -4 }}>
+            <ProjectPicker
+              exclude={(id) => detail.projects.some((p) => p.id === id)}
+              onclose={() => (pickingProject = false)}
+              onpick={(id) => ((pickingProject = false), id && act(() => api.addToProject(id, [node.id])))}
+              oncreate={(name) => ((pickingProject = false), act(async () => api.addToProject((await api.createProject(name)).id, [node.id])))} />
+          </div>
+        {/if}
+      </div>
     </div>
 
     <div class="mb-5 flex flex-wrap items-center gap-1">
@@ -304,35 +253,34 @@
           <button class="-mr-0.5 text-faint transition-colors hover:text-danger" aria-label="Tag entfernen" onclick={() => act(() => api.updateNode(node.id, { tags_remove: [tag] }))}><X size={11} /></button>
         </span>
       {/each}
-      <form onsubmit={addTag}>
-        <input class="h-6 w-20 rounded-md bg-transparent px-1 text-xs text-muted outline-none placeholder:text-faint focus:bg-elevated" placeholder="+ Tag" aria-label="Tag hinzufügen" bind:value={newTag} />
-      </form>
+      <TagInput exclude={node.tags} onadd={(tag) => act(() => api.updateNode(node.id, { tags_add: [tag] }))} />
     </div>
 
     <div class="mb-1 flex h-7 items-center">
       <div class="section-title !mb-0">Inhalt</div>
-      {#if saving || dirty}
+      {#if draft.inFlight || draft.dirty}
         <span class="ml-2 flex items-center gap-1.5 text-[11px] text-faint" in:pop={{ duration: 120, y: 0 }}>
-          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-warn"></span>{saving ? 'Speichert …' : 'Ungespeichert'}
+          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-warn"></span>{draft.inFlight ? 'Speichert …' : 'Ungespeichert'}
         </span>
       {/if}
       <div class="flex-1"></div>
       {#if detail.read_only}
         <span class="text-[11px] text-faint">Aus einer Datei, nur dort änderbar</span>
       {:else}
-        <button class="icon-btn" aria-label={editing ? 'Ansehen' : 'Bearbeiten'} title={editing ? 'Ansehen' : 'Bearbeiten'} onclick={() => (save(), (editing = !editing))}>
+        <button class="icon-btn" aria-label={editing ? 'Ansehen' : 'Bearbeiten'} title={editing ? 'Ansehen' : 'Bearbeiten'} onclick={() => (draft.save(), (editing = !editing))}>
           {#if editing}<Eye size={14} />{:else}<Pencil size={14} />{/if}
         </button>
       {/if}
     </div>
     {#if editing}
       <MarkdownEditor
-        value={draftBody}
+        value={draft.body}
+        placeholders={node.kind === TEMPLATE_KIND}
         autofocus
         titles={completeTitles}
         onpastefile={pasteFile}
-        onsave={save}
-        onchange={(text) => ((draftBody = text), scheduleSave())} />
+        onsave={() => draft.save()}
+        onchange={(text) => ((draft.body = text), draft.changed())} />
     {:else if node.body.trim()}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
       <div class="prose-bm" role="presentation" bind:this={preview} onclick={onPreviewClick} ondblclick={() => (editing = true)}>{@html html}</div>
@@ -343,40 +291,47 @@
     {/if}
 
     {#if node.kind === TEMPLATE_KIND}
-      <TemplateUse body={draftBody} />
+      <TemplateUse body={draft.body} title={draft.title} projects={detail.projects.map((p) => p.id)} />
     {/if}
 
-    <div class="mt-7 mb-1 flex h-6 items-center">
-      <div class="section-title !mb-0 flex-1">Anhänge</div>
-      {#if uploading}
-        <span class="mr-1 flex items-center gap-1.5 text-[11px] text-faint" in:pop={{ duration: 120, y: 0 }}>
-          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"></span>Verschlüsselt …
-        </span>
-      {/if}
-      <button class="icon-btn !h-6 !w-6" aria-label="Datei anhängen" title="Datei anhängen" onclick={() => filePicker?.click()}><Paperclip size={13} /></button>
-      <input class="hidden" type="file" multiple bind:this={filePicker} aria-hidden="true" tabindex="-1"
-        onchange={async (e) => {
-          const input = e.currentTarget;
-          await Promise.all([...(input.files ?? [])].map(attach));
-          input.value = '';
-        }} />
-    </div>
-    {#each detail.attachments as a (a.id)}
-      {@const kind = previewKind(a.mime)}
-      <div class="group flex h-8 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-elevated" in:pop={{ duration: 160, y: 3 }}>
-        {#if kind === 'image'}<FileImage size={14} class="shrink-0 text-faint" />{:else if kind === 'none'}<FileIcon size={14} class="shrink-0 text-faint" />{:else}<FileText size={14} class="shrink-0 text-faint" />{/if}
-        <button class="min-w-0 flex-1 truncate text-left" onclick={() => (previewing = a)}>{a.filename}</button>
-        <span class="shrink-0 text-[11px] text-faint tabular-nums group-hover:hidden">{formatSize(a.size)}</span>
-        <button class="hidden shrink-0 text-faint transition-colors group-hover:block hover:text-danger focus-visible:block" aria-label="Anhang entfernen" title="Anhang entfernen"
-          onclick={() => act(() => api.deleteAttachment(a.id))}><X size={13} /></button>
-      </div>
-    {:else}
-      <button class="w-full rounded-lg border border-dashed border-line-soft py-2.5 text-xs text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => filePicker?.click()}>
-        Dateien hierher ziehen oder klicken
-      </button>
-    {/each}
+    <input class="hidden" type="file" multiple bind:this={filePicker} aria-hidden="true" tabindex="-1"
+      onchange={async (e) => {
+        const input = e.currentTarget;
+        await Promise.all([...(input.files ?? [])].map(attach));
+        input.value = '';
+      }} />
 
-    <FileLinks node={nodeId} />
+    {#if detail.attachments.length || uploading}
+      <div class="mt-7 mb-1 flex h-6 items-center">
+        <div class="section-title !mb-0 flex-1">Anhänge</div>
+        {#if uploading}
+          <span class="mr-1 flex items-center gap-1.5 text-[11px] text-faint" in:pop={{ duration: 120, y: 0 }}>
+            <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"></span>Verschlüsselt …
+          </span>
+        {/if}
+      </div>
+      {#each detail.attachments as a (a.id)}
+        {@const kind = previewKind(a.mime)}
+        <div class="group flex h-8 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-elevated" in:pop={{ duration: 160, y: 3 }}>
+          {#if kind === 'image'}<FileImage size={14} class="shrink-0 text-faint" />{:else if kind === 'none'}<FileIcon size={14} class="shrink-0 text-faint" />{:else}<FileText size={14} class="shrink-0 text-faint" />{/if}
+          <button class="min-w-0 flex-1 truncate text-left" onclick={() => (previewing = a)}>{a.filename}</button>
+          <span class="shrink-0 text-[11px] text-faint tabular-nums group-hover:hidden">{formatSize(a.size)}</span>
+          <button class="hidden shrink-0 text-faint transition-colors group-hover:block hover:text-danger focus-visible:block" aria-label="Anhang entfernen" title="Anhang entfernen"
+            onclick={() => act(() => api.deleteAttachment(a.id))}><X size={13} /></button>
+        </div>
+      {/each}
+    {/if}
+
+    <FileLinks node={nodeId} bind:this={fileLinks} />
+
+    <!-- Only what is there takes up room; the rest waits here. -->
+    {#if node.kind !== TEMPLATE_KIND}
+      <div class="mt-5 flex flex-wrap gap-1">
+        <button class="chip gap-1 !bg-transparent transition-colors hover:!border-faint hover:text-text" aria-label="Datei anhängen" title="Wird verschlüsselt gespeichert. Geht auch per Ziehen." onclick={() => filePicker?.click()}><Paperclip size={11} /> Anhang</button>
+        <button class="chip gap-1 !bg-transparent transition-colors hover:!border-faint hover:text-text" title="Verweist auf eine Datei auf deinem Mac, ohne sie zu kopieren." onclick={() => fileLinks?.link(false)}><FilePlus size={11} /> Datei verknüpfen</button>
+        <button class="chip gap-1 !bg-transparent transition-colors hover:!border-faint hover:text-text" title="Verweist auf einen Ordner auf deinem Mac, ohne ihn zu kopieren." onclick={() => fileLinks?.link(true)}><FolderPlus size={11} /> Ordner verknüpfen</button>
+      </div>
+    {/if}
 
     {#if groups.length}
       <div class="section-title mt-7">Verbindungen</div>

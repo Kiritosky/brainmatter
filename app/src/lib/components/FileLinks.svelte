@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bot, ExternalLink, File as FileIcon, FilePlus, Folder, FolderPlus, FolderSearch, ShieldCheck, X } from '@lucide/svelte';
+  import { Bot, ExternalLink, File as FileIcon, Folder, FolderSearch, ShieldCheck, X } from '@lucide/svelte';
   import { api, errorMessage, type FileLinkStatus, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -25,13 +25,18 @@
     }
     await load();
   }
+
+  /** Asks for files or folders on the Mac. The entry's "add" row calls this. */
+  export function link(folders: boolean) {
+    return act(() => api.linkFiles(node, folders));
+  }
 </script>
 
-<div class="mt-7 mb-1 flex h-6 items-center">
-  <div class="section-title !mb-0 flex-1">Verknüpfte Dateien</div>
-  <button class="icon-btn !h-6 !w-6" aria-label="Datei verknüpfen" title="Datei verknüpfen" onclick={() => act(() => api.linkFiles(node, false))}><FilePlus size={13} /></button>
-  <button class="icon-btn !h-6 !w-6" aria-label="Ordner verknüpfen" title="Ordner verknüpfen" onclick={() => act(() => api.linkFiles(node, true))}><FolderPlus size={13} /></button>
-</div>
+{#if links.length}
+  <div class="mt-7 mb-1 flex h-6 items-center">
+    <div class="section-title !mb-0 flex-1">Verknüpfte Dateien</div>
+  </div>
+{/if}
 
 {#each links as l (l.id)}
   <div class="group rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated" in:pop={{ duration: 160, y: 3 }}>
@@ -64,6 +69,4 @@
       </div>
     {/if}
   </div>
-{:else}
-  <p class="px-1 text-xs leading-relaxed text-faint">Verweist auf Dateien oder Ordner auf deinem Mac, ohne sie zu kopieren. Auch nach dem Verschieben bleibt der Link gültig.</p>
 {/each}

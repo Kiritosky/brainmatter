@@ -21,6 +21,8 @@
   });
   const shown = $derived((ws.graph?.nodes.length ?? 0) - ws.hiddenNodes.size);
 
+  const SEARCH_FROM = 8;
+  let projectQuery = $state('');
   let viewName = $state('');
 
   function saveView(e: SubmitEvent) {
@@ -69,8 +71,11 @@
 
       {#if ws.projects.length > 1}
         <div class="section-title">Projekte</div>
+        {#if ws.projects.length > SEARCH_FROM}
+          <input class="field mb-1.5 !h-7 w-full text-xs" placeholder="Projekt suchen" aria-label="Projekt suchen" bind:value={projectQuery} />
+        {/if}
         <div class="mb-3 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
-          {#each ws.projects as { project } (project.id)}
+          {#each ws.projects.filter((p) => p.project.name.toLowerCase().includes(projectQuery.trim().toLowerCase())) as { project } (project.id)}
             {@render chip(project.name, !ws.hiddenProjects.has(project.id), () => ws.toggleProjectHidden(project.id), ws.projectColor.get(project.id))}
           {/each}
         </div>

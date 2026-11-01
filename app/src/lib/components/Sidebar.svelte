@@ -190,12 +190,13 @@
 
   <div class="flex gap-1.5 px-3 pb-3">
     <button
+      data-tour="search"
       class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line-soft bg-bg/50 px-2.5 text-muted transition-colors duration-150 hover:border-line hover:text-text"
       onclick={() => (ws.palette = 'open')}>
       <Search size={14} class="shrink-0" /> <span class="truncate">Suchen</span>
       <span class="kbd ml-auto">⌘K</span>
     </button>
-    <button class="btn-ghost !h-8 !w-8 shrink-0 !bg-bg/50 !px-0 text-muted hover:text-text" aria-label="Neuer Eintrag" title="Neuer Eintrag (⌘N)" onclick={() => ws.createNode('Neuer Eintrag')}>
+    <button data-tour="new" class="btn-ghost !h-8 !w-8 shrink-0 !bg-bg/50 !px-0 text-muted hover:text-text" aria-label="Neuer Eintrag" title="Neuer Eintrag (⌘N)" onclick={() => ws.createNode('Neuer Eintrag')}>
       <Plus size={15} />
     </button>
   </div>
@@ -230,7 +231,7 @@
     {/if}
 
     <!-- Dropping on the heading moves a project to the top level. -->
-    <div class="mt-5 mb-1 flex items-center rounded-lg pr-1 pl-2 transition-colors {dropAt?.id === null && dragging ? 'bg-accent/15' : ''}"
+    <div data-tour="projects" class="mt-5 mb-1 flex items-center rounded-lg pr-1 pl-2 transition-colors {dropAt?.id === null && dragging ? 'bg-accent/15' : ''}"
       role="presentation"
       ondragover={(e) => {
         if (dragging && byId.get(dragging)?.project.parent_id) {
@@ -354,7 +355,7 @@
         <ArrowUpCircle size={14} /> Update auf {ws.update.version}
       </button>
     {/if}
-    <button class="nav-row {ws.panel === 'library' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'library' ? null : 'library'), ws.select(null))}>
+    <button data-tour="library" class="nav-row {ws.panel === 'library' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'library' ? null : 'library'), ws.select(null))}>
       <BookMarked size={14} class={ws.panel === 'library' ? 'text-accent' : ''} /> Bibliothek
     </button>
     <button class="nav-row {ws.panel === 'trash' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'trash' ? null : 'trash'), ws.select(null))}>
@@ -363,7 +364,7 @@
   </div>
 
   {#if menu}
-    <ProjectMenu project={menu.project} x={menu.x} y={menu.y} {depth}
+    <ProjectMenu project={menu.project} x={menu.x} y={menu.y}
       onclose={() => (menu = null)}
       onrename={() => menu && startRename(menu.project)}
       onsubproject={() => {
@@ -392,7 +393,7 @@
       {(userName ?? '?').slice(0, 1).toUpperCase()}
     </div>
     <span class="min-w-0 flex-1 truncate text-muted">{userName}</span>
-    <button class="icon-btn relative {ws.panel === 'review' ? '!bg-raised !text-text' : ''}" aria-label="Prüfen" title="Prüfen"
+    <button data-tour="review" class="icon-btn relative {ws.panel === 'review' ? '!bg-raised !text-text' : ''}" aria-label="Prüfen" title="Prüfen"
       onclick={() => ((ws.panel = ws.panel === 'review' ? null : 'review'), ws.select(null))}>
       <ListChecks size={15} />
       {#if ws.unreviewed.length}
@@ -401,7 +402,7 @@
     </button>
     <button class="icon-btn {ws.panel === 'activity' ? '!bg-raised !text-text' : ''}" aria-label="Aktivität" title="Aktivität"
       onclick={() => ((ws.panel = ws.panel === 'activity' ? null : 'activity'), ws.select(null))}><Activity size={15} /></button>
-    <button class="icon-btn" aria-label="Einstellungen" title="Einstellungen (⌘,)" onclick={() => (ws.settingsOpen = true)}><Settings size={15} /></button>
-    <button class="icon-btn" aria-label="Sperren" title="Sperren (⌘⇧L)" onclick={() => api.lock()}><Lock size={15} /></button>
+    <button data-tour="settings" class="icon-btn" aria-label="Einstellungen" title="Einstellungen (⌘,)" onclick={() => (ws.settingsOpen = true)}><Settings size={15} /></button>
+    <button data-tour="lock" class="icon-btn" aria-label="Sperren" title="Sperren (⌘⇧L)" onclick={() => api.lock()}><Lock size={15} /></button>
   </footer>
 </nav>

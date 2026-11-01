@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, BookMarked, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Newspaper, Sun, Trash2 } from '@lucide/svelte';
+  import { Activity, BookMarked, Compass, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Newspaper, Sun, Trash2 } from '@lucide/svelte';
   import { releases } from '#lib/changelog.ts';
   import { theme } from '#lib/theme.svelte.ts';
   import { api, errorMessage, type SearchHit } from '#lib/api.ts';
@@ -33,6 +33,8 @@
     { label: 'Bibliothek öffnen', icon: BookMarked, run: panel('library') },
     { label: 'Papierkorb öffnen', icon: Trash2, run: panel('trash') },
     { label: 'Einstellungen', icon: Settings, hint: '⌘,', run: () => (ws.settingsOpen = true) },
+    { label: 'Neue Vorlage', icon: BookMarked, run: () => (ws.templateWizard = true) },
+    { label: 'Einführung starten', icon: Compass, run: () => (ws.tourOpen = true) },
     { label: 'Was ist neu', icon: Newspaper, run: () => (ws.changelog = { heading: 'Alle Änderungen', items: releases }) },
     { label: 'Filter zurücksetzen', icon: ListFilter, run: () => ws.clearFilters() },
     { label: 'Helles Design', icon: Sun, run: setTheme('light') },
@@ -153,7 +155,7 @@
       {#each options as opt, i}
         <button
           data-index={i}
-          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-100 {i === active ? 'bg-accent/12' : ''}"
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-100 {i === active ? 'bg-text/8' : ''}"
           onmouseenter={() => (active = i)}
           onclick={() => choose(i)}>
           {#if opt.kind === 'project'}

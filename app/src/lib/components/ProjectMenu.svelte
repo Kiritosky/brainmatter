@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { ArrowLeft, CornerLeftUp, Eye, EyeOff, Focus, FolderInput, FolderPlus, Pencil, Trash2 } from '@lucide/svelte';
+  import { ArrowLeft, Eye, EyeOff, Focus, FolderInput, FolderPlus, Pencil, Trash2 } from '@lucide/svelte';
   import type { Id, Project } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
+  import ProjectPicker from '#lib/ui/ProjectPicker.svelte';
 
   let {
     project,
     x,
     y,
-    depth,
     onclose,
     onrename,
     onsubproject,
@@ -18,7 +18,6 @@
     project: Project;
     x: number;
     y: number;
-    depth: (id: Id) => number;
     onclose: () => void;
     onrename: () => void;
     onsubproject: () => void;
@@ -28,7 +27,6 @@
 
   const WIDTH = 216;
   const MARGIN = 8;
-  const INDENT_PX = 10;
 
   let moving = $state(false);
   let panel: HTMLDivElement | undefined = $state();
@@ -60,21 +58,8 @@
   {#if moving}
     <button class="menu-row text-muted" role="menuitem" onclick={() => (moving = false)}><ArrowLeft size={13} /> Verschieben nach …</button>
     <div class="my-1 h-px bg-line-soft"></div>
-    <div class="max-h-64 overflow-y-auto">
-      {#if project.parent_id}
-        <button class="menu-row" role="menuitem" onclick={() => onmove(null)}><CornerLeftUp size={13} class="text-faint" /> Oberste Ebene</button>
-      {/if}
-      {#each targets as { project: target } (target.id)}
-        <button class="menu-row" role="menuitem" style="padding-left: {8 + depth(target.id) * INDENT_PX}px" onclick={() => onmove(target.id)}>
-          <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(target.id)}"></span>
-          <span class="truncate">{target.name}</span>
-        </button>
-      {:else}
-        {#if !project.parent_id}
-          <p class="px-2 py-2 text-xs text-faint">Es gibt noch kein anderes Projekt.</p>
-        {/if}
-      {/each}
-    </div>
+    <ProjectPicker exclude={(id) => !targets.some((t) => t.project.id === id)} top={project.parent_id ? 'Oberste Ebene' : undefined}
+      onpick={onmove} onclose={() => (moving = false)} />
   {:else}
     <button class="menu-row" role="menuitem" onclick={onrename}><Pencil size={13} class="text-faint" /> Umbenennen</button>
     <button class="menu-row" role="menuitem" onclick={onsubproject}><FolderPlus size={13} class="text-faint" /> Unterprojekt anlegen</button>
@@ -101,6 +86,6 @@
     transition: background-color 100ms;
   }
   .menu-row:hover {
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
   }
 </style>

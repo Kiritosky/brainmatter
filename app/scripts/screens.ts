@@ -14,6 +14,7 @@ const errors: string[] = [];
 // own context at the end.
 await context.addInitScript(() => {
   if (!sessionStorage.getItem('bm.keepSeenVersion')) localStorage.setItem('bm.seenVersion', '99.0.0');
+  localStorage.setItem('bm.tourSeen', '1');
 });
 
 async function open(path: string): Promise<Page> {
@@ -391,7 +392,8 @@ try {
   await page.getByRole('menuitem', { name: 'Verschieben nach' }).click();
   await page.waitForTimeout(200);
   await shot(page, '51-project-move');
-  await page.getByRole('menu').getByRole('menuitem', { name: 'Privat' }).click();
+  await page.getByRole('menu').getByLabel('Projekt suchen …').fill('pri');
+  await page.getByRole('menu').getByRole('option', { name: 'Privat' }).click();
   await page.waitForTimeout(300);
   let names = await order();
   if (names.indexOf('Tresor intern') < names.indexOf('Privat')) errors.push(`menu move failed: ${names}`);
@@ -452,14 +454,54 @@ try {
   await page.getByRole('button', { name: 'Tag neu entfernen' }).click();
   await tagFilters.getByRole('button', { name: /#neu/ }).waitFor({ state: 'detached' });
 
+  // A page is written on the page: the slash menu inserts what one does not know by heart,
+  // and text typed while earlier text is being saved stays, with the cursor where it was.
   await page.getByRole('button', { name: 'Bearbeiten' }).click();
-  await page.getByRole('heading', { name: 'Handbuch' }).waitFor();
-  await page.waitForTimeout(400);
-  await shot(page, '48-docs-narrow');
-  // With the side panel closed there is room for the page's table of contents.
-  await page.getByLabel('Schließen').first().click();
-  await page.waitForTimeout(450);
+  const docEditor = page.locator('main .cm-content');
+  await docEditor.waitFor();
+  if (await page.getByRole('complementary', { name: 'Eintrag' }).count()) errors.push('writing a doc page opened the side panel');
+  await docEditor.click();
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.keyboard.type('\n\n/tab');
+  await page.locator('.cm-tooltip-autocomplete').getByText('Tabelle').waitFor();
+  await page.waitForTimeout(150);
+  await shot(page, '77-docs-slash');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Name');
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.keyboard.type('\n\n/h2');
+  await page.locator('.cm-tooltip-autocomplete').getByText('Überschrift 2').waitFor();
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Getippt beim Speichern');
+  // Longer than the save delay, more typing right around the moment it goes out.
+  await page.waitForTimeout(880);
+  await page.keyboard.type(' A');
+  await page.waitForTimeout(40);
+  await page.keyboard.type(' B');
+  await page.waitForTimeout(1100);
+  await page.keyboard.type(' C');
+  await page.keyboard.press('Meta+s');
+  await page.waitForTimeout(250);
+  await page.keyboard.type(' D');
+  await page.waitForTimeout(1200);
+  const written = await docEditor.innerText();
+  if (!written.includes('## Getippt beim Speichern A B C D')) errors.push(`typing while saving lost text or moved the cursor: ${written.slice(-120)}`);
+  if (!written.includes('| Name | Spalte |')) errors.push(`slash menu inserted the wrong table: ${written.slice(-160)}`);
+  await page.waitForTimeout(100);
+  await shot(page, '78-docs-writing');
+  await page.keyboard.press('Escape');
+  await page.locator('article').getByRole('heading', { name: 'Getippt beim Speichern A B C D' }).waitFor();
+  if (await page.locator('main .cm-content').count()) errors.push('Esc stayed in the doc editor');
+  await page.waitForTimeout(300);
   await shot(page, '48-docs');
+  // The test's own text out again, for the steps below.
+  await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    const hits: any[] = await invoke('search', { query: { text: 'Getippt beim Speichern', kinds: ['doc'], tags: [], limit: 1, include_subprojects: true } });
+    const node = (await invoke('node_detail', { id: hits[0].node.id })).node;
+    await invoke('update_node', { id: node.id, patch: { body: { mode: 'replace', text: node.body.split('\n\n| Name')[0] } } });
+  });
+  await page.getByRole('heading', { name: 'Getippt beim Speichern A B C D' }).waitFor({ state: 'detached' });
   const contents = page.getByRole('complementary', { name: 'Auf dieser Seite' });
   await contents.getByRole('button', { name: 'KI-Zugriff' }).click();
   await page.getByRole('button', { name: /Weiter/ }).click();
@@ -521,7 +563,62 @@ try {
   });
   if (inGraph) errors.push('templates must stay out of the graph');
   await page.getByLabel('Schließen').first().click();
-  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
+
+  // A new template is walked through, and using it gives an entry of its own.
+  await page.getByRole('button', { name: 'Neue Vorlage' }).click();
+  const wizard = page.getByRole('dialog', { name: 'Neue Vorlage' });
+  const onward = wizard.getByRole('button', { name: 'Weiter' });
+  if (await onward.isEnabled()) errors.push('the template wizard goes on with nothing chosen');
+  await wizard.getByRole('radio', { name: /Besprechung/ }).click();
+  if ((await wizard.getByLabel('Name der Vorlage').inputValue()) !== 'Besprechung') errors.push('the wizard did not suggest a name');
+  await page.waitForTimeout(250);
+  await shot(page, '79-wizard-kind');
+  await onward.click();
+  await wizard.getByLabel('Name des Platzhalters').fill('ort');
+  await wizard.getByRole('button', { name: 'Einfügen' }).click();
+  await wizard.getByText(/fragt sie nach:.*ort/).waitFor();
+  await page.waitForTimeout(150);
+  await shot(page, '80-wizard-content');
+  await onward.click();
+  await wizard.getByText('In Projekten').click();
+  const create = wizard.getByRole('button', { name: 'Vorlage anlegen' });
+  if (await create.isEnabled()) errors.push('the wizard finished with no project chosen');
+  await wizard.getByLabel('Projekt suchen').fill('pri');
+  await wizard.getByLabel('Projekt suchen').press('Enter');
+  await wizard.getByRole('button', { name: 'Privat entfernen' }).waitFor();
+  await page.waitForTimeout(150);
+  await shot(page, '81-wizard-where');
+  await create.click();
+  await wizard.waitFor({ state: 'detached' });
+  await page.getByText('Verwenden', { exact: true }).waitFor();
+  await page.getByLabel('Wert für thema').fill('Planung');
+  await page.getByRole('button', { name: 'Als Eintrag anlegen' }).click();
+  await page.getByLabel('Titel').and(page.locator('input')).first().waitFor();
+  await page.waitForFunction(() => (document.querySelector('input[aria-label="Titel"]') as HTMLInputElement | null)?.value === 'Besprechung: Planung');
+  await page.waitForTimeout(250);
+  const usedIn = await page.getByRole('complementary', { name: 'Eintrag' }).innerText();
+  if (!usedIn.includes('Privat')) errors.push('an entry from a template did not land in its project');
+
+  // Assigning: projects and tags are found by typing, and a missing project can be created.
+  await page.getByRole('complementary', { name: 'Eintrag' }).getByRole('button', { name: 'Projekt', exact: true }).click();
+  await page.getByLabel('Projekt suchen …').fill('ker');
+  await page.getByRole('option', { name: /Kern/ }).first().waitFor();
+  await page.waitForTimeout(150);
+  await shot(page, '82-assign-project');
+  await page.getByLabel('Projekt suchen …').press('Enter');
+  await page.getByRole('button', { name: 'Aus Projekt entfernen' }).nth(1).waitFor();
+  await page.getByRole('complementary', { name: 'Eintrag' }).getByRole('button', { name: 'Projekt', exact: true }).click();
+  await page.getByLabel('Projekt suchen …').fill('Ganz neu');
+  await page.getByRole('option', { name: /neu anlegen/ }).click();
+  await page.getByRole('complementary', { name: 'Eintrag' }).getByText('Ganz neu').waitFor();
+  await page.getByRole('complementary', { name: 'Eintrag' }).getByLabel('Tag hinzufügen').fill('konz');
+  await page.getByRole('option', { name: '#konzept' }).waitFor();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.getByRole('complementary', { name: 'Eintrag' }).getByText('#konzept').waitFor();
+  await page.getByLabel('Schließen').first().click();
+  await page.waitForTimeout(250);
+  if (await page.getByRole('button', { name: 'Neue Vorlage' }).count()) await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
   await page.waitForTimeout(250);
 
   // Trash: delete, restore, delete again, erase for good.
@@ -708,7 +805,7 @@ try {
   await shot(page, '17-ai-token');
 } catch (e) {
   await shot(page, 'zz-failure');
-  errors.push(`step failed: ${(e as Error).message.split('\n')[0]}`);
+  errors.push(`step failed: ${(e as Error).message.split("\n")[0]} at ${(e as Error).stack?.match(/screens\.ts:\d+/)?.[0]} ${(e as Error).message.split("\n").find((l) => l.includes("waiting for")) ?? ""}`);
   errors.push(`visible text: ${(await page.locator('body').innerText()).slice(0, 600).replace(/\n+/g, ' | ')}`);
 }
 
@@ -902,6 +999,65 @@ try {
   await full.close();
 }
 
+// The first start shows around once, and the help page has what it showed and the AI's tools.
+{
+  const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
+  await fresh.addInitScript(() => localStorage.setItem('bm.seenVersion', '99.0.0'));
+  const tour = await fresh.newPage();
+  tour.on('pageerror', (e) => errors.push(`tour: ${e.message}`));
+  const unlock = async () => {
+    await tour.goto(BASE);
+    await tour.getByPlaceholder('Master-Passwort').fill('demo1234');
+    await tour.getByRole('button', { name: 'Entsperren', exact: true }).click();
+  };
+  try {
+    await unlock();
+    const card = tour.getByRole('dialog', { name: 'Einführung' });
+    await card.getByText('Willkommen bei Brainmatter').waitFor();
+    await tour.waitForTimeout(350);
+    await shot(tour, '83-tour-start');
+    const total = Number((await card.getByText(/von \d+/).innerText()).split(' ').pop());
+    for (let i = 1; i < total; i++) {
+      await tour.keyboard.press('ArrowRight');
+      await tour.waitForTimeout(320);
+      const fits = await card.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+      });
+      if (!fits) errors.push(`tour step ${i + 1} leaves the window`);
+      if (i === 1) await shot(tour, '84-tour-search');
+      if (i === 4) await shot(tour, '85-tour-graph');
+      if (i === 10) await shot(tour, '86-tour-review');
+    }
+    await card.getByRole('button', { name: 'Fertig' }).click();
+    await card.waitFor({ state: 'detached' });
+    await unlock();
+    await tour.getByText('Einträge ·').waitFor();
+    await tour.waitForTimeout(500);
+    if (await card.count()) errors.push('the tour came back after it was finished');
+
+    await tour.keyboard.press('Meta+,');
+    const settings = tour.getByRole('dialog', { name: 'Einstellungen' });
+    await settings.getByRole('button', { name: 'Hilfe' }).click();
+    await settings.getByText('Zwei Einträge verbinden').waitFor();
+    await tour.waitForTimeout(250);
+    await shot(tour, '87-help-app');
+    await settings.getByText('Für KIs').click();
+    await settings.getByText('project_overview').waitFor();
+    await settings.getByText('setup-project').waitFor();
+    await tour.waitForTimeout(250);
+    await shot(tour, '88-help-ai');
+    await settings.getByRole('button', { name: 'Einführung starten' }).click();
+    await card.getByText('Willkommen bei Brainmatter').waitFor();
+    await tour.keyboard.press('Escape');
+    await card.waitFor({ state: 'detached' });
+  } catch (e) {
+    await shot(tour, 'zz-tour-failure');
+    errors.push(`tour failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await fresh.close();
+}
+
 // Quick capture: where the entry goes is picked in place and remembered.
 {
   const capture = await open('/?window=capture&touchid=ok');
@@ -946,6 +1102,7 @@ try {
   const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
   await fresh.addInitScript(() => {
     if (!localStorage.getItem('bm.seenVersion')) localStorage.setItem('bm.seenVersion', '0.2.0');
+    localStorage.setItem('bm.tourSeen', '1');
   });
   const updated = await fresh.newPage();
   const unlock = async () => {

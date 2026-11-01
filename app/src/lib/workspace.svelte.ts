@@ -103,6 +103,8 @@ class Workspace {
   /** Right column when no entry is selected. */
   panel = $state<'activity' | 'review' | 'trash' | 'library' | null>(null);
   settingsOpen = $state(false);
+  templateWizard = $state(false);
+  tourOpen = $state(false);
   /** Bumped after every coalesced refresh, for views that reload on change. */
   revision = $state(0);
   /** Increment to ask the graph to centre the selected node. */

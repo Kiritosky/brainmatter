@@ -71,7 +71,7 @@
         <li
           role="option"
           aria-selected={opt.value === value}
-          class="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors {i === active ? 'bg-accent/15 text-text' : 'text-muted'}"
+          class="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors {i === active ? 'bg-text/8 text-text' : 'text-muted'}"
           onmouseenter={() => (active = i)}
           onclick={() => choose(i)}
           onkeydown={() => {}}>

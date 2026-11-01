@@ -32,3 +32,15 @@ export async function attachmentUrl(a: Attachment): Promise<string> {
 export async function attachmentText(a: Attachment): Promise<string> {
   return new TextDecoder().decode(await api.attachmentData(a.id));
 }
+
+/** Pasted screenshots have no useful name, so they get the time as one. */
+export function pastedFile(file: File): File {
+  if (file.name && file.name !== 'image.png') return file;
+  const stamp = new Date().toLocaleString('sv-SE').replaceAll(':', '-');
+  return new File([file], `Bild ${stamp}.png`, { type: file.type });
+}
+
+/** The Markdown that shows a stored file in the text. */
+export function pastedAttachmentMarkdown(a: Attachment): string {
+  return `${previewKind(a.mime) === 'image' ? '!' : ''}[${a.filename}](attachment:${a.id})`;
+}

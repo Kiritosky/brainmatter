@@ -5,6 +5,8 @@
   import { renderMarkdown } from '#lib/markdown.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
+  import TagInput from '#lib/ui/TagInput.svelte';
+  import DocPageEditor from './DocPageEditor.svelte';
 
   let { project }: { project: Id } = $props();
 
@@ -22,7 +24,8 @@
   let headings = $state.raw<{ id: string; title: string; level: number }[]>([]);
   let loaded = $state(false);
   let tagFilter = $state<string | null>(null);
-  let newTag = $state('');
+  /** Writing happens on the page itself. New pages start with their title marked. */
+  let editing = $state<'body' | 'title' | null>(null);
 
   const tagCounts = $derived.by(() => {
     const counts = new Map<string, number>();
@@ -70,6 +73,7 @@
   async function open(id: Id) {
     currentId = id;
     query = '';
+    editing = null;
     await loadCurrent();
     scroller?.scrollTo({ top: 0 });
   }
@@ -89,6 +93,7 @@
     untrack(() => {
       currentId = null;
       tagFilter = null;
+      editing = null;
       load().then(syncSources).then(load);
     });
   });
@@ -128,7 +133,7 @@
     await act(async () => {
       const node = await api.createDocPage(project, 'Neue Seite', parent);
       currentId = node.id;
-      await ws.select(node.id);
+      editing = 'title';
     });
   }
 
@@ -139,16 +144,6 @@
   function move(p: DocPage, by: number) {
     const position = siblings(p).findIndex((o) => o.node.id === p.node.id) + by;
     return act(() => api.placeDocPage(p.node.id, p.parent, position));
-  }
-
-  function addTag(e: SubmitEvent) {
-    e.preventDefault();
-    const tag = newTag.trim();
-    newTag = '';
-    if (tag && currentId) {
-      const id = currentId;
-      act(() => api.updateNode(id, { tags_add: [tag] }));
-    }
   }
 
   function onArticleClick(e: MouseEvent) {
@@ -224,7 +219,7 @@
     </div>
 
     <div class="border-t border-line-soft p-2">
-      <div class="mb-1 flex items-center pl-1.5">
+      <div class="flex items-center pl-1.5" title="Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein.">
         <span class="section-title !mb-0 flex-1">Aus Dateien</span>
         <button class="icon-btn !h-6 !w-6" aria-label="Doku-Ordner einbinden" title="Doku-Ordner einbinden" onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={13} /></button>
         <button class="icon-btn !h-6 !w-6" aria-label="Markdown-Datei einbinden" title="Markdown-Datei einbinden" onclick={() => act(() => api.addDocSource(project, false))}><FilePlus size={13} /></button>
@@ -239,8 +234,6 @@
           <button class="text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus-visible:opacity-100" aria-label="„{s.path.split('/').pop()}“ nicht mehr einbinden" title="Nicht mehr einbinden. Die Dateien bleiben."
             onclick={() => act(() => api.removeDocSource(s.id))}><X size={13} /></button>
         </div>
-      {:else}
-        <p class="px-1.5 text-[11px] leading-relaxed text-faint">Bindet z. B. den <code class="font-mono">docs</code>-Ordner eines Repos schreibgeschützt ein.</p>
       {/each}
     </div>
   </nav>
@@ -249,6 +242,11 @@
   <div class="@container min-h-0 overflow-y-auto" bind:this={scroller}>
     {#if current && page}
       <div class="mx-auto flex max-w-[1000px] gap-10 px-8 pt-4 pb-16">
+        {#if editing && !current.read_only}
+          {#key current.node.id}
+            <DocPageEditor node={current.node} focus={editing} onclose={() => ((editing = null), load())} />
+          {/key}
+        {:else}
         <main class="min-w-0 flex-1" in:pop={{ duration: 160, y: 4 }}>
           <header class="mb-6">
             <h1 class="text-[26px] leading-tight font-semibold tracking-tight wrap-anywhere">{current.node.title}</h1>
@@ -261,7 +259,7 @@
               </p>
               {#if !current.read_only}
                 <div class="flex shrink-0 items-center gap-1">
-                  <button class="btn-ghost !h-7.5 text-xs" onclick={() => ws.select(page.node.id)}><Pencil size={13} /> Bearbeiten</button>
+                  <button class="btn-ghost !h-7.5 text-xs" onclick={() => (editing = 'body')}><Pencil size={13} /> Bearbeiten</button>
                   <button class="icon-btn hover:!text-danger" aria-label="In den Papierkorb" title="In den Papierkorb" onclick={() => act(() => api.deleteNode(page.node.id))}><Trash2 size={14} /></button>
                 </div>
               {/if}
@@ -273,9 +271,7 @@
                   <button class="-mr-0.5 text-faint transition-colors hover:text-danger" aria-label="Tag {tag} entfernen" onclick={() => act(() => api.updateNode(page.node.id, { tags_remove: [tag] }))}><X size={11} /></button>
                 </span>
               {/each}
-              <form onsubmit={addTag}>
-                <input class="h-6 w-20 rounded-md bg-transparent px-1 text-xs text-muted outline-none placeholder:text-faint focus:bg-elevated" placeholder="+ Tag" aria-label="Tag hinzufügen" bind:value={newTag} />
-              </form>
+              <TagInput exclude={current.node.tags} onadd={(tag) => act(() => api.updateNode(page.node.id, { tags_add: [tag] }))} />
             </div>
           </header>
 
@@ -283,7 +279,7 @@
             <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
             <article class="prose-bm prose-doc selectable" role="presentation" bind:this={article} onclick={onArticleClick}>{@html html}</article>
           {:else}
-            <button class="w-full rounded-xl border border-dashed border-line py-10 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => ws.select(page.node.id)}>
+            <button class="w-full rounded-xl border border-dashed border-line py-10 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = 'body')}>
               Noch leer. Klicken zum Schreiben.
             </button>
           {/if}
@@ -306,7 +302,9 @@
           {/if}
         </main>
 
-        {#if headings.length > 1}
+        {/if}
+
+        {#if headings.length > 1 && !editing}
           <aside class="sticky top-4 hidden h-fit w-44 shrink-0 @3xl:block" aria-label="Auf dieser Seite">
             <div class="section-title">Auf dieser Seite</div>
             {#each headings as h (h.id)}

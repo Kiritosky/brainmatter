@@ -579,6 +579,29 @@ async fn projects_can_be_reorganised_within_scope() {
 const COMMANDS: [&str; 5] =
     ["setup-project", "update-docs", "capture-session", "recall", "tidy-project"];
 
+/// The app's help page says what models can do, so it must not fall behind.
+#[tokio::test]
+async fn the_help_page_lists_every_tool_and_command() {
+    let help = include_str!("../../../app/src/lib/help.ts");
+    let s = start().await;
+    let (_, token) =
+        s.registry.create("Alles", &[Scope::Read, Scope::Write, Scope::Delete], &[]).unwrap();
+    let c = connect(&s.url, &token).await;
+
+    let tools: Vec<_> =
+        c.list_all_tools().await.unwrap().into_iter().map(|t| t.name.to_string()).collect();
+    for name in tools.iter().map(String::as_str).chain(COMMANDS) {
+        assert!(help.contains(&format!("name: '{name}'")), "help.ts does not mention {name}");
+    }
+    let listed = help.split("export const MCP_TOOLS").nth(1).unwrap().split("name: '").skip(1);
+    for name in listed.map(|rest| rest.split('\'').next().unwrap()) {
+        assert!(
+            tools.iter().any(|t| t == name) || COMMANDS.contains(&name),
+            "help.ts mentions {name}, which does not exist"
+        );
+    }
+}
+
 async fn all_prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
     c.list_all_prompts().await.unwrap().into_iter().map(|p| p.name).collect()
 }

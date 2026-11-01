@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Network, Palette, ScanSearch } from '@lucide/svelte';
+  import { Archive, Bot, CircleHelp, X, Copy, Check, ShieldCheck, KeyRound, Lock, Network, Palette, ScanSearch } from '@lucide/svelte';
   import { api, errorMessage, type Settings, type Status } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { DEFAULT_PREFS, prefs, type Accent } from '#lib/prefs.svelte.ts';
@@ -10,12 +10,13 @@
   import Select from '#lib/ui/Select.svelte';
   import { fadeQuick, pop } from '#lib/ui/motion.ts';
   import AiConnections from './AiConnections.svelte';
+  import HelpSettings from './HelpSettings.svelte';
   import BackupSettings from './BackupSettings.svelte';
   import GraphSettings from './GraphSettings.svelte';
   import ModelSettings from './ModelSettings.svelte';
   import UpdateSettings from './UpdateSettings.svelte';
 
-  type Tab = 'general' | 'graph' | 'security' | 'password' | 'backups' | 'search' | 'ai';
+  type Tab = 'general' | 'graph' | 'security' | 'password' | 'backups' | 'search' | 'ai' | 'help';
 
   // Fixed colours: each swatch shows its own accent, whichever one is active.
   const ACCENTS: { value: Accent; label: string; color: string }[] = [
@@ -58,6 +59,7 @@
     { id: 'backups', label: 'Backups', icon: Archive },
     { id: 'search', label: 'Suche nach Sinn', icon: ScanSearch },
     { id: 'ai', label: 'KI-Verbindungen', icon: Bot },
+    { id: 'help', label: 'Hilfe', icon: CircleHelp },
   ];
 
   onMount(async () => {
@@ -124,7 +126,7 @@
       <div class="px-2 pt-1 pb-3 text-[15px] font-semibold">Einstellungen</div>
       {#each tabs as t (t.id)}
         <button
-          class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors {tab === t.id ? 'bg-accent/15 text-text' : 'text-muted hover:bg-elevated hover:text-text'}"
+          class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors {tab === t.id ? 'bg-text/8 text-text' : 'text-muted hover:bg-elevated hover:text-text'}"
           onclick={() => (tab = t.id)}>
           <t.icon size={15} class={tab === t.id ? 'text-accent' : ''} />{t.label}
         </button>
@@ -242,6 +244,8 @@
                 <Toggle checked={status.touch_id_enrolled} disabled={busy || !status.biometry_available} label="Touch ID" onchange={toggleTouchId} />
               </div>
             </div>
+          {:else if tab === 'help'}
+            <HelpSettings />
           {:else if tab === 'ai'}
             <AiConnections />
           {:else if tab === 'search'}

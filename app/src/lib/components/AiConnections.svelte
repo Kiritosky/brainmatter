@@ -169,6 +169,8 @@
     return `Zuletzt am ${new Date(ms).toLocaleDateString('de-DE')}`;
   }
 
+  const SEARCH_FROM = 8;
+  let projectQuery = $state('');
   const projectName = (id: string) => ws.projects.find((p) => p.project.id === id)?.project.name ?? '?';
 </script>
 
@@ -267,8 +269,11 @@
         <Toggle bind:checked={limitProjects} label="Nur bestimmte Projekte" />
       </div>
       {#if limitProjects}
-        <div class="flex flex-col gap-2 border-t border-line-soft px-4 py-3" in:pop={{ duration: 160, y: -3 }}>
-          {#each ws.projects as p (p.project.id)}
+        <div class="flex max-h-64 flex-col gap-2 overflow-y-auto border-t border-line-soft px-4 py-3" in:pop={{ duration: 160, y: -3 }}>
+          {#if ws.projects.length > SEARCH_FROM}
+            <input class="field !h-7.5 w-full text-xs" placeholder="Projekt suchen" aria-label="Projekt suchen" bind:value={projectQuery} />
+          {/if}
+          {#each ws.projects.filter((p) => p.project.name.toLowerCase().includes(projectQuery.trim().toLowerCase())) as p (p.project.id)}
             <Checkbox
               checked={projects.includes(p.project.id)}
               onchange={(on) => (projects = on ? [...projects, p.project.id] : projects.filter((id) => id !== p.project.id))}>
