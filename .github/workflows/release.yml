@@ -97,7 +97,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bundle=target/release/bundle
-          gh release create "$VERSION" --notes-file notes.md --verify-tag \
+          { cat notes.md; sed "s/VERSION/${VERSION#v}/" .github/release-footer.md; } > release.md
+          gh release create "$VERSION" --notes-file release.md --verify-tag \
             "$bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
             "$bundle/macos/Brainmatter.app.tar.gz" \
             "$bundle/macos/Brainmatter.app.tar.gz.sig" \
