@@ -19,7 +19,12 @@ use bm_core::{
     vault::KdfParams,
 };
 
-const SYNONYMS: &[(&str, &str)] = &[("parallel", "async"), ("gleichzeitig", "runtime")];
+const SYNONYMS: &[(&str, &str)] = &[
+    ("parallel", "async"),
+    ("gleichzeitig", "runtime"),
+    ("geteilt", "gemeinsam"),
+    ("flott", "besonderheit"),
+];
 
 #[derive(Default)]
 struct FakeModel {
@@ -127,6 +132,25 @@ fn hybrid_search_finds_by_meaning_and_respects_filters() {
 
     // Unrelated queries stay empty instead of returning the nearest noise.
     assert!(f.hybrid(SearchQuery::new("Steuererklärung Quittung")).is_empty());
+}
+
+#[test]
+fn what_all_entries_share_does_not_make_them_hits() {
+    let f = setup();
+    // Like the real model, where every text shares a large part of its direction.
+    let shared = "gemeinsam ".repeat(4);
+    for i in 0..24 {
+        f.add(note(&format!("Eintrag{i}"), &format!("{shared} wort{i}")));
+    }
+    let special = f.add(note("Besonders", &format!("{shared} besonderheit")));
+
+    // Raw cosine rates every entry about 0.97 against this.
+    let hits = f.hybrid(SearchQuery::new("geteilt"));
+    assert!(hits.is_empty(), "{:?}", titles(&hits));
+
+    let hits = f.hybrid(SearchQuery::new("flott"));
+    assert_eq!(titles(&hits), [special.title.as_str()]);
+    assert!(hits[0].semantic);
 }
 
 #[test]

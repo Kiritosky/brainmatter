@@ -29,11 +29,16 @@ use crate::{
 /// high and close together, so these are hints, never automatic actions.
 pub const DUPLICATE_SCORE: f32 = 0.925;
 pub const SUGGEST_SCORE: f32 = 0.88;
-/// Query-to-passage scores overlap: right hits measured 0.80–0.91, wrong ones
-/// up to 0.83. So a hit needs both this floor and to be close to the query's
-/// best hit, which keeps 9 of 10 right hits and 7 of 90 wrong ones (PLAN.md §17).
+/// Raw query-to-passage scores overlap: right hits measured 0.80–0.91, wrong ones
+/// up to 0.87 next to long documents. They only remain for vaults too small for a
+/// meaningful mean.
 const QUERY_FLOOR: f32 = 0.80;
 const QUERY_MARGIN: f32 = 0.02;
+/// With the mean of all entries subtracted, for a hit to count. Over 12 searches
+/// nothing answers, this leaves 5–18 false hits where the raw scores gave 31–86,
+/// and finds as many right ones. Measured with `bm-embed --example query_gate`.
+const CENTRED_FLOOR: f32 = 0.18;
+const CENTRED_MARGIN: f32 = 0.06;
 /// Reciprocal rank fusion constant.
 const RRF_K: f64 = 60.0;
 const MAX_SUGGESTIONS: usize = 5;
@@ -238,9 +243,20 @@ impl Engine {
                     1.0 / (RRF_K + rank as f64 + 1.0);
                 hits.insert(hit.node.id.clone(), hit);
             }
-            let nearest = self.vectors.read().nearest(vector, (limit * 8).max(100));
+            if self.vectors.read().centre_is_stale() {
+                self.vectors.write().refresh_centre();
+            }
+            let (nearest, floor, margin) = {
+                let vectors = self.vectors.read();
+                let wanted = (limit * 8).max(100);
+                if vectors.can_centre() {
+                    (vectors.nearest_centred(vector, wanted), CENTRED_FLOOR, CENTRED_MARGIN)
+                } else {
+                    (vectors.nearest(vector, wanted), QUERY_FLOOR, QUERY_MARGIN)
+                }
+            };
             let mut rank = 0usize;
-            let mut cut = QUERY_FLOOR;
+            let mut cut = floor;
             for (id, score) in nearest {
                 if score < cut || rank >= limit * 3 {
                     break;
@@ -248,7 +264,7 @@ impl Engine {
                 let Some(node) = allowed(&id)? else { continue };
                 // The best hit within the filters, not an excluded one, sets the bar.
                 if rank == 0 {
-                    cut = cut.max(score - QUERY_MARGIN);
+                    cut = cut.max(score - margin);
                 }
                 *scores.entry(id.clone()).or_default() += 1.0 / (RRF_K + rank as f64 + 1.0);
                 rank += 1;

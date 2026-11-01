@@ -83,6 +83,9 @@ pub(crate) fn from_blob(b: &[u8]) -> Vec<f32> {
     b.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect()
 }
 
+/// Below this, the mean says more about the few entries than about the model.
+const MIN_FOR_CENTRE: usize = 20;
+
 /// Unit vectors in one contiguous matrix, for cache-friendly scans.
 #[derive(Default)]
 pub(crate) struct VectorIndex {
@@ -90,11 +93,50 @@ pub(crate) struct VectorIndex {
     ids: Vec<NodeId>,
     slots: HashMap<NodeId, usize>,
     data: Vec<f32>,
+    /// The mean of all vectors, and each vector's dot product with it. Kept so a
+    /// centred search costs the same scan as a plain one.
+    centre: Vec<f32>,
+    centre_dots: Vec<f32>,
+    changes_since_centre: usize,
+}
+
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
 impl VectorIndex {
     pub(crate) fn len(&self) -> usize {
         self.ids.len()
+    }
+
+    /// Whether [`Self::nearest_centred`] has a mean worth trusting.
+    pub(crate) fn can_centre(&self) -> bool {
+        self.len() >= MIN_FOR_CENTRE
+    }
+
+    /// The mean barely moves with a few changes, so it waits for enough of them.
+    pub(crate) fn centre_is_stale(&self) -> bool {
+        self.changes_since_centre >= (self.len() / 20).max(16)
+            || (self.centre.is_empty() && !self.ids.is_empty())
+    }
+
+    pub(crate) fn refresh_centre(&mut self) {
+        self.changes_since_centre = 0;
+        if self.ids.is_empty() {
+            self.centre.clear();
+            self.centre_dots.clear();
+            return;
+        }
+        let mut centre = vec![0.0f32; self.dim];
+        for v in self.data.chunks_exact(self.dim) {
+            for (c, x) in centre.iter_mut().zip(v) {
+                *c += x;
+            }
+        }
+        let n = self.ids.len() as f32;
+        centre.iter_mut().for_each(|c| *c /= n);
+        self.centre_dots = self.data.chunks_exact(self.dim).map(|v| dot(v, &centre)).collect();
+        self.centre = centre;
     }
 
     pub(crate) fn get(&self, id: &NodeId) -> Option<&[f32]> {
@@ -109,16 +151,24 @@ impl VectorIndex {
         if vector.len() != self.dim {
             return;
         }
+        let centre_dot = if self.centre.is_empty() { 0.0 } else { dot(vector, &self.centre) };
         match self.slots.get(id) {
             Some(&slot) => {
                 self.data[slot * self.dim..(slot + 1) * self.dim].copy_from_slice(vector);
+                if let Some(d) = self.centre_dots.get_mut(slot) {
+                    *d = centre_dot;
+                }
             }
             None => {
                 self.slots.insert(id.clone(), self.ids.len());
                 self.ids.push(id.clone());
                 self.data.extend_from_slice(vector);
+                if !self.centre.is_empty() {
+                    self.centre_dots.push(centre_dot);
+                }
             }
         }
+        self.changes_since_centre += 1;
     }
 
     pub(crate) fn remove(&mut self, id: &NodeId) {
@@ -132,6 +182,48 @@ impl VectorIndex {
         }
         self.ids.pop();
         self.data.truncate(last * self.dim);
+        if !self.centre_dots.is_empty() {
+            self.centre_dots.swap_remove(slot);
+        }
+        self.changes_since_centre += 1;
+    }
+
+    /// Like [`Self::nearest`], by cosine after subtracting the mean of all vectors.
+    ///
+    /// Everything this model embeds points in much the same direction, so raw
+    /// scores sit close together and long averaged documents come out near any
+    /// query. Without that shared part, only what is specific to a text counts.
+    pub(crate) fn nearest_centred(&self, query: &[f32], k: usize) -> Vec<(NodeId, f32)> {
+        if self.dim == 0
+            || query.len() != self.dim
+            || k == 0
+            || self.centre.len() != self.dim
+            || self.centre_dots.len() != self.ids.len()
+        {
+            return Vec::new();
+        }
+        let centre_sq = dot(&self.centre, &self.centre);
+        let query_dot = dot(query, &self.centre);
+        let query_norm = (dot(query, query) - 2.0 * query_dot + centre_sq).max(1e-9).sqrt();
+        let mut scored: Vec<(usize, f32)> = self
+            .data
+            .chunks_exact(self.dim)
+            .zip(&self.centre_dots)
+            .enumerate()
+            .map(|(i, (v, centre_dot))| {
+                // |v| is 1, so |v - centre|² needs no second pass over the vector.
+                let norm = (1.0 - 2.0 * centre_dot + centre_sq).max(1e-9).sqrt();
+                let score = (dot(v, query) - centre_dot - query_dot + centre_sq) / (norm * query_norm);
+                (i, score)
+            })
+            .collect();
+        let k = k.min(scored.len());
+        if k < scored.len() {
+            scored.select_nth_unstable_by(k, |a, b| b.1.total_cmp(&a.1));
+            scored.truncate(k);
+        }
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+        scored.into_iter().map(|(i, s)| (self.ids[i].clone(), s)).collect()
     }
 
     /// The `k` most similar entries by cosine, best first.
@@ -181,6 +273,50 @@ mod tests {
 
         ix.upsert(&id("y"), &[1.0, 0.0]);
         assert_eq!(ix.nearest(&[1.0, 0.0], 1)[0].0, id("y"));
+    }
+
+    fn unit(v: [f32; 3]) -> Vec<f32> {
+        let mut v = v.to_vec();
+        normalize(&mut v);
+        v
+    }
+
+    #[test]
+    fn centred_scores_match_the_definition_and_survive_changes() {
+        let mut ix = VectorIndex::default();
+        let vectors = [unit([1.0, 0.1, 0.0]), unit([1.0, 0.0, 0.1]), unit([1.0, -0.1, 0.0]), unit([1.0, 0.0, -0.1])];
+        for (i, v) in vectors.iter().enumerate() {
+            ix.upsert(&id(&format!("n{i}")), v);
+        }
+        ix.refresh_centre();
+        ix.remove(&id("n0"));
+        ix.upsert(&id("n0"), &vectors[0]);
+
+        // By hand: subtract the mean from both sides, then take the cosine.
+        let query = unit([1.0, 0.3, 0.0]);
+        let centre: Vec<f32> = (0..3).map(|d| vectors.iter().map(|v| v[d]).sum::<f32>() / 4.0).collect();
+        let minus = |v: &[f32]| {
+            let mut out: Vec<f32> = v.iter().zip(&centre).map(|(a, c)| a - c).collect();
+            normalize(&mut out);
+            out
+        };
+        let expected = dot(&minus(&query), &minus(&vectors[0]));
+        let hits = ix.nearest_centred(&query, 4);
+        assert_eq!(hits[0].0, id("n0"));
+        assert!((hits[0].1 - expected).abs() < 1e-3, "{} vs {expected}", hits[0].1);
+    }
+
+    #[test]
+    fn the_centre_waits_for_enough_changes() {
+        let mut ix = VectorIndex::default();
+        ix.upsert(&id("first"), &unit([1.0, 0.0, 0.0]));
+        assert!(ix.centre_is_stale(), "there is no centre yet");
+        ix.refresh_centre();
+        assert!(!ix.centre_is_stale());
+        for i in 0..16 {
+            ix.upsert(&id(&format!("n{i}")), &unit([1.0, i as f32, 0.0]));
+        }
+        assert!(ix.centre_is_stale());
     }
 
     #[test]
