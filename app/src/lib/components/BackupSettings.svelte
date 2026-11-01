@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { Archive, History, RefreshCw, TriangleAlert } from '@lucide/svelte';
-  import { api, errorMessage, type BackupStatus, type Settings } from '#lib/api.ts';
+  import { Archive, CircleCheck, FileDown, History, RefreshCw, TriangleAlert } from '@lucide/svelte';
+  import { api, errorMessage, type BackupStatus, type ExportSummary, type Settings } from '#lib/api.ts';
   import { formatSize } from '#lib/attachments.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import { pop } from '#lib/ui/motion.ts';
@@ -38,6 +38,30 @@
     // On success the session locks and this page goes away with the workspace.
     await run(() => api.restoreBackup(name, password));
     password = '';
+  }
+
+  let exporting = $state(false);
+  let exportPassword = $state('');
+  let exportError = $state<string | null>(null);
+  let exported = $state<ExportSummary | null>(null);
+
+  async function runExport(e: SubmitEvent) {
+    e.preventDefault();
+    busy = true;
+    exportError = null;
+    try {
+      const summary = await api.exportMarkdown(exportPassword);
+      // Nothing back means the folder dialog was cancelled; the form stays for another try.
+      if (summary) {
+        exported = summary;
+        exporting = false;
+        exportPassword = '';
+      }
+    } catch (err) {
+      exportError = errorMessage(err);
+    } finally {
+      busy = false;
+    }
   }
 
   const when = (ms: number) =>
@@ -102,3 +126,39 @@
     {/each}
   </div>
 {/if}
+
+<h3 class="section-title mt-7">Exportieren</h3>
+<div class="card">
+  <div class="row">
+    <FileDown size={15} class="shrink-0 text-faint" />
+    <div class="min-w-0 flex-1">
+      <div>Als Markdown exportieren</div>
+      <div class="text-xs text-faint">Eine Datei pro Eintrag in Ordnern nach Projekt, dazu alle Anhänge. Der Papierkorb bleibt draußen.</div>
+    </div>
+    <button class="btn-ghost !h-7 shrink-0 text-xs" onclick={() => ((exporting = !exporting), (exportPassword = ''), (exportError = null), (exported = null))}>Exportieren</button>
+  </div>
+  {#if exporting}
+    <form class="border-t border-line-soft px-4 py-3" onsubmit={runExport} in:pop={{ duration: 160, y: -3 }}>
+      <p class="mb-2.5 text-xs leading-relaxed text-warn">
+        <TriangleAlert size={13} class="mr-1 inline align-[-2px]" />Der Export ist nicht verschlüsselt. Jeder mit Zugriff auf den Ordner kann alles lesen.
+      </p>
+      {#if exportError}
+        <p class="mb-2.5 text-xs text-danger" role="alert">{exportError}</p>
+      {/if}
+      <div class="flex gap-2">
+        <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
+        <input class="field flex-1" type="password" placeholder="Master-Passwort" aria-label="Master-Passwort für den Export" bind:value={exportPassword} autofocus />
+        <button class="btn-primary shrink-0" disabled={busy || !exportPassword}>Ordner wählen</button>
+      </div>
+    </form>
+  {/if}
+  {#if exported}
+    <div class="border-t border-line-soft px-4 py-3 text-xs" in:pop={{ duration: 160, y: -3 }}>
+      <div class="flex items-center gap-1.5 text-ok"><CircleCheck size={13} /> {exported.entries} Einträge und {exported.attachments} Anhänge exportiert</div>
+      <div class="selectable mt-1 break-all text-faint">{exported.folder}</div>
+      {#if exported.failed_attachments.length}
+        <div class="mt-1 text-warn">Nicht lesbar: {exported.failed_attachments.join(', ')}</div>
+      {/if}
+    </div>
+  {/if}
+</div>

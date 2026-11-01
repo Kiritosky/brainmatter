@@ -9,6 +9,7 @@ mod analytics;
 mod attachments;
 mod docs;
 mod edges;
+mod export;
 mod file_links;
 mod graph;
 mod history;
@@ -20,6 +21,7 @@ mod search;
 mod semantic;
 mod writer;
 
+pub use export::ExportSummary;
 pub use rows::clean_tags;
 
 use std::{

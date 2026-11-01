@@ -660,6 +660,10 @@ const handlers: Record<string, (a: Args) => unknown> = {
     backups.unshift(b);
     return b;
   },
+  export_markdown: (a) => {
+    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    return { folder: '/Users/alex/Dokumente/Brainmatter-Export-2026-11-01', entries: 16, attachments: 2, failed_attachments: [] };
+  },
   restore_backup: (a) => {
     if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
     state = 'locked';

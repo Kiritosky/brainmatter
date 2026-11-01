@@ -670,6 +670,25 @@ pub async fn restore_backup(session: S<'_>, name: String, password: String) -> A
     blocking(move || session.restore_backup(&name, &password)).await
 }
 
+/// An unencrypted copy of everything, so this asks for the password even though the
+/// vault is open. Returns nothing if the user cancels choosing a folder.
+#[tauri::command]
+pub async fn export_markdown(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    password: String,
+) -> ApiResult<Option<bm_core::engine::ExportSummary>> {
+    let session = session.inner().clone();
+    blocking(move || {
+        session.verify_password(&password)?;
+        let Some(folder) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
+        let path = folder.into_path().map_err(ApiError::internal)?;
+        let (engine, _) = session.engine()?;
+        Ok(Some(engine.export_markdown(&path)?))
+    })
+    .await
+}
+
 // ---------------------------------------------------------- AI clients ---
 
 fn registry_error(e: RegistryError) -> ApiError {

@@ -662,7 +662,7 @@ impl Session {
         (self.emit)("bm:session", status);
     }
 
-    fn verify_password(&self, password: &str) -> ApiResult<()> {
+    pub fn verify_password(&self, password: &str) -> ApiResult<()> {
         Vault::load(&self.dir)?.unlock_with_password(password)?;
         Ok(())
     }

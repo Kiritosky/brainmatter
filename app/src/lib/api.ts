@@ -260,6 +260,13 @@ export interface BackupInfo {
   size: number;
 }
 
+export interface ExportSummary {
+  folder: string;
+  entries: number;
+  attachments: number;
+  failed_attachments: string[];
+}
+
 export interface BackupStatus {
   running: boolean;
   error: string | null;
@@ -389,7 +396,8 @@ export const api = {
   // backups
   backupStatus: () => call<BackupStatus>('backup_status'),
   backupNow: () => call<BackupInfo>('backup_now'),
-  restoreBackup: (name: string, password: string) => call<void>('restore_backup', { name, password }),
+  exportMarkdown: (password: string) => call<ExportSummary | null>('export_markdown', { password }),
+  restoreBackup: (name: string, password: string) =>call<void>('restore_backup', { name, password }),
 
   // AI clients
   mcpInfo: () => call<McpInfo>('mcp_info'),

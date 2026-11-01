@@ -320,6 +320,7 @@ pub fn run() {
             commands::backup_status,
             commands::backup_now,
             commands::restore_backup,
+            commands::export_markdown,
             commands::add_attachment,
             commands::attachment_data,
             commands::delete_attachment,
