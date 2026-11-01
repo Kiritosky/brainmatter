@@ -572,6 +572,51 @@ impl Engine {
         Ok(self.write(ctx, summary, |w| projects::create(w, input))?.0)
     }
 
+    pub fn update_project(
+        &self,
+        ctx: &Ctx,
+        id: &ProjectId,
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<Project> {
+        let current = self.read(|c| rows::live_project(c, id))?;
+        let summary = match name.map(str::trim).filter(|n| *n != current.name) {
+            Some(new) => format!("Projekt „{}“ in „{new}“ umbenannt", current.name),
+            None => format!("Projekt „{}“ bearbeitet", current.name),
+        };
+        Ok(self.write(ctx, summary, |w| projects::update(w, id, name, description))?.0)
+    }
+
+    /// Moves a project with its subprojects; `parent = None` is the top level.
+    pub fn place_project(
+        &self,
+        ctx: &Ctx,
+        id: &ProjectId,
+        parent: Option<&ProjectId>,
+        position: usize,
+    ) -> Result<()> {
+        let name = self.read(|c| rows::live_project(c, id))?.name;
+        self.write(ctx, format!("Projekt „{name}“ verschoben"), |w| {
+            projects::place(w, id, parent, position)
+        })?;
+        Ok(())
+    }
+
+    pub fn project_delete_preview(&self, id: &ProjectId) -> Result<ProjectDeletePreview> {
+        self.read(|c| projects::delete_preview(c, id))
+    }
+
+    /// Deletes a project and its subprojects as one undoable step. Returns how
+    /// many entries went to the trash with them.
+    pub fn delete_project(&self, ctx: &Ctx, id: &ProjectId, with_entries: bool) -> Result<usize> {
+        let name = self.read(|c| rows::live_project(c, id))?.name;
+        Ok(self
+            .write(ctx, format!("Projekt „{name}“ gelöscht"), |w| {
+                projects::delete(w, id, with_entries)
+            })?
+            .0)
+    }
+
     /// Returns how many nodes were newly added.
     pub fn add_to_project(
         &self,

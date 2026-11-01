@@ -15,6 +15,7 @@
   import SettingsDialog from './SettingsDialog.svelte';
   import TimeSlider from './TimeSlider.svelte';
   import TrashPanel from './TrashPanel.svelte';
+  import WhatsNew from './WhatsNew.svelte';
   import { pop, slideIn } from '#lib/ui/motion.ts';
 
   let { status }: { status: Status } = $props();
@@ -186,6 +187,10 @@
 
 {#if ws.settingsOpen}
   <SettingsDialog />
+{/if}
+
+{#if ws.changelog}
+  <WhatsNew heading={ws.changelog.heading} items={ws.changelog.items} onclose={() => (ws.changelog = null)} />
 {/if}
 
 {#if ws.toast}

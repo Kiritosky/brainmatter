@@ -15,6 +15,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // CHANGELOG.md lies in the repository root.
+    fs: { allow: ['..'] },
     watch: { ignored: ['**/src-tauri/**'] },
   },
 });

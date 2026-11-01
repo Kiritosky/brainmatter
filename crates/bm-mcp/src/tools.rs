@@ -589,6 +589,65 @@ pub(crate) fn restore(cx: &ToolCx, a: RestoreArgs) -> Out {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateProjectArgs {
+    /// The project (name or id).
+    pub project: String,
+    /// A new name.
+    pub name: Option<String>,
+    pub description: Option<String>,
+    /// Move it under this project (name or id).
+    pub parent: Option<String>,
+    /// Move it to the top level instead.
+    #[serde(default)]
+    pub top_level: bool,
+}
+
+/// What a client was limited to is the user's boundary, not the client's to move.
+fn ensure_not_scope_root(cx: &ToolCx, id: &ProjectId) -> Result<(), ToolError> {
+    if cx.client.projects.contains(id) {
+        return Err(fail("This token is limited to this project, so it cannot move or delete it."));
+    }
+    Ok(())
+}
+
+pub(crate) fn update_project(cx: &ToolCx, a: UpdateProjectArgs) -> Out {
+    let id = cx.project(&a.project)?;
+    if a.name.is_some() || a.description.is_some() {
+        cx.engine.update_project(&cx.ctx, &id, a.name.as_deref(), a.description.as_deref())?;
+    }
+    if a.parent.is_some() && a.top_level {
+        return Err(fail("Pass either `parent` or `top_level`, not both."));
+    }
+    if a.parent.is_some() || a.top_level {
+        ensure_not_scope_root(cx, &id)?;
+        if a.top_level && cx.scope.is_some() {
+            return Err(fail(
+                "This token is limited to certain projects; pass a `parent` within them.",
+            ));
+        }
+        let parent = a.parent.as_deref().map(|p| cx.project(p)).transpose()?;
+        // At the end of its new siblings.
+        cx.engine.place_project(&cx.ctx, &id, parent.as_ref(), usize::MAX)?;
+    }
+    Ok("Updated the project. The user can undo this.".to_string())
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteProjectArgs {
+    /// The project (name or id).
+    pub project: String,
+}
+
+pub(crate) fn delete_project(cx: &ToolCx, a: DeleteProjectArgs) -> Out {
+    let id = cx.project(&a.project)?;
+    ensure_not_scope_root(cx, &id)?;
+    let trashed = cx.engine.delete_project(&cx.ctx, &id, false)?;
+    Ok(format!(
+        "Deleted the project and its subprojects. Its entries stay in the graph; {trashed} documentation pages and templates that belonged only here went to the trash. The user can undo this."
+    ))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListDocsArgs {
     /// The project (name or id).
     pub project: String,

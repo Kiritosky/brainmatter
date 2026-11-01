@@ -3,6 +3,7 @@
   import { Check, Download, RefreshCw } from '@lucide/svelte';
   import { api, errorMessage, onUpdateProgress, type Settings } from '#lib/api.ts';
   import { formatSize } from '#lib/attachments.ts';
+  import { releases } from '#lib/changelog.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import { pop } from '#lib/ui/motion.ts';
@@ -37,6 +38,16 @@
     }
   }
 
+  /** The notes of an update that is not installed yet come with the update check. */
+  function showUpdateNotes() {
+    const update = ws.update;
+    if (!update) return;
+    ws.changelog = {
+      heading: `Neu in Version ${update.version}`,
+      items: [{ version: update.version, date: null, notes: update.notes ?? '' }],
+    };
+  }
+
   async function install() {
     installing = true;
     error = null;
@@ -67,6 +78,9 @@
         <div class="font-medium">Version {ws.update.version} ist verfügbar</div>
         <div class="text-xs text-faint">Installiert ist {version}. Die App sperrt sich und startet dann neu.</div>
       </div>
+      {#if ws.update.notes}
+        <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={showUpdateNotes}>Was ist neu?</button>
+      {/if}
       <button class="btn-primary shrink-0" disabled={installing} onclick={install}>
         <Download size={14} /> {installing ? 'Wird geladen …' : 'Installieren'}
       </button>
@@ -79,6 +93,7 @@
           <div class="text-xs text-faint">Updates sind signiert, andere installiert die App nicht.</div>
         {/if}
       </div>
+      <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={() => (ws.changelog = { heading: 'Alle Änderungen', items: releases })}>Änderungen</button>
       <button class="btn-ghost !h-7.5 shrink-0 text-xs" disabled={checking} onclick={check}>
         <RefreshCw size={13} class={checking ? 'animate-spin' : ''} /> Jetzt suchen
       </button>

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { ArrowUpCircle, BookMarked, ChevronRight, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
-  import { api, errorMessage, type Id } from '#lib/api.ts';
+  import DeleteProjectDialog from './DeleteProjectDialog.svelte';
+  import ProjectMenu from './ProjectMenu.svelte';
+  import { ArrowUpCircle, BookMarked, ChevronRight, Ellipsis, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
+  import { api, errorMessage, type Id, type Project } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
 
@@ -77,6 +79,92 @@
       ws.notify(errorMessage(err));
     }
   }
+
+  // ------------------------------------------------- renaming, menu, moving ---
+
+  let renaming = $state<Id | null>(null);
+  let renameValue = $state('');
+  let menu = $state<{ project: Project; x: number; y: number } | null>(null);
+  let deleting = $state<Project | null>(null);
+
+  type Zone = 'before' | 'inside' | 'after';
+  let dragging = $state<Id | null>(null);
+  let dropAt = $state<{ id: Id | null; zone: Zone } | null>(null);
+  /** Past the end of any list; the core puts it last. */
+  const AT_END = 1_000_000;
+
+  function startRename(project: Project) {
+    menu = null;
+    renameValue = project.name;
+    renaming = project.id;
+  }
+
+  async function run(fn: () => Promise<unknown>) {
+    try {
+      await fn();
+      await ws.loadProjects();
+    } catch (err) {
+      ws.notify(errorMessage(err));
+    }
+  }
+
+  async function commitRename() {
+    const id = renaming;
+    const name = renameValue.trim();
+    renaming = null;
+    const current = id ? byId.get(id)?.project.name : null;
+    if (id && name && name !== current) await run(() => api.renameProject(id, name));
+  }
+
+  function onRenameKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') commitRename();
+    else if (e.key === 'Escape') {
+      e.stopPropagation();
+      renaming = null;
+    }
+  }
+
+  function openMenu(project: Project, e: MouseEvent) {
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    menu = { project, x: box.left, y: box.bottom + 4 };
+  }
+
+  function canDropOn(id: Id) {
+    return dragging !== null && !ws.subtreeOf(dragging).has(id);
+  }
+
+  function onDragOver(e: DragEvent, id: Id) {
+    if (!canDropOn(id)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const share = (e.clientY - box.top) / box.height;
+    dropAt = { id, zone: share < 0.28 ? 'before' : share > 0.72 ? 'after' : 'inside' };
+  }
+
+  function siblingsOf(parent: Id | null) {
+    return ws.projects
+      .filter((p) => (p.project.parent_id ?? null) === parent && p.project.id !== dragging)
+      .map((p) => p.project.id);
+  }
+
+  async function drop() {
+    const id = dragging;
+    const at = dropAt;
+    dragging = null;
+    dropAt = null;
+    if (!id || !at) return;
+    if (at.id === null) return run(() => api.moveProject(id, null, AT_END));
+    if (at.zone === 'inside') {
+      reveal(at.id, true);
+      const parent = at.id;
+      return run(() => api.moveProject(id, parent, AT_END));
+    }
+    const parent = byId.get(at.id)?.project.parent_id ?? null;
+    const index = siblingsOf(parent).indexOf(at.id);
+    return run(() => api.moveProject(id, parent, index + (at.zone === 'after' ? 1 : 0)));
+  }
 </script>
 
 <nav class="sidebar-glass flex h-full flex-col">
@@ -102,8 +190,18 @@
       <Network size={14} class={ws.view === null ? 'text-accent' : ''} /> Alles
     </button>
 
-    <div class="mt-5 mb-1 flex items-center pr-1 pl-2">
-      <span class="section-title !mb-0 flex-1">Projekte</span>
+    <!-- Dropping on the heading moves a project to the top level. -->
+    <div class="mt-5 mb-1 flex items-center rounded-lg pr-1 pl-2 transition-colors {dropAt?.id === null && dragging ? 'bg-accent/15' : ''}"
+      role="presentation"
+      ondragover={(e) => {
+        if (dragging && byId.get(dragging)?.project.parent_id) {
+          e.preventDefault();
+          dropAt = { id: null, zone: 'inside' };
+        }
+      }}
+      ondragleave={() => dropAt?.id === null && (dropAt = null)}
+      ondrop={(e) => (e.preventDefault(), drop())}>
+      <span class="section-title !mb-0 flex-1">{dragging && byId.get(dragging)?.project.parent_id ? 'Hierher: oberste Ebene' : 'Projekte'}</span>
       <button class="icon-btn !h-6 !w-6" aria-label="Neues Projekt" title="Neues Projekt" onclick={() => (creatingUnder = null)}><FolderPlus size={13} /></button>
     </div>
 
@@ -118,14 +216,42 @@
       {@const hasChildren = childrenOf.has(project.id)}
       {@const isCollapsed = collapsed.has(project.id)}
       <div transition:slide={{ duration: 150 }}>
-        <div class="group relative" style="padding-left: {depth(project.id) * INDENT_PX}px">
-          <!-- The space for the arrow stays empty without subprojects, so the dots line up. -->
-          <button class="nav-row !pl-5.5 {ws.view === project.id ? 'active' : ''}" onclick={() => ws.setView(project.id)}>
-            <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(project.id)}"></span>
-            <span class="truncate">{project.name}</span>
-            <span class="ml-auto pl-2 text-[11px] text-faint tabular-nums transition-opacity group-hover:opacity-0">{count(project.id)}</span>
-          </button>
-          {#if hasChildren}
+        <div class="group relative {dragging === project.id ? 'opacity-40' : ''}" style="padding-left: {depth(project.id) * INDENT_PX}px"
+          role="listitem"
+          draggable={renaming !== project.id}
+          ondragstart={(e) => {
+            dragging = project.id;
+            if (e.dataTransfer) {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', project.name);
+            }
+          }}
+          ondragend={() => ((dragging = null), (dropAt = null))}
+          ondragover={(e) => onDragOver(e, project.id)}
+          ondragleave={(e) => {
+            if (dropAt?.id === project.id && !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) dropAt = null;
+          }}
+          ondrop={(e) => (e.preventDefault(), e.stopPropagation(), drop())}>
+          {#if dropAt?.id === project.id && dropAt.zone !== 'inside'}
+            <div class="pointer-events-none absolute right-1 z-10 h-0.5 rounded-full bg-accent {dropAt.zone === 'before' ? '-top-px' : '-bottom-px'}"
+              style="left: {depth(project.id) * INDENT_PX + 8}px"></div>
+          {/if}
+          {#if renaming === project.id}
+            <div class="flex h-8 items-center pl-1">
+              <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
+              <input class="field !h-7 w-full" aria-label="Neuer Name" bind:value={renameValue} autofocus onblur={commitRename} onkeydown={onRenameKey}
+                onfocus={(e) => e.currentTarget.select()} />
+            </div>
+          {:else}
+            <!-- The space for the arrow stays empty without subprojects, so the dots line up. -->
+            <button class="nav-row !pl-5.5 group-hover:!pr-14 {ws.view === project.id ? 'active' : ''} {dropAt?.id === project.id && dropAt.zone === 'inside' ? '!bg-accent/20 ring-1 ring-accent/60' : ''}"
+              onclick={() => ws.setView(project.id)} ondblclick={() => startRename(project)}>
+              <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(project.id)}"></span>
+              <span class="truncate">{project.name}</span>
+              <span class="ml-auto pl-2 text-[11px] text-faint tabular-nums group-hover:hidden {menu?.project.id === project.id ? 'hidden' : ''}">{count(project.id)}</span>
+            </button>
+          {/if}
+          {#if hasChildren && renaming !== project.id}
             <button class="absolute top-1.5 flex h-5 w-5 items-center justify-center rounded text-faint transition-colors hover:bg-raised hover:text-text"
               style="left: {depth(project.id) * INDENT_PX + 2}px"
               aria-label="{isCollapsed ? 'Ausklappen' : 'Einklappen'}: {project.name}" aria-expanded={!isCollapsed}
@@ -133,10 +259,16 @@
               <ChevronRight size={13} class="transition-transform duration-150 ease-(--ease-out-soft) {isCollapsed ? '' : 'rotate-90'}" />
             </button>
           {/if}
-          <button class="icon-btn absolute top-1 right-1 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label="Unterprojekt in {project.name} anlegen" title="Unterprojekt" onclick={() => (reveal(project.id, true), (creatingUnder = project.id))}>
-            <Plus size={12} />
-          </button>
+          {#if renaming !== project.id}
+            <button class="icon-btn absolute top-1 right-7 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              aria-label="Unterprojekt in {project.name} anlegen" title="Unterprojekt" onclick={() => (reveal(project.id, true), (creatingUnder = project.id))}>
+              <Plus size={12} />
+            </button>
+            <button class="icon-btn absolute top-1 right-1 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 {menu?.project.id === project.id ? '!opacity-100' : ''}"
+              aria-label="Mehr zu {project.name}" title="Mehr" aria-haspopup="menu" onclick={(e) => openMenu(project, e)}>
+              <Ellipsis size={13} />
+            </button>
+          {/if}
         </div>
         {#if creatingUnder === project.id}
           <form class="py-1 pr-1" style="padding-left: {(depth(project.id) + 1) * INDENT_PX + 4}px" onsubmit={createProject} in:pop={{ duration: 140, y: -3 }}>
@@ -161,6 +293,31 @@
       <Trash2 size={14} class={ws.panel === 'trash' ? 'text-accent' : ''} /> Papierkorb
     </button>
   </div>
+
+  {#if menu}
+    <ProjectMenu project={menu.project} x={menu.x} y={menu.y} {depth}
+      onclose={() => (menu = null)}
+      onrename={() => menu && startRename(menu.project)}
+      onsubproject={() => {
+        const { id } = menu!.project;
+        menu = null;
+        reveal(id, true);
+        creatingUnder = id;
+      }}
+      onmove={(parent) => {
+        const { id } = menu!.project;
+        menu = null;
+        if (parent) reveal(parent, true);
+        run(() => api.moveProject(id, parent, AT_END));
+      }}
+      ondelete={() => {
+        deleting = menu!.project;
+        menu = null;
+      }} />
+  {/if}
+  {#if deleting}
+    <DeleteProjectDialog project={deleting} onclose={() => (deleting = null)} />
+  {/if}
 
   <footer class="flex items-center gap-1 border-t border-line-soft px-3 py-2">
     <div class="mr-1 flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">

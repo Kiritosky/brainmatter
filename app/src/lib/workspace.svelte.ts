@@ -17,6 +17,7 @@ import {
   type ProjectSummary,
   type Similar,
 } from './api';
+import { isNewer, releasesSince, type Release } from './changelog';
 
 const PROJECT_PALETTE = [
   '#7c9cff', '#5fd3a5', '#ff8a7a', '#f5c451', '#c38bff',
@@ -35,6 +36,7 @@ export const KIND_COLORS: Record<string, string> = {
 
 const NEUTRAL = '#8f9bb3';
 const COLOR_MODE_KEY = 'bm.colorMode';
+const SEEN_VERSION_KEY = 'bm.seenVersion';
 /** Embedding runs in small batches; suggestions need not follow each one. */
 const INDEX_REFRESH_MS = 1500;
 
@@ -66,6 +68,8 @@ class Workspace {
   unreviewed = $state.raw<NodeBrief[]>([]);
   /** A newer version, once a check has found one. */
   update = $state<AvailableUpdate | null>(null);
+  /** The changelog, while it is open. */
+  changelog = $state.raw<{ heading: string; items: Release[] } | null>(null);
 
   projectColor = $derived.by(() => {
     const map = new Map<Id, string>();
@@ -94,6 +98,16 @@ class Workspace {
     return chain;
   });
 
+  /** The project and everything below it. */
+  subtreeOf(id: Id): Set<Id> {
+    const out = new Set([id]);
+    // Parents come before their children in the list, so one pass is enough.
+    for (const { project } of this.projects) {
+      if (project.parent_id && out.has(project.parent_id)) out.add(project.id);
+    }
+    return out;
+  }
+
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private indexTimer: ReturnType<typeof setTimeout> | undefined;
   private unlisten: (() => void)[] = [];
@@ -109,9 +123,23 @@ class Workspace {
       }),
     );
     await Promise.all([this.loadProjects(), this.loadGraph(), this.loadModel(), this.loadUnreviewed()]);
+    await this.showWhatsNew();
     // Here and not at launch: until the vault is unlocked, nothing could show it.
     const settings = await api.getSettings();
     if (settings.auto_update) api.checkUpdate().then((u) => (this.update = u)).catch(() => {});
+  }
+
+  /** Once after an update. A new vault has nothing to compare with, so it stays
+   * quiet; existing data without a stored version was just updated from before
+   * this existed. */
+  private async showWhatsNew() {
+    const current = await api.appVersion();
+    const seen = localStorage.getItem(SEEN_VERSION_KEY);
+    localStorage.setItem(SEEN_VERSION_KEY, current);
+    const updated = seen ? isNewer(current, seen) : (this.graph?.nodes.length ?? 0) > 0;
+    if (!updated) return;
+    const items = releasesSince(seen, current);
+    if (items.length) this.changelog = { heading: 'Was ist neu', items };
   }
 
   stop() {

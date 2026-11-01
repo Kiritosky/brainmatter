@@ -36,6 +36,18 @@ jobs:
             exit 1
           fi
 
+      - name: The changelog must describe this version
+        run: |
+          code="${VERSION#v}"
+          awk -v v="$code" '
+            /^## / { on = (index($0, "## " v " ") == 1 || $0 == "## " v); next }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no entry for $code" >&2
+            exit 1
+          fi
+
       - name: Install frontend dependencies
         working-directory: app
         run: bun install --frozen-lockfile
@@ -76,7 +88,8 @@ jobs:
             --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg signature "$(cat "$bundle/macos/Brainmatter.app.tar.gz.sig")" \
             --arg url "$url" \
-            '{version: $version, pub_date: $pub_date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
+            --rawfile notes notes.md \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
             > latest.json
 
       - name: Publish the release
@@ -84,7 +97,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bundle=target/release/bundle
-          gh release create "$VERSION" --generate-notes --verify-tag \
+          gh release create "$VERSION" --notes-file notes.md --verify-tag \
             "$bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
             "$bundle/macos/Brainmatter.app.tar.gz" \
             "$bundle/macos/Brainmatter.app.tar.gz.sig" \

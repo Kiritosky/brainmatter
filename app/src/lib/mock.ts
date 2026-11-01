@@ -253,7 +253,7 @@ function subtree(root: string): Set<string> {
   return out;
 }
 
-const projectsOf = (nid: string) => [...projects.values()].filter((p) => members.has(`${p.id}|${nid}`));
+const projectsOf = (nid: string) => [...projects.values()].filter((p) => !p.deleted_at && members.has(`${p.id}|${nid}`));
 
 function projectList(): ProjectSummary[] {
   const all = [...projects.values()].filter((p) => !p.deleted_at);
@@ -477,6 +477,55 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  rename_project: (a) => {
+    const p = projects.get(a.id);
+    if (!p) fail('not_found', 'Projekt nicht gefunden');
+    record(`Projekt „${p.name}“ in „${a.name}“ umbenannt`);
+    p.name = a.name;
+    notify({ type: 'project_upserted', id: p.id });
+    return p;
+  },
+  move_project: (a) => {
+    const p = projects.get(a.id);
+    if (!p) fail('not_found', 'Projekt nicht gefunden');
+    if (a.parent && subtree(a.id).has(a.parent)) fail('invalid', 'a project cannot go inside itself');
+    p.parent_id = a.parent ?? null;
+    const siblings = [...projects.values()]
+      .filter((o) => !o.deleted_at && o.parent_id === p.parent_id && o.id !== p.id)
+      .sort((x, y) => x.sort - y.sort);
+    siblings.splice(Math.min(a.position, siblings.length), 0, p);
+    siblings.forEach((o, i) => (o.sort = i));
+    record(`Projekt „${p.name}“ verschoben`);
+    notify({ type: 'project_upserted', id: p.id });
+  },
+  project_delete_preview: (a) => {
+    const tree = subtree(a.id);
+    const inTree = [...nodes.values()].filter((n) => !n.deleted_at && projectsOf(n.id).some((p) => tree.has(p.id)));
+    const only = (n: Node) => projectsOf(n.id).every((p) => tree.has(p.id));
+    const isDoc = (n: Node) => n.kind === 'doc' || n.kind === 'template';
+    return {
+      subprojects: tree.size - 1,
+      entries_only_here: inTree.filter((n) => !isDoc(n) && only(n)).length,
+      entries_elsewhere: inTree.filter((n) => !isDoc(n) && !only(n)).length,
+      documents: inTree.filter((n) => isDoc(n) && only(n)).length,
+    };
+  },
+  delete_project: (a) => {
+    const tree = subtree(a.id);
+    let trashed = 0;
+    for (const n of nodes.values()) {
+      const own = projectsOf(n.id);
+      const only = !n.deleted_at && own.length > 0 && own.every((p) => tree.has(p.id));
+      if (only && (a.withEntries || n.kind === 'doc' || n.kind === 'template')) {
+        n.deleted_at = now();
+        trashed++;
+      }
+    }
+    for (const id of tree) projects.get(id)!.deleted_at = now();
+    record(`Projekt „${projects.get(a.id)!.name}“ gelöscht`);
+    notify({ type: 'project_deleted', id: a.id });
+    return trashed;
+  },
   doc_tree: (a) => docTree(a.project),
   create_doc_page: (a) => {
     const node = addDoc(a.project, a.title, '', a.parent ?? null);
@@ -559,9 +608,9 @@ const handlers: Record<string, (a: Args) => unknown> = {
     nodes.delete(n.id);
     notify({ type: 'node_deleted', id: n.id });
   },
-  app_version: () => '0.2.0',
+  app_version: () => '0.4.0',
   // Only when asked, so screenshots do not all show an update.
-  check_update: () => (updateChecks++ > 0 ? { version: '0.3.0', notes: null } : null),
+  check_update: () => (updateChecks++ > 0 ? { version: '0.5.0', notes: '### Neu\n- **Etwas Schönes:** Ein Beispiel für Update-Notizen.' } : null),
   install_update: () => undefined,
   hide_capture: () => undefined,
   show_main_window: () => undefined,

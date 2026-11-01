@@ -10,6 +10,11 @@ const out = process.argv[2] ?? '/tmp/bm-shots';
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
 const errors: string[] = [];
+// Past every release, so the "what's new" dialog is not in the way. It gets its
+// own context at the end.
+await context.addInitScript(() => {
+  if (!sessionStorage.getItem('bm.keepSeenVersion')) localStorage.setItem('bm.seenVersion', '99.0.0');
+});
 
 async function open(path: string): Promise<Page> {
   const page = await context.newPage();
@@ -219,6 +224,68 @@ try {
   await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
   await page.waitForTimeout(400);
 
+  // Managing projects: rename, move by menu and by dragging, delete.
+  const row = (name: string) => sidebar.getByRole('listitem').filter({ hasText: name }).last();
+  const order = () => sidebar.getByRole('listitem').locator('span.truncate').allInnerTexts();
+  await row('Tresor-Details').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Tresor-Details' }).click();
+  await page.getByRole('menu').waitFor();
+  await page.waitForTimeout(200);
+  await shot(page, '50-project-menu');
+  await page.getByRole('menuitem', { name: 'Umbenennen' }).click();
+  await sidebar.getByLabel('Neuer Name').fill('Tresor intern');
+  await page.keyboard.press('Enter');
+  await row('Tresor intern').waitFor();
+
+  await row('Tresor intern').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Tresor intern' }).click();
+  await page.getByRole('menuitem', { name: 'Verschieben nach' }).click();
+  await page.waitForTimeout(200);
+  await shot(page, '51-project-move');
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Privat' }).click();
+  await page.waitForTimeout(300);
+  let names = await order();
+  if (names.indexOf('Tresor intern') < names.indexOf('Privat')) errors.push(`menu move failed: ${names}`);
+
+  // Dragging onto a project puts it inside; onto the edge, next to it.
+  await row('UI').dragTo(row('Kern'), { targetPosition: { x: 60, y: 16 } });
+  await page.waitForTimeout(300);
+  names = await order();
+  if (names.indexOf('UI') !== names.indexOf('Kern') + 1) errors.push(`drag inside failed: ${names}`);
+  const uiIndent = await row('UI').evaluate((el) => parseInt((el as HTMLElement).style.paddingLeft));
+  if (uiIndent !== 24) errors.push(`UI should be two levels deep: ${uiIndent}`);
+  await row('Tresor intern').dragTo(row('Brainmatter'), { targetPosition: { x: 60, y: 2 } });
+  await page.waitForTimeout(300);
+  names = await order();
+  if (names[0] !== 'Tresor intern') errors.push(`drag before failed: ${names}`);
+  // A project cannot be dropped into what is below it.
+  await row('Brainmatter').dragTo(row('Kern'), { targetPosition: { x: 60, y: 16 } });
+  await page.waitForTimeout(300);
+  const parent = await page.evaluate(async () => {
+    const list: any[] = await (window as any).__TAURI_INTERNALS__.invoke('projects');
+    return list.find((p) => p.project.name === 'Brainmatter').project.parent_id;
+  });
+  if (parent) errors.push('a project was moved into itself');
+  await shot(page, '52-projects-moved');
+
+  // Deleting asks first, says what happens, and keeps entries by default.
+  await row('Privat').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Privat' }).click();
+  await page.getByRole('menuitem', { name: 'Löschen' }).click();
+  await page.getByRole('dialog', { name: 'Projekt löschen' }).getByText('nur hier').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '53-project-delete');
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Projekt löschen' }).waitFor({ state: 'detached', timeout: 3000 });
+  await row('Tresor intern').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Tresor intern' }).click();
+  await page.getByRole('menuitem', { name: 'Löschen' }).click();
+  await page.getByRole('button', { name: 'Projekt löschen' }).click();
+  await page.getByText('„Tresor intern“ gelöscht').waitFor();
+  await row('Schlüssel').waitFor({ state: 'detached' });
+  await sidebar.getByRole('button', { name: /^Brainmatter/ }).first().click();
+  await page.waitForTimeout(300);
+
   // Documentation: read, navigate, write, and mirror a folder read-only.
   await sidebar.getByRole('button', { name: /^Brainmatter/ }).first().click();
   await page.getByRole('radio', { name: 'Doku' }).click();
@@ -336,10 +403,20 @@ try {
   await page.keyboard.press('Meta+,');
   await page.getByRole('heading', { name: 'Allgemein' }).waitFor();
   await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Änderungen', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Alle Änderungen' }).getByText('Version 0.2.0').waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Alle Änderungen' }).waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Jetzt suchen' }).click();
-  await page.getByText('Version 0.3.0 ist verfügbar').waitFor();
+  await page.getByText('Version 0.5.0 ist verfügbar').waitFor();
   await page.waitForTimeout(250);
   await shot(page, '33-settings-general');
+  await page.getByRole('button', { name: 'Was ist neu?' }).click();
+  await page.getByRole('dialog', { name: 'Neu in Version 0.5.0' }).getByText('Etwas Schönes').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '33b-update-notes');
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Neu in Version 0.5.0' }).waitFor({ state: 'detached' });
   await page.getByRole('radio', { name: 'Hell' }).click();
   await page.waitForTimeout(500);
   await shot(page, '34-light-settings');
@@ -488,6 +565,39 @@ try {
     await shot(capture, 'zz-capture-failure');
     errors.push(`capture failed: ${(e as Error).message.split('\n')[0]}`);
   }
+}
+
+// After an update the app says once what changed, back to the last seen version.
+{
+  const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
+  await fresh.addInitScript(() => {
+    if (!localStorage.getItem('bm.seenVersion')) localStorage.setItem('bm.seenVersion', '0.2.0');
+  });
+  const updated = await fresh.newPage();
+  const unlock = async () => {
+    await updated.goto(BASE);
+    await updated.getByPlaceholder('Master-Passwort').fill('demo1234');
+    await updated.getByRole('button', { name: 'Entsperren', exact: true }).click();
+  };
+  try {
+    await unlock();
+    const dialog = updated.getByRole('dialog', { name: 'Was ist neu' });
+    await dialog.getByText('Version 0.4.0').waitFor();
+    await dialog.getByText('Version 0.3.0').waitFor();
+    if (await dialog.getByText('Version 0.2.0').count()) errors.push('what is new shows a version already seen');
+    await updated.waitForTimeout(300);
+    await shot(updated, '54-whats-new');
+    await updated.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await unlock();
+    await updated.getByText('Einträge ·').waitFor();
+    await updated.waitForTimeout(500);
+    if (await dialog.count()) errors.push('what is new appeared twice');
+  } catch (e) {
+    await shot(updated, 'zz-whatsnew-failure');
+    errors.push(`what is new failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await fresh.close();
 }
 
 await browser.close();

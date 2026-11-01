@@ -395,6 +395,26 @@ impl BrainmatterMcp {
         self.run(&parts, "write_doc", Scope::Write, args, tools::write_doc).await
     }
 
+    #[tool(description = "Rename a project, change its description, or move it under another \
+        project or to the top level. Subprojects move along.")]
+    async fn update_project(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::UpdateProjectArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "update_project", Scope::Write, args, tools::update_project).await
+    }
+
+    #[tool(description = "Delete a project and its subprojects. Entries stay in the graph; \
+        documentation pages and templates that belong only here go to the trash. Undoable.")]
+    async fn delete_project(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::DeleteProjectArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "delete_project", Scope::Delete, args, tools::delete_project).await
+    }
+
     #[tool(description = "Move an entry and its links to the trash (restorable by the user).")]
     async fn delete(
         &self,

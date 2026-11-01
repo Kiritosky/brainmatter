@@ -152,6 +152,35 @@ pub fn create_project(session: S<'_>, input: NewProject) -> ApiResult<Project> {
 }
 
 #[tauri::command(async)]
+pub fn rename_project(session: S<'_>, id: ProjectId, name: String) -> ApiResult<Project> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.update_project(&ctx, &id, Some(&name), None)?)
+}
+
+#[tauri::command(async)]
+pub fn move_project(
+    session: S<'_>,
+    id: ProjectId,
+    parent: Option<ProjectId>,
+    position: usize,
+) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.place_project(&ctx, &id, parent.as_ref(), position)?)
+}
+
+#[tauri::command(async)]
+pub fn project_delete_preview(session: S<'_>, id: ProjectId) -> ApiResult<ProjectDeletePreview> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.project_delete_preview(&id)?)
+}
+
+#[tauri::command(async)]
+pub fn delete_project(session: S<'_>, id: ProjectId, with_entries: bool) -> ApiResult<usize> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.delete_project(&ctx, &id, with_entries)?)
+}
+
+#[tauri::command(async)]
 pub fn add_to_project(session: S<'_>, project: ProjectId, nodes: Vec<NodeId>) -> ApiResult<usize> {
     let (engine, ctx) = session.engine()?;
     Ok(engine.add_to_project(&ctx, &project, &nodes)?)

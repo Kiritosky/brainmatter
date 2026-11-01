@@ -76,6 +76,13 @@ export interface NodeDetail {
   read_only: boolean;
 }
 
+export interface ProjectDeletePreview {
+  subprojects: number;
+  entries_only_here: number;
+  entries_elsewhere: number;
+  documents: number;
+}
+
 export interface DocPage {
   node: NodeBrief;
   parent: Id | null;
@@ -382,6 +389,10 @@ export const api = {
   projects: () => call<ProjectSummary[]>('projects'),
   createProject: (name: string, parent: Id | null = null) =>
     call<Project>('create_project', { input: { name, parent } }),
+  renameProject: (id: Id, name: string) => call<Project>('rename_project', { id, name }),
+  moveProject: (id: Id, parent: Id | null, position: number) => call<void>('move_project', { id, parent, position }),
+  projectDeletePreview: (id: Id) => call<ProjectDeletePreview>('project_delete_preview', { id }),
+  deleteProject: (id: Id, withEntries: boolean) => call<number>('delete_project', { id, withEntries }),
   addToProject: (project: Id, nodes: Id[]) => call<number>('add_to_project', { project, nodes }),
   removeFromProject: (project: Id, nodes: Id[]) => call<number>('remove_from_project', { project, nodes }),
   graph: (project: Id | null) => call<GraphSnapshot>('graph', { project }),

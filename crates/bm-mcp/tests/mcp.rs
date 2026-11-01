@@ -480,6 +480,80 @@ async fn documentation_can_be_browsed_and_read_section_by_section() {
     s.shutdown.cancel();
 }
 
+#[tokio::test]
+async fn projects_can_be_reorganised_within_scope() {
+    let s = start().await;
+    let (_, full) =
+        s.registry.create("Voll", &[Scope::Read, Scope::Write, Scope::Delete], &[]).unwrap();
+    let c = connect(&s.url, &full).await;
+    for name in ["Oben", "Anderes"] {
+        call(&c, "create_project", json!({"name": name})).await;
+    }
+    call(&c, "create_project", json!({"name": "Mitte", "parent": "Oben"})).await;
+    call(&c, "create_project", json!({"name": "Unten", "parent": "Mitte"})).await;
+
+    let args = json!({"project": "Mitte", "name": "Neu", "parent": "Anderes"});
+    let (t, err) = call(&c, "update_project", args).await;
+    assert!(!err, "{t}");
+    let names = |list: Vec<bm_core::model::ProjectSummary>| {
+        list.into_iter().map(|p| p.project.name).collect::<Vec<_>>()
+    };
+    assert_eq!(names(s.engine.projects().unwrap()), ["Oben", "Anderes", "Neu", "Unten"]);
+
+    let cycle = json!({"project": "Anderes", "parent": "Unten"});
+    let (t, err) = call(&c, "update_project", cycle).await;
+    assert!(err && t.contains("inside itself"), "{t}");
+    let both = json!({"project": "Neu", "parent": "Oben", "top_level": true});
+    let (_, err) = call(&c, "update_project", both).await;
+    assert!(err);
+
+    let anderes = s.engine.resolve_project("Anderes").unwrap();
+    let (_, limited) = s
+        .registry
+        .create(
+            "Begrenzt",
+            &[Scope::Read, Scope::Write, Scope::Delete],
+            std::slice::from_ref(&anderes),
+        )
+        .unwrap();
+    let scoped = connect(&s.url, &limited).await;
+
+    // Inside its project it may rearrange, but not leave, and not touch others.
+    let (t, err) =
+        call(&scoped, "update_project", json!({"project": "Unten", "parent": "Anderes"})).await;
+    assert!(!err, "{t}");
+    let (t, err) =
+        call(&scoped, "update_project", json!({"project": "Unten", "top_level": true})).await;
+    assert!(err && t.contains("limited"), "{t}");
+    let (t, err) =
+        call(&scoped, "update_project", json!({"project": "Unten", "parent": "Oben"})).await;
+    assert!(err && !t.contains("Updated"), "{t}");
+    let (_, err) = call(&scoped, "update_project", json!({"project": "Oben", "name": "X"})).await;
+    assert!(err);
+    let (t, err) =
+        call(&scoped, "update_project", json!({"project": "Anderes", "parent": "Neu"})).await;
+    assert!(err && t.contains("cannot move"), "{t}");
+    let (t, err) = call(&scoped, "delete_project", json!({"project": "Anderes"})).await;
+    assert!(err && t.contains("cannot move or delete"), "{t}");
+    let (_, err) = call(&scoped, "delete_project", json!({"project": "Oben"})).await;
+    assert!(err);
+
+    let (_, read_write) =
+        s.registry.create("Schreiben", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let writer = connect(&s.url, &read_write).await;
+    let (t, err) = call(&writer, "delete_project", json!({"project": "Oben"})).await;
+    assert!(err && t.contains("may not delete"), "{t}");
+
+    let (t, err) = call(&c, "delete_project", json!({"project": "Neu"})).await;
+    assert!(!err, "{t}");
+    assert_eq!(names(s.engine.projects().unwrap()), ["Oben", "Anderes", "Unten"]);
+
+    for client in [c, scoped, writer] {
+        client.cancel().await.unwrap();
+    }
+    s.shutdown.cancel();
+}
+
 async fn prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
     c.list_all_prompts().await.unwrap().into_iter().map(|p| p.name).collect()
 }

@@ -652,6 +652,6 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 - Keine `notifications/prompts/list_changed`; Clients sehen neue Prompts beim nächsten Abruf. Keine Verwendungsstatistik für Vorlagen, kein `from_template` in `capture`.
 - MCP `resources` fehlen weiterhin.
 
-**Noch aus dem Plan offen**: Favoriten, Tags und gespeicherte Ansichten in der Sidebar; Projekte und Aktionen in ⌘K; Projekte umsortieren per Drag & Drop; Filter im Graph; lokaler Graph; Verbinden per ⌥-Drag; Puls bei neuen KI-Einträgen; Binärdaten statt JSON für große Graphen; Live-Anzeige der KI-Aktivität.
+**Noch aus dem Plan offen**: Favoriten, Tags und gespeicherte Ansichten in der Sidebar; Projekte und Aktionen in ⌘K; Filter im Graph; lokaler Graph; Verbinden per ⌥-Drag; Puls bei neuen KI-Einträgen; Binärdaten statt JSON für große Graphen; Live-Anzeige der KI-Aktivität.
 
 **Offen beim Prüfen**: Alle Funktionen aus §18 und §19 sind nur über Tests und das Mock geprüft, nicht in der echten App.

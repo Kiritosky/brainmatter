@@ -4,6 +4,7 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    nodes,
     rows::{self, PROJECT_COLS, project_from_row},
     writer::{Entity, Writer},
 };
@@ -11,7 +12,7 @@ use crate::{
     error::{CoreError, Result},
     events::Event,
     ids::{NodeId, ProjectId},
-    model::{NewProject, Project, ProjectSummary},
+    model::{DOC_KIND, NewProject, Project, ProjectDeletePreview, ProjectSummary, TEMPLATE_KIND},
 };
 
 /// Revision snapshot for a project membership; presence means "member".
@@ -50,6 +51,144 @@ pub(crate) fn create(w: &mut Writer<'_>, input: NewProject) -> Result<Project> {
     w.record(Entity::Project, id.as_str(), 0, None, Some(&project))?;
     w.emit(Event::ProjectUpserted { id });
     Ok(project)
+}
+
+fn store(w: &mut Writer<'_>, before: &Project, after: &Project) -> Result<()> {
+    w.conn.execute(
+        "UPDATE projects SET parent_id = ?2, name = ?3, description = ?4, sort = ?5, deleted_at = ?6
+         WHERE id = ?1",
+        params![after.id, after.parent_id, after.name, after.description, after.sort, after.deleted_at],
+    )?;
+    w.record(Entity::Project, after.id.as_str(), 0, Some(before), Some(after))?;
+    let id = after.id.clone();
+    w.emit(match after.deleted_at {
+        Some(_) => Event::ProjectDeleted { id },
+        None => Event::ProjectUpserted { id },
+    });
+    Ok(())
+}
+
+pub(crate) fn update(
+    w: &mut Writer<'_>,
+    id: &ProjectId,
+    name: Option<&str>,
+    description: Option<&str>,
+) -> Result<Project> {
+    let before = rows::live_project(w.conn, id)?;
+    let mut after = before.clone();
+    if let Some(name) = name {
+        after.name = name.trim().to_string();
+        if after.name.is_empty() {
+            return Err(CoreError::Invalid("project name must not be empty".into()));
+        }
+    }
+    if let Some(description) = description {
+        after.description = description.to_string();
+    }
+    if after != before {
+        store(w, &before, &after)?;
+    }
+    Ok(after)
+}
+
+/// Puts a project under `parent` (or at the top level) at `position` among its
+/// new siblings. Its subprojects come along.
+pub(crate) fn place(
+    w: &mut Writer<'_>,
+    id: &ProjectId,
+    parent: Option<&ProjectId>,
+    position: usize,
+) -> Result<()> {
+    let project = rows::live_project(w.conn, id)?;
+    if let Some(parent) = parent {
+        rows::live_project(w.conn, parent)?;
+        if ancestors_and_self(w.conn, parent)?.contains(id) {
+            return Err(CoreError::Invalid("a project cannot go inside itself".into()));
+        }
+    }
+    let sql = format!(
+        "SELECT {PROJECT_COLS} FROM projects
+         WHERE parent_id IS ?1 AND id != ?2 AND deleted_at IS NULL ORDER BY sort, name"
+    );
+    let mut stmt = w.conn.prepare(&sql)?;
+    let mut siblings: Vec<Project> =
+        stmt.query_map(params![parent, id], project_from_row)?.collect::<rusqlite::Result<_>>()?;
+    drop(stmt);
+    let moved = Project { parent_id: parent.cloned(), ..project.clone() };
+    siblings.insert(position.min(siblings.len()), moved);
+    for (sort, after) in siblings.into_iter().enumerate() {
+        let after = Project { sort: sort as i64, ..after };
+        let before =
+            if &after.id == id { project.clone() } else { rows::live_project(w.conn, &after.id)? };
+        if before != after {
+            store(w, &before, &after)?;
+        }
+    }
+    Ok(())
+}
+
+/// What deleting a project would affect, for asking before doing it.
+pub(crate) fn delete_preview(conn: &Connection, id: &ProjectId) -> Result<ProjectDeletePreview> {
+    rows::live_project(conn, id)?;
+    let tree: HashSet<ProjectId> = subtree(conn, id)?.into_iter().collect();
+    let mut preview =
+        ProjectDeletePreview { subprojects: tree.len() - 1, ..ProjectDeletePreview::default() };
+    for (_, kind, exclusive) in members_of(conn, &tree)? {
+        match (kind.as_str(), exclusive) {
+            (TEMPLATE_KIND | DOC_KIND, true) => preview.documents += 1,
+            (TEMPLATE_KIND | DOC_KIND, false) => {}
+            (_, true) => preview.entries_only_here += 1,
+            (_, false) => preview.entries_elsewhere += 1,
+        }
+    }
+    Ok(preview)
+}
+
+/// Entries in these projects: `(id, kind, in no project outside them)`.
+fn members_of(conn: &Connection, tree: &HashSet<ProjectId>) -> Result<Vec<(NodeId, String, bool)>> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for project in tree {
+        let mut stmt = conn.prepare_cached(
+            "SELECT n.id, n.kind FROM project_members m JOIN nodes n ON n.id = m.node_id
+             WHERE m.project_id = ?1 AND n.deleted_at IS NULL",
+        )?;
+        let rows: Vec<(NodeId, String)> = stmt
+            .query_map([project], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (node, kind) in rows {
+            if seen.insert(node.clone()) {
+                let exclusive =
+                    rows::projects_of(conn, &node)?.iter().all(|p| tree.contains(&p.id));
+                out.push((node, kind, exclusive));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Deletes a project with its subprojects, as one undoable step. Entries stay in
+/// the graph unless `with_entries`. Documentation and templates that belong only
+/// here go to the trash either way: pages have no place without their project,
+/// and a project's template must not turn into a global one.
+pub(crate) fn delete(w: &mut Writer<'_>, id: &ProjectId, with_entries: bool) -> Result<usize> {
+    rows::live_project(w.conn, id)?;
+    let ids = subtree(w.conn, id)?;
+    let tree: HashSet<ProjectId> = ids.iter().cloned().collect();
+    let mut trashed = 0;
+    for (node, kind, exclusive) in members_of(w.conn, &tree)? {
+        let always = matches!(kind.as_str(), TEMPLATE_KIND | DOC_KIND);
+        if exclusive && (always || with_entries) {
+            nodes::delete(w, &node)?;
+            trashed += 1;
+        }
+    }
+    for project in &ids {
+        let before = rows::live_project(w.conn, project)?;
+        let after = Project { deleted_at: Some(w.now), ..before.clone() };
+        store(w, &before, &after)?;
+    }
+    Ok(trashed)
 }
 
 /// Returns false if the node already was a member.

@@ -177,6 +177,18 @@ pub struct FileLink {
     pub deleted_at: Option<i64>,
 }
 
+/// What deleting a project would affect.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectDeletePreview {
+    pub subprojects: usize,
+    /// Entries in no other project, which could go to the trash with it.
+    pub entries_only_here: usize,
+    /// Entries also in other projects, which always stay.
+    pub entries_elsewhere: usize,
+    /// Documentation pages and templates, which go to the trash in any case.
+    pub documents: usize,
+}
+
 /// A template in the library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TemplateInfo {
