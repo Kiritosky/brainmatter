@@ -366,6 +366,35 @@ impl BrainmatterMcp {
         self.run(&parts, "read_linked_file", Scope::Read, args, tools::read_linked_file).await
     }
 
+    #[tool(description = "A project's documentation: its pages as a tree, with their sections. \
+        Look here first for how a project works.")]
+    async fn list_docs(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ListDocsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "list_docs", Scope::Read, args, tools::list_docs).await
+    }
+
+    #[tool(description = "Read a documentation page, or just one section of it to save tokens.")]
+    async fn read_doc(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ReadDocArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "read_doc", Scope::Read, args, tools::read_doc).await
+    }
+
+    #[tool(description = "Add a documentation page to a project, or replace the text of one with \
+        the same title. Pages mirrored from files cannot be changed here.")]
+    async fn write_doc(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::WriteDocArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "write_doc", Scope::Write, args, tools::write_doc).await
+    }
+
     #[tool(description = "Move an entry and its links to the trash (restorable by the user).")]
     async fn delete(
         &self,
@@ -419,6 +448,8 @@ reports likely duplicates; `similar` finds what to link and `merge` combines dup
 - For tidying up: `unreviewed` and `unlinked` list what needs attention, `trash` and `restore` handle deleted entries, \
 `recent_changes` and `revert` show and undo changes.
 - Only the user can mark entries as reviewed, erase them for good, manage backups and change settings.
+- Projects can have documentation: `list_docs` shows the pages and sections, `read_doc` reads a page or just one section, \
+`write_doc` adds or changes a page. Prefer it over `search` for how a project works.
 - Entries can point to files on the user's Mac: `get` shows their paths, `link_file` adds one, and `read_linked_file` reads \
 text files whose link the user has approved. Agents with their own file access can use the paths directly.
 - The user keeps reusable templates and prompts with {{placeholders}}: `list_templates` finds them, `get_template` fills \

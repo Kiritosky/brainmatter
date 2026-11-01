@@ -9,6 +9,7 @@
   import Inspector from './Inspector.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import ActivityPanel from './ActivityPanel.svelte';
+  import DocsView from './DocsView.svelte';
   import LibraryPanel from './LibraryPanel.svelte';
   import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
@@ -17,6 +18,11 @@
   import { pop, slideIn } from '#lib/ui/motion.ts';
 
   let { status }: { status: Status } = $props();
+
+  const MAIN_VIEWS: { value: 'graph' | 'docs'; label: string }[] = [
+    { value: 'graph', label: 'Graph' },
+    { value: 'docs', label: 'Doku' },
+  ];
 
   const COLOR_MODES: { value: ColorMode; label: string }[] = [
     { value: 'project', label: 'Projekt' },
@@ -86,8 +92,11 @@
         <button class="rounded px-1 transition-colors hover:text-text {p.id === ws.view ? 'font-medium text-text' : ''}" onclick={() => ws.setView(p.id)}>{p.name}</button>
       {/each}
       <div class="h-full flex-1" data-tauri-drag-region></div>
-      {#if ws.graph}
+      {#if ws.graph && ws.main === 'graph'}
         <span class="text-[11px] text-faint tabular-nums">{ws.graph.nodes.length} Einträge · {ws.graph.edges.length} Verbindungen</span>
+      {/if}
+      {#if ws.view}
+        <div class="ml-3 w-36"><Segmented bind:value={ws.main} options={MAIN_VIEWS} label="Ansicht" /></div>
       {/if}
     </header>
 
@@ -118,6 +127,13 @@
             <TimeSlider nodes={ws.graph.nodes} bind:until onclose={() => (until = null)} />
           </div>
         {/if}
+      {/if}
+
+      <!-- On top of the graph, which stays alive so its camera and layout survive. -->
+      {#if ws.main === 'docs' && ws.view}
+        {#key ws.view}
+          <DocsView project={ws.view} />
+        {/key}
       {/if}
 
       {#if ws.graph && ws.graph.nodes.length === 0}

@@ -45,6 +45,8 @@ class Workspace {
   projects = $state<ProjectSummary[]>([]);
   /** Project id, or null for the whole graph. */
   view = $state<Id | null>(null);
+  /** What the middle shows. Documentation belongs to a project. */
+  main = $state<'graph' | 'docs'>('graph');
   graph = $state.raw<GraphSnapshot | null>(null);
   selected = $state<Id | null>(null);
   detail = $state<NodeDetail | null>(null);
@@ -137,6 +139,7 @@ class Workspace {
 
   async setView(view: Id | null) {
     this.view = view;
+    if (!view) this.main = 'graph';
     await this.loadGraph();
   }
 

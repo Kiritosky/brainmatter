@@ -58,4 +58,4 @@ macro_rules! id_type {
     )*};
 }
 
-id_type!(NodeId, EdgeId, ProjectId, ActorId, ChangeSetId, AttachmentId, FileLinkId);
+id_type!(NodeId, EdgeId, ProjectId, ActorId, ChangeSetId, AttachmentId, FileLinkId, DocSourceId);

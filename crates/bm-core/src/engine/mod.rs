@@ -7,6 +7,7 @@
 
 mod analytics;
 mod attachments;
+mod docs;
 mod edges;
 mod file_links;
 mod graph;
@@ -33,7 +34,7 @@ use crate::{
     blobs::BlobStore,
     error::{CoreError, Result},
     events::Event,
-    ids::{ActorId, AttachmentId, ChangeSetId, FileLinkId, NodeId, ProjectId},
+    ids::{ActorId, AttachmentId, ChangeSetId, DocSourceId, FileLinkId, NodeId, ProjectId},
     model::*,
     store::{Db, DbKey},
     time::now_ms,
@@ -177,6 +178,9 @@ impl Engine {
 
     pub fn update_node(&self, ctx: &Ctx, id: &NodeId, patch: NodePatch) -> Result<Node> {
         let title = self.read(|c| Ok(rows::live_node(c, id)?.title))?;
+        if patch.title.is_some() || patch.body.is_some() || patch.kind.is_some() {
+            self.read(|c| docs::ensure_editable(c, id))?;
+        }
         let key = format!("update:{id}");
         Ok(self
             .write_coalesced(ctx, format!("„{title}“ bearbeitet"), Some(&key), |w| {
@@ -187,7 +191,110 @@ impl Engine {
 
     pub fn delete_node(&self, ctx: &Ctx, id: &NodeId) -> Result<()> {
         let title = self.read(|c| Ok(rows::live_node(c, id)?.title))?;
+        self.read(|c| docs::ensure_editable(c, id))?;
         self.write(ctx, format!("„{title}“ gelöscht"), |w| nodes::delete(w, id))?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------ documentation ---
+
+    /// A project's documentation pages in reading order.
+    pub fn doc_tree(&self, project: &ProjectId) -> Result<Vec<DocPage>> {
+        self.read(|c| docs::tree(c, project))
+    }
+
+    pub fn create_doc_page(
+        &self,
+        ctx: &Ctx,
+        project: &ProjectId,
+        title: &str,
+        body: &str,
+        parent: Option<&NodeId>,
+    ) -> Result<Node> {
+        let summary = format!("Doku-Seite „{}“ erstellt", title.trim());
+        Ok(self.write(ctx, summary, |w| docs::create(w, project, title, body, parent))?.0)
+    }
+
+    /// Moves a page in the tree. Like a graph layout, this is not undoable.
+    pub fn place_doc_page(
+        &self,
+        ctx: &Ctx,
+        id: &NodeId,
+        parent: Option<&NodeId>,
+        position: usize,
+    ) -> Result<()> {
+        self.write(ctx, "", |w| docs::place(w, id, parent, position))?;
+        Ok(())
+    }
+
+    pub fn doc_sources(&self, project: &ProjectId) -> Result<Vec<DocSource>> {
+        self.read(|c| docs::sources(c, project))
+    }
+
+    /// Starts mirroring a folder or Markdown file. Only for the user: it copies
+    /// what is on the disk into a place AI clients can read.
+    pub fn add_doc_source(
+        &self,
+        ctx: &Ctx,
+        project: &ProjectId,
+        path: &str,
+        bookmark: Option<&[u8]>,
+    ) -> Result<DocSourceId> {
+        let path = file_links::clean_path(path)?;
+        let existing = self.doc_sources(project)?.into_iter().find(|s| s.path == path);
+        if let Some(existing) = existing {
+            return Ok(existing.id);
+        }
+        let id = DocSourceId::new();
+        self.read(|c| rows::live_project(c, project).map(|_| ()))?;
+        self.writer.lock().execute(
+            "INSERT INTO doc_sources (id, project_id, path, bookmark, created_at, created_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, project, path, bookmark, now_ms(), ctx.actor],
+        )?;
+        Ok(id)
+    }
+
+    /// Reads the source at `root` and updates its pages. If it cannot be read, say
+    /// on a disconnected drive, this fails and the pages stay as they are.
+    pub fn sync_doc_source(
+        &self,
+        ctx: &Ctx,
+        id: &DocSourceId,
+        root: &Path,
+    ) -> Result<DocSyncReport> {
+        let source = self.read(|c| docs::source(c, id))?;
+        // Outside the transaction: reading many files must not hold up writes.
+        let scan = crate::docs::scan(root)?;
+        let name = root.file_name().and_then(|n| n.to_str()).unwrap_or(&source.path);
+        let summary = format!("Doku aus „{name}“ aktualisiert");
+        Ok(self.write(ctx, summary, |w| docs::sync(w, id, &scan))?.0)
+    }
+
+    pub fn doc_source_location(&self, id: &DocSourceId) -> Result<(String, Option<Vec<u8>>)> {
+        self.read(|c| {
+            c.query_row(
+                "SELECT path, bookmark FROM doc_sources WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::not_found("documentation source", id.as_str()))
+        })
+    }
+
+    pub fn set_doc_source_path(&self, id: &DocSourceId, path: &str) -> Result<()> {
+        let path = file_links::clean_path(path)?;
+        self.writer
+            .lock()
+            .execute("UPDATE doc_sources SET path = ?2 WHERE id = ?1", params![id, path])?;
+        Ok(())
+    }
+
+    pub fn remove_doc_source(&self, ctx: &Ctx, id: &DocSourceId) -> Result<()> {
+        let source = self.read(|c| docs::source(c, id))?;
+        let summary = format!("Doku aus „{}“ entfernt", source.path);
+        self.write(ctx, summary, |w| docs::remove_source(w, id))?;
         Ok(())
     }
 
@@ -301,7 +408,16 @@ impl Engine {
             }
             let attachments = attachments::of_node(c, id)?;
             let file_links = file_links::of_node(c, id)?;
-            Ok(NodeDetail { node, projects, outgoing, incoming, attachments, file_links })
+            let read_only = docs::is_mirrored(c, id)?;
+            Ok(NodeDetail {
+                node,
+                projects,
+                outgoing,
+                incoming,
+                attachments,
+                file_links,
+                read_only,
+            })
         })
     }
 
@@ -513,6 +629,9 @@ impl Engine {
     /// Merges several entries into `keep` as one undoable change set.
     pub fn merge_nodes(&self, ctx: &Ctx, keep: &NodeId, others: &[NodeId]) -> Result<Node> {
         let title = self.read(|c| Ok(rows::live_node(c, keep)?.title))?;
+        for id in std::iter::once(keep).chain(others) {
+            self.read(|c| docs::ensure_editable(c, id))?;
+        }
         let entries = match others.len() {
             1 => "Ein Eintrag".to_string(),
             n => format!("{n} Einträge"),

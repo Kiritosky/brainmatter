@@ -72,6 +72,32 @@ export interface NodeDetail {
   incoming: EdgeView[];
   attachments: Attachment[];
   file_links: Omit<FileLinkStatus, 'exists' | 'is_dir'>[];
+  /** A documentation page that mirrors a file and can only be changed there. */
+  read_only: boolean;
+}
+
+export interface DocPage {
+  node: NodeBrief;
+  parent: Id | null;
+  depth: number;
+  read_only: boolean;
+  source_path: string | null;
+  reviewed: boolean;
+  updated_at: number;
+}
+
+export interface DocSource {
+  id: Id;
+  project_id: Id;
+  path: string;
+  created_at: number;
+  pages: number;
+}
+
+export interface DocSyncStatus {
+  changed: number;
+  skipped: number;
+  unreachable: string[];
 }
 
 export interface FileLinkStatus {
@@ -397,6 +423,13 @@ export const api = {
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),
+  docTree: (project: Id) => call<DocPage[]>('doc_tree', { project }),
+  createDocPage: (project: Id, title: string, parent: Id | null = null) => call<Node>('create_doc_page', { project, title, parent }),
+  placeDocPage: (id: Id, parent: Id | null, position: number) => call<void>('place_doc_page', { id, parent, position }),
+  docSources: (project: Id) => call<DocSource[]>('doc_sources', { project }),
+  addDocSource: (project: Id, folder: boolean) => call<unknown>('add_doc_source', { project, folder }),
+  syncDocSources: (project: Id) => call<DocSyncStatus>('sync_doc_sources', { project }),
+  removeDocSource: (id: Id) => call<void>('remove_doc_source', { id }),
   fileLinks: (node: Id) => call<FileLinkStatus[]>('file_links', { node }),
   linkFiles: (node: Id, folders: boolean) => call<number>('link_files', { node, folders }),
   setFileLinkApproved: (id: Id, approved: boolean) => call<void>('set_file_link_approved', { id, approved }),

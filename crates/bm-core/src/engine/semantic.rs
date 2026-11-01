@@ -359,7 +359,7 @@ impl Engine {
         self.read(|c| {
             let mut stmt = c.prepare_cached(
                 "SELECT n.id, n.title, n.kind FROM nodes n
-                 WHERE n.deleted_at IS NULL AND n.kind != 'template'
+                 WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')
                    AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.deleted_at IS NULL AND (e.src = n.id OR e.dst = n.id))
                  ORDER BY n.updated_at DESC LIMIT ?1",
             )?;

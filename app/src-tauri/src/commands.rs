@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use bm_core::{
     backups::BackupInfo,
-    ids::{AttachmentId, ChangeSetId, FileLinkId, NodeId, ProjectId},
+    ids::{AttachmentId, ChangeSetId, DocSourceId, FileLinkId, NodeId, ProjectId},
     model::*,
 };
 use bm_mcp::{Client, ClientRegistry, RegistryError, Scope};
@@ -410,6 +410,108 @@ pub fn open_file(session: S<'_>, id: FileLinkId) -> ApiResult<()> {
         ));
     }
     run_open(&[link.path.as_ref()])
+}
+
+#[tauri::command(async)]
+pub fn doc_tree(session: S<'_>, project: ProjectId) -> ApiResult<Vec<DocPage>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.doc_tree(&project)?)
+}
+
+#[tauri::command(async)]
+pub fn create_doc_page(
+    session: S<'_>,
+    project: ProjectId,
+    title: String,
+    parent: Option<NodeId>,
+) -> ApiResult<Node> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.create_doc_page(&ctx, &project, &title, "", parent.as_ref())?)
+}
+
+#[tauri::command(async)]
+pub fn place_doc_page(
+    session: S<'_>,
+    id: NodeId,
+    parent: Option<NodeId>,
+    position: usize,
+) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.place_doc_page(&ctx, &id, parent.as_ref(), position)?)
+}
+
+#[tauri::command(async)]
+pub fn doc_sources(session: S<'_>, project: ProjectId) -> ApiResult<Vec<DocSource>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.doc_sources(&project)?)
+}
+
+/// Asks for a folder or Markdown file, and mirrors it into the project's docs.
+/// `None` if the user cancels.
+#[tauri::command(async)]
+pub fn add_doc_source(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    project: ProjectId,
+    folder: bool,
+) -> ApiResult<Option<DocSyncReport>> {
+    let (engine, ctx) = session.engine()?;
+    let dialog = app.dialog().file();
+    let picked = if folder {
+        dialog.blocking_pick_folder()
+    } else {
+        dialog.add_filter("Markdown", &["md", "markdown", "mdx"]).blocking_pick_file()
+    };
+    let Some(picked) = picked else { return Ok(None) };
+    let path = picked.into_path().map_err(ApiError::internal)?;
+    let text = path
+        .to_str()
+        .ok_or_else(|| ApiError::new("invalid", "Dieser Dateiname wird nicht unterstützt."))?;
+    let bookmark = bm_macos::bookmarks::create(&path);
+    let id = engine.add_doc_source(&ctx, &project, text, bookmark.as_deref())?;
+    Ok(Some(engine.sync_doc_source(&ctx, &id, &path)?))
+}
+
+/// Brings the project's mirrored pages up to date. Sources that cannot be reached
+/// right now, such as on a disconnected drive, keep their pages and are named.
+#[derive(Serialize)]
+pub struct DocSyncStatus {
+    changed: usize,
+    skipped: usize,
+    unreachable: Vec<String>,
+}
+
+#[tauri::command(async)]
+pub fn sync_doc_sources(session: S<'_>, project: ProjectId) -> ApiResult<DocSyncStatus> {
+    let (engine, ctx) = session.engine()?;
+    let mut status = DocSyncStatus { changed: 0, skipped: 0, unreachable: Vec::new() };
+    for source in engine.doc_sources(&project)? {
+        let (path, bookmark) = engine.doc_source_location(&source.id)?;
+        let moved = bookmark.as_deref().and_then(bm_macos::bookmarks::resolve);
+        if let Some(now) = moved.as_ref().and_then(|p| p.to_str())
+            && now != path
+        {
+            engine.set_doc_source_path(&source.id, now)?;
+        }
+        let root = moved.unwrap_or_else(|| path.clone().into());
+        match engine.sync_doc_source(&ctx, &source.id, &root) {
+            Ok(report) => {
+                status.changed += report.added + report.updated + report.removed;
+                status.skipped += report.skipped;
+            }
+            Err(e) => {
+                tracing::info!("documentation source not reachable: {e}");
+                status.unreachable.push(source.path);
+            }
+        }
+    }
+    Ok(status)
+}
+
+#[tauri::command(async)]
+pub fn remove_doc_source(session: S<'_>, id: DocSourceId) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.remove_doc_source(&ctx, &id)?)
 }
 
 #[tauri::command(async)]

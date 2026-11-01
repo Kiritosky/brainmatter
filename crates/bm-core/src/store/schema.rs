@@ -17,6 +17,7 @@ const MIGRATIONS: &[(&str, Option<DataStep>)] = &[
     (V5, None),
     (V6, None),
     (V7, None),
+    (V8, None),
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
@@ -294,4 +295,30 @@ CREATE TABLE file_links (
     deleted_at      INTEGER
 );
 CREATE INDEX file_links_node_idx ON file_links(node_id);
+"#;
+
+// Documentation: a page is an entry of kind `doc` with a place in a project's tree.
+// A source is a folder or file that pages mirror; those pages stay read-only.
+const V8: &str = r#"
+CREATE TABLE doc_sources (
+    id         TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    path       TEXT NOT NULL,
+    bookmark   BLOB,
+    created_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL REFERENCES actors(id),
+    deleted_at INTEGER
+);
+CREATE TABLE doc_pages (
+    node_id     TEXT PRIMARY KEY REFERENCES nodes(id),
+    project_id  TEXT NOT NULL REFERENCES projects(id),
+    parent_id   TEXT REFERENCES nodes(id),
+    sort        INTEGER NOT NULL DEFAULT 0,
+    source_id   TEXT REFERENCES doc_sources(id),
+    source_path TEXT,
+    source_hash TEXT
+) WITHOUT ROWID;
+CREATE INDEX doc_pages_project_idx ON doc_pages(project_id, parent_id, sort);
+CREATE UNIQUE INDEX doc_pages_source_idx ON doc_pages(source_id, source_path)
+    WHERE source_id IS NOT NULL;
 "#;

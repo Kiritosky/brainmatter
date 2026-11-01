@@ -35,7 +35,7 @@
   let saved = { title: '', body: '' };
 
   untrack(() => {
-    editing = node.body.trim() === '';
+    editing = node.body.trim() === '' && !detail.read_only;
   });
 
   $effect(() => {
@@ -245,7 +245,9 @@
     <button class="icon-btn" aria-label="Im Graph zeigen" title="Im Graph zeigen" onclick={() => ws.focusTick++}><Crosshair size={15} /></button>
     <button class="icon-btn" aria-label="Verbinden" title="Verbinden (⌘L)" onclick={() => (ws.palette = 'link')}><Link2 size={15} /></button>
     <button class="icon-btn {showHistory ? '!bg-accent/15 !text-accent' : ''}" aria-label="Verlauf" title="Verlauf" onclick={openHistory}><History size={15} /></button>
-    {#if confirmDelete}
+    {#if detail.read_only}
+      <!-- Goes away with its file. -->
+    {:else if confirmDelete}
       <button class="btn-danger !h-7" in:pop={{ duration: 120, y: 0 }} onclick={() => ((dirty = false), act(() => api.deleteNode(nodeId)))} onblur={() => (confirmDelete = false)}>Löschen?</button>
     {:else}
       <button class="icon-btn hover:!text-danger" aria-label="In den Papierkorb" title="In den Papierkorb" onclick={() => (confirmDelete = true)}><Trash2 size={15} /></button>
@@ -257,6 +259,7 @@
     <input
       class="mb-2.5 w-full bg-transparent text-lg leading-snug font-semibold tracking-tight outline-none"
       aria-label="Titel"
+      readonly={detail.read_only}
       bind:value={draftTitle}
       oninput={scheduleSave}
       onblur={save}
@@ -309,9 +312,13 @@
         </span>
       {/if}
       <div class="flex-1"></div>
-      <button class="icon-btn" aria-label={editing ? 'Ansehen' : 'Bearbeiten'} title={editing ? 'Ansehen' : 'Bearbeiten'} onclick={() => (save(), (editing = !editing))}>
-        {#if editing}<Eye size={14} />{:else}<Pencil size={14} />{/if}
-      </button>
+      {#if detail.read_only}
+        <span class="text-[11px] text-faint">Aus einer Datei, nur dort änderbar</span>
+      {:else}
+        <button class="icon-btn" aria-label={editing ? 'Ansehen' : 'Bearbeiten'} title={editing ? 'Ansehen' : 'Bearbeiten'} onclick={() => (save(), (editing = !editing))}>
+          {#if editing}<Eye size={14} />{:else}<Pencil size={14} />{/if}
+        </button>
+      {/if}
     </div>
     {#if editing}
       <MarkdownEditor
@@ -324,7 +331,7 @@
     {:else if node.body.trim()}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
       <div class="prose-bm" role="presentation" bind:this={preview} onclick={onPreviewClick} ondblclick={() => (editing = true)}>{@html html}</div>
-    {:else}
+    {:else if !detail.read_only}
       <button class="w-full rounded-xl border border-dashed border-line py-6 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = true)}>
         Noch leer. Klicken zum Schreiben.
       </button>

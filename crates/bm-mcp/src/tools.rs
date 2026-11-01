@@ -12,8 +12,8 @@ use bm_core::{
     engine::SUGGEST_SCORE,
     ids::{ChangeSetId, NodeId, ProjectId},
     model::{
-        BodyEdit, Capture, CaptureLink, CaptureNode, Ctx, NewEdge, NewNode, NewProject, NodeBrief,
-        NodePatch, SearchQuery, TEMPLATE_KIND, TemplateInfo,
+        BodyEdit, Capture, CaptureLink, CaptureNode, Ctx, DOC_KIND, NewEdge, NewNode, NewProject,
+        NodeBrief, NodePatch, SearchQuery, TEMPLATE_KIND, TemplateInfo,
     },
     semantic::Embedder,
 };
@@ -586,6 +586,96 @@ pub(crate) fn restore(cx: &ToolCx, a: RestoreArgs) -> Out {
     };
     let n = cx.engine.restore_node(&cx.ctx, &t.node.id)?;
     Ok(format!("Restored **{}** ({}) with its links.", n.title, format::short(&n.id)))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListDocsArgs {
+    /// The project (name or id).
+    pub project: String,
+}
+
+pub(crate) fn list_docs(cx: &ToolCx, a: ListDocsArgs) -> Out {
+    let project = cx.project(&a.project)?;
+    let mut out = String::new();
+    for page in cx.engine.doc_tree(&project)? {
+        let indent = "  ".repeat(page.depth as usize);
+        let origin = if page.read_only { " (from a file, read-only)" } else { "" };
+        let _ = writeln!(
+            out,
+            "{indent}- **{}** ({}){origin}",
+            page.node.title,
+            format::short(&page.node.id)
+        );
+        let body = cx.engine.node_detail(&page.node.id)?.node.body;
+        // A page's own title as its first heading adds nothing here.
+        for s in bm_core::docs::sections(&body).iter().filter(|s| s.title != page.node.title) {
+            let depth = "  ".repeat(s.level as usize);
+            let _ = writeln!(out, "{indent}{depth}· {} [{}]", s.title, s.id);
+        }
+    }
+    Ok(if out.is_empty() {
+        format!("„{}“ has no documentation yet. `write_doc` adds a page.", a.project)
+    } else {
+        format!("Documentation (`read_doc` takes a page and optionally a [section]):\n{out}")
+    })
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadDocArgs {
+    /// The page: exact title, short id or full id.
+    pub page: String,
+    /// A section id from `list_docs`. Reads just that part, with its subsections.
+    pub section: Option<String>,
+}
+
+pub(crate) fn read_doc(cx: &ToolCx, a: ReadDocArgs) -> Out {
+    let id = cx.entry(&a.page)?;
+    let detail = cx.engine.node_detail(&id)?;
+    if detail.node.kind != DOC_KIND {
+        return Err(fail(format!("„{}“ is no documentation page. Use `get`.", a.page)));
+    }
+    let body = detail.node.body.as_str();
+    let text = match &a.section {
+        Some(section) => bm_core::docs::section_text(body, section).ok_or_else(|| {
+            let known = bm_core::docs::sections(body);
+            let ids: Vec<&str> = known.iter().map(|s| s.id.as_str()).collect();
+            fail(format!("No section „{section}“. It has: {}", ids.join(", ")))
+        })?,
+        None => body,
+    };
+    Ok(format!("# {}\n\n<entry-content>\n{text}\n</entry-content>", detail.node.title))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WriteDocArgs {
+    /// The project (name or id).
+    pub project: String,
+    pub title: String,
+    /// Markdown. Replaces the page's text if the title already exists in this project.
+    pub body: String,
+    /// Title of the page to put it under, for new pages.
+    pub parent: Option<String>,
+}
+
+pub(crate) fn write_doc(cx: &ToolCx, a: WriteDocArgs) -> Out {
+    let project = cx.project(&a.project)?;
+    let tree = cx.engine.doc_tree(&project)?;
+    let same = |title: &str, wanted: &str| title.eq_ignore_ascii_case(wanted.trim());
+    if let Some(page) = tree.iter().find(|p| same(&p.node.title, &a.title)) {
+        let patch = NodePatch { body: Some(BodyEdit::Replace(a.body)), ..Default::default() };
+        let n = cx.engine.update_node(&cx.ctx, &page.node.id, patch)?;
+        return Ok(format!("Updated the page **{}** ({}).", n.title, format::short(&n.id)));
+    }
+    let parent = match a.parent.as_deref() {
+        Some(wanted) => {
+            let found = tree.iter().find(|p| same(&p.node.title, wanted));
+            let page = found.ok_or_else(|| fail(format!("No page „{wanted}“ in this project.")))?;
+            Some(page.node.id.clone())
+        }
+        None => None,
+    };
+    let n = cx.engine.create_doc_page(&cx.ctx, &project, &a.title, &a.body, parent.as_ref())?;
+    Ok(format!("Added the page **{}** ({}).", n.title, format::short(&n.id)))
 }
 
 /// Larger files are refused before reading them into memory.

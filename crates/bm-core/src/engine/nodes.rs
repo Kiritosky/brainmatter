@@ -234,6 +234,8 @@ pub(crate) fn purge(w: &mut Writer<'_>, id: &NodeId) -> Result<Vec<String>> {
         "DELETE FROM layout_positions WHERE node_id = ?1",
         "DELETE FROM attachments WHERE node_id = ?1",
         "DELETE FROM file_links WHERE node_id = ?1",
+        "UPDATE doc_pages SET parent_id = NULL WHERE parent_id = ?1",
+        "DELETE FROM doc_pages WHERE node_id = ?1",
         "DELETE FROM project_members WHERE node_id = ?1",
         "DELETE FROM node_tags WHERE node_id = ?1",
         "DELETE FROM nodes WHERE id = ?1",

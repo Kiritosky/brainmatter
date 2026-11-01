@@ -5,6 +5,7 @@
 
 pub mod backups;
 pub mod blobs;
+pub mod docs;
 pub mod engine;
 pub mod error;
 pub mod events;

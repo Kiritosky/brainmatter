@@ -632,7 +632,26 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 
 **Offen**:
 - Nur im Mock oder ohne Oberfläche geprüft: Anhänge (Upload, PDF, Sichern-Dialog), Backups, Quick Capture samt Fokus-Rückgabe, Theme mit Vibrancy.
-- Der Speicher gelöschter Anhänge wird nie frei; das kommt mit dem Papierkorb.
 - Quick Capture speichert ohne Projekt. Liegt die Tastenkombination schon bei einer anderen App, steht das nur im Log.
 - Retina-Messung des Graphen, Kaltstart, Erstindizierung bei 50k.
 - Auto-Update und Release-Pipeline sind gebaut, aber noch nie gelaufen: Der Updater kann Releases erst lesen, wenn das Repo öffentlich ist, und `release.yml` läuft erst beim ersten Tag. Beides zusammen beim ersten Release prüfen, inklusive eines echten Updates von einer Version auf die nächste. Der Update-Schlüssel liegt in `~/.tauri/brainmatter-updater.key` und muss als Secret `TAURI_SIGNING_PRIVATE_KEY` im Repo stehen.
+
+## 19. Stand: Erweiterungen nach dem Hauptplan (2026-11-01)
+
+**Fertig**:
+- **Papierkorb** (nicht im ursprünglichen Plan als eigener Schritt): Wiederherstellen samt Verbindungen. Endgültiges Löschen entfernt auch Revisionen und die Titel in Änderungsverläufen und gibt Anhangsdateien frei, wenn kein anderer Eintrag sie nutzt. Der Speicher von Anhängen, die nur von einem lebenden Eintrag entfernt wurden, bleibt wegen Undo belegt.
+- **§7a Vorlagen und Prompts**: Bibliothek, Platzhalter mit Vorschau, MCP-Tools und echte MCP-Prompts. Nur vom Nutzer gesehene Vorlagen werden Prompts; ändert eine KI eine Vorlage, verschwindet sie als Prompt wieder. `prompts/list` löst nie Touch ID aus.
+- **§7b Datei-Verknüpfungen**: macOS-Bookmarks, `link_file`, `read_linked_file`. KI-Links brauchen eine Freigabe; bis dahin fasst die App den Pfad beim KI-Zugriff nicht an und kann ihn nicht öffnen.
+- **§7c Projekt-Doku**: Seitenbaum, Lese-Ansicht mit Inhaltsverzeichnis, Suche, `list_docs`, `read_doc` mit Abschnitten, `write_doc`. Ordner oder einzelne Markdown-Dateien lassen sich schreibgeschützt spiegeln. Ein nicht erreichbarer Ordner lässt seine Seiten unangetastet; Symlinks werden nicht verfolgt. Grenzen: 2000 Dateien, 2 MB je Datei.
+
+**Abweichungen vom Plan**:
+- Spiegeln läuft beim Öffnen der Doku, nicht per FSEvents. Das ist einfacher und reicht fürs Nachlesen, eine KI sieht aber bis dahin den alten Stand.
+- Datei-Links entstehen über die Dateiauswahl, weil die Web-Ansicht beim Ziehen keinen Pfad bekommt. Ziehen erzeugt weiter einen Anhang. `[Text](file:///…)` in Markdown und Quick Look fehlen.
+- Kein eigener Scope `files:read`: Die Freigabe pro Link und der Scope `read` reichen.
+- Keine semantische Suche auf Abschnittsebene: Doku-Seiten werden wie Einträge als Ganzes eingebettet.
+- Keine `notifications/prompts/list_changed`; Clients sehen neue Prompts beim nächsten Abruf. Keine Verwendungsstatistik für Vorlagen, kein `from_template` in `capture`.
+- MCP `resources` fehlen weiterhin.
+
+**Noch aus dem Plan offen**: Favoriten, Tags und gespeicherte Ansichten in der Sidebar; Projekte und Aktionen in ⌘K; Projekte umsortieren per Drag & Drop; Filter im Graph; lokaler Graph; Verbinden per ⌥-Drag; Puls bei neuen KI-Einträgen; Binärdaten statt JSON für große Graphen; Live-Anzeige der KI-Aktivität.
+
+**Offen beim Prüfen**: Alle Funktionen aus §18 und §19 sind nur über Tests und das Mock geprüft, nicht in der echten App.

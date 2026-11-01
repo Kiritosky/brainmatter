@@ -219,6 +219,39 @@ try {
   await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
   await page.waitForTimeout(400);
 
+  // Documentation: read, navigate, write, and mirror a folder read-only.
+  await sidebar.getByRole('button', { name: /^Brainmatter/ }).first().click();
+  await page.getByRole('radio', { name: 'Doku' }).click();
+  await page.getByRole('heading', { name: 'Handbuch' }).waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, '48-docs-narrow');
+  // With the side panel closed there is room for the page's table of contents.
+  await page.getByLabel('Schließen').first().click();
+  await page.waitForTimeout(450);
+  await shot(page, '48-docs');
+  const contents = page.getByRole('complementary', { name: 'Auf dieser Seite' });
+  await contents.getByRole('button', { name: 'KI-Zugriff' }).click();
+  await page.getByRole('button', { name: /Weiter/ }).click();
+  await page.getByRole('heading', { name: 'Installation', level: 1 }).first().waitFor();
+  await page.getByRole('button', { name: /Zurück/ }).click();
+  await page.getByRole('heading', { name: 'Handbuch' }).waitFor();
+  await page.getByLabel('In der Doku suchen').fill('Tresor');
+  await page.getByText('Der Tresor').first().waitFor();
+  await page.waitForTimeout(250);
+  await page.getByLabel('In der Doku suchen').fill('');
+  await page.getByRole('navigation', { name: 'Seiten' }).getByText('Architektur').hover();
+  await page.getByRole('button', { name: '„Architektur“ nach oben' }).click();
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: 'Doku-Ordner einbinden' }).click();
+  await page.getByRole('navigation', { name: 'Seiten' }).getByText('Einrichtung').click();
+  await page.getByText('nur dort änderbar').waitFor();
+  if (await page.getByRole('main').getByRole('button', { name: 'Bearbeiten' }).count()) errors.push('a mirrored page offers editing');
+  await page.waitForTimeout(250);
+  await shot(page, '49-docs-mirrored');
+  await page.getByRole('radio', { name: 'Graph' }).click();
+  await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
+  await page.waitForTimeout(400);
+
   // File links: a link an AI suggested needs approval before it can be opened.
   await openEntry('Tresor');
   await page.getByRole('button', { name: 'Datei verknüpfen' }).click();

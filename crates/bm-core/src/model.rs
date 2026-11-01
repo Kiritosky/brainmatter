@@ -2,12 +2,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{ActorId, AttachmentId, ChangeSetId, EdgeId, FileLinkId, NodeId, ProjectId};
+use crate::ids::{
+    ActorId, AttachmentId, ChangeSetId, DocSourceId, EdgeId, FileLinkId, NodeId, ProjectId,
+};
 
 pub const DEFAULT_KIND: &str = "note";
 pub const DEFAULT_RELATION: &str = "related_to";
 pub const WIKILINK_RELATION: &str = "mentions";
 pub const TEMPLATE_KIND: &str = "template";
+pub const DOC_KIND: &str = "doc";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -123,6 +126,41 @@ pub struct NodeDetail {
     pub incoming: Vec<EdgeView>,
     pub attachments: Vec<Attachment>,
     pub file_links: Vec<FileLink>,
+    /// A documentation page that mirrors a file and can only be changed there.
+    pub read_only: bool,
+}
+
+/// A page in a project's documentation, in reading order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocPage {
+    pub node: NodeBrief,
+    pub parent: Option<NodeId>,
+    pub depth: u32,
+    pub read_only: bool,
+    /// Relative to its source, for mirrored pages.
+    pub source_path: Option<String>,
+    pub reviewed: bool,
+    pub updated_at: i64,
+}
+
+/// A folder or file whose Markdown a project's documentation mirrors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocSource {
+    pub id: DocSourceId,
+    pub project_id: ProjectId,
+    pub path: String,
+    pub created_at: i64,
+    pub pages: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocSyncReport {
+    pub added: usize,
+    pub updated: usize,
+    pub removed: usize,
+    pub unchanged: usize,
+    /// Files passed over: too large or not text.
+    pub skipped: usize,
 }
 
 /// A reference from an entry to a file or folder on the Mac.

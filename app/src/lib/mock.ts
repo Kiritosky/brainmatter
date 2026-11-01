@@ -52,6 +52,38 @@ let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_s
 const DAY = 86_400_000;
 const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
+interface MockDoc {
+  node: string;
+  project: string;
+  parent: string | null;
+  sort: number;
+  source: string | null;
+  path: string | null;
+}
+const docs: MockDoc[] = [];
+const docSources: { id: string; project_id: string; path: string; created_at: number }[] = [];
+
+function addDoc(project: string, title: string, body: string, parent: string | null = null, source: string | null = null, path: string | null = null) {
+  const node = createNode({ title, body, kind: 'doc', projects: [project] });
+  docs.push({ node: node.id, project, parent, sort: docs.filter((d) => d.project === project && d.parent === parent).length, source, path });
+  return node;
+}
+
+function docTree(project: string) {
+  const live = docs.filter((d) => d.project === project && !nodes.get(d.node)?.deleted_at);
+  const ids = new Set(live.map((d) => d.node));
+  const out: unknown[] = [];
+  const visit = (parent: string | null, depth: number) => {
+    for (const d of live.filter((x) => (x.parent && ids.has(x.parent) ? x.parent : null) === parent).sort((a, b) => a.sort - b.sort)) {
+      const n = nodes.get(d.node)!;
+      out.push({ node: { id: n.id, title: n.title, kind: n.kind }, parent, depth, read_only: !!d.source, source_path: d.path, reviewed: n.reviewed, updated_at: n.updated_at });
+      visit(d.node, depth + 1);
+    }
+  };
+  visit(null, 0);
+  return out;
+}
+
 let updateChecks = 0;
 const fileLinks: FileLinkStatus[] = [];
 const MODEL_BYTES = 487_724_985;
@@ -228,7 +260,7 @@ function projectList(): ProjectSummary[] {
   const out: ProjectSummary[] = [];
   const visit = (parent: string | null) => {
     for (const p of all.filter((x) => x.parent_id === parent).sort((a, b) => a.sort - b.sort)) {
-      out.push({ project: p, node_count: [...nodes.values()].filter((n) => !n.deleted_at && members.has(`${p.id}|${n.id}`)).length });
+      out.push({ project: p, node_count: [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'doc' && n.kind !== 'template' && members.has(`${p.id}|${n.id}`)).length });
       visit(p.id);
     }
   };
@@ -239,7 +271,7 @@ function projectList(): ProjectSummary[] {
 function graph(project: string | null): GraphSnapshot {
   const view = project ?? 'all';
   const scope = project ? subtree(project) : null;
-  const ns = [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'template' && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
+  const ns = [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'template' && n.kind !== 'doc' && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
   const ids = new Set(ns.map((n) => n.id));
   const es = [...edges.values()].filter((e) => !e.deleted_at && ids.has(e.src) && ids.has(e.dst));
   const degree = new Map<string, number>();
@@ -283,6 +315,7 @@ function detail(nid: string): NodeDetail {
     incoming: active.filter((e) => e.dst === nid).map((e) => ({ edge: e, other: brief(e.src) })),
     attachments: [...attachments.values()].filter((a) => a.meta.node_id === nid && !a.deleted).map((a) => a.meta),
     file_links: fileLinks.filter((l) => l.node_id === nid),
+    read_only: docs.some((d) => d.node === nid && d.source),
   };
 }
 
@@ -290,7 +323,7 @@ function search(q: Args): SearchHit[] {
   const terms = String(q.text ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   const scope = q.project ? subtree(q.project) : null;
   return [...nodes.values()]
-    .filter((n) => !n.deleted_at && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))))
+    .filter((n) => !n.deleted_at && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))) && (!q.kinds?.length || q.kinds.includes(n.kind)))
     .map((n) => {
       const hay = `${n.title} ${n.body}`.toLowerCase();
       const score = terms.reduce((s, t) => s + (n.title.toLowerCase().includes(t) ? 5 : hay.includes(t) ? 1 : -100), 0);
@@ -330,6 +363,9 @@ function seed() {
   n('Code-Review', 'Prüfe {{datei}} auf {{thema}}. Nenne nur Fehler, keine Stilfragen.', [], 'template');
   n('Übergabe', 'Fasse den Stand von {{projekt}} für die nächste Sitzung zusammen.', [bm], 'template', false);
   const ids = [...nodes.values()];
+  const guide = addDoc(bm.id, 'Handbuch', '# Überblick\n\nBrainmatter hält dein Wissen lokal und verschlüsselt. Diese Seite erklärt, wie die Teile zusammenspielen.\n\n## Der Tresor\n\nAlles liegt in einem Tresor, den dein Passwort oder Touch ID öffnet. Ohne eines von beiden kommt niemand an die Daten, auch keine KI.\n\n## Verbindungen\n\nEinträge verbinden sich über Links im Text oder über benannte Beziehungen.\n\n```sh\nbun run tauri dev\n```\n\n## KI-Zugriff\n\nJede KI bekommt ihr eigenes Token und sieht nur, was du erlaubst.');
+  addDoc(bm.id, 'Installation', '# Installation\n\nZiehe die App in den Programme-Ordner und starte sie.', guide.id);
+  addDoc(bm.id, 'Architektur', '# Architektur\n\nDer Kern ist in Rust geschrieben.');
   addEdge(ids[3].id, ids[1].id, 'depends_on');
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
   const H = 3_600_000;
@@ -441,6 +477,40 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  doc_tree: (a) => docTree(a.project),
+  create_doc_page: (a) => {
+    const node = addDoc(a.project, a.title, '', a.parent ?? null);
+    notify({ type: 'node_upserted', id: node.id });
+    return node;
+  },
+  place_doc_page: (a) => {
+    const doc = docs.find((d) => d.node === a.id);
+    if (!doc) fail('not_found', 'Seite nicht gefunden');
+    if (doc.source) fail('conflict', 'this page mirrors a file and can only be changed there');
+    doc.parent = a.parent ?? null;
+    const siblings = docs.filter((d) => d.project === doc.project && d.parent === doc.parent && d !== doc).sort((x, y) => x.sort - y.sort);
+    siblings.splice(a.position, 0, doc);
+    siblings.forEach((d, i) => (d.sort = i));
+    notify({ type: 'node_upserted', id: doc.node });
+  },
+  doc_sources: (a) =>
+    docSources
+      .filter((s) => s.project_id === a.project)
+      .map((s) => ({ ...s, pages: docs.filter((d) => d.source === s.id && !nodes.get(d.node)?.deleted_at).length })),
+  add_doc_source: (a) => {
+    const source = { id: id(), project_id: a.project, path: a.folder ? '/Users/alex/Projekte/app/docs' : '/Users/alex/Projekte/app/README.md', created_at: now() };
+    docSources.push(source);
+    addDoc(a.project, 'Einrichtung', '# Einrichtung\n\nAus der Datei im Repo.', null, source.id, 'einrichtung.md');
+    return { added: 1, updated: 0, removed: 0, unchanged: 0, skipped: 0 };
+  },
+  sync_doc_sources: () => ({ changed: 0, skipped: 0, unreachable: [] }),
+  remove_doc_source: (a) => {
+    docSources.splice(docSources.findIndex((s) => s.id === a.id), 1);
+    for (const d of docs) {
+      const n = nodes.get(d.node);
+      if (d.source === a.id && n) n.deleted_at = now();
+    }
+  },
   // Copies, like every answer of the real backend.
   file_links: (a) => fileLinks.filter((l) => l.node_id === a.node).map((l) => ({ ...l })),
   link_files: (a) => {
@@ -549,7 +619,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   orphans: () =>
     [...nodes.values()]
-      .filter((n) => !n.deleted_at && ![...edges.values()].some((e) => !e.deleted_at && (e.src === n.id || e.dst === n.id)))
+      .filter((n) => !n.deleted_at && n.kind !== 'doc' && n.kind !== 'template' && ![...edges.values()].some((e) => !e.deleted_at && (e.src === n.id || e.dst === n.id)))
       .map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
   unreviewed: () =>
     [...nodes.values()].filter((n) => !n.deleted_at && !n.reviewed).map((n) => ({ id: n.id, title: n.title, kind: n.kind })),

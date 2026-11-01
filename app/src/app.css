@@ -253,6 +253,14 @@ html.tauri .sidebar-glass {
 .prose-bm h3 { font-size: 1.05em; font-weight: 600; margin: 0.9em 0 0.3em; color: var(--color-text); }
 .prose-bm p { margin: 0.55em 0; }
 .prose-bm img { max-width: 100%; border-radius: 8px; }
+/* Long texts: larger, airier and in a measure comfortable to read. */
+.prose-doc { font-size: 15px; line-height: 1.7; max-width: 68ch; }
+.prose-doc h1 { font-size: 1.6em; margin-top: 1.6em; }
+.prose-doc h2 { font-size: 1.3em; margin-top: 1.6em; }
+.prose-doc h3 { font-size: 1.08em; margin-top: 1.3em; }
+.prose-doc h1:first-child,
+.prose-doc h2:first-child { margin-top: 0; }
+.prose-doc p { margin: 0.8em 0; }
 .prose-bm ul, .prose-bm ol { padding-left: 1.3em; margin: 0.45em 0; }
 .prose-bm ul { list-style: disc; }
 .prose-bm ol { list-style: decimal; }

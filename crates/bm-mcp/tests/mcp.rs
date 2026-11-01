@@ -401,6 +401,85 @@ async fn linked_files_stay_within_project_scope() {
     s.shutdown.cancel();
 }
 
+#[tokio::test]
+async fn documentation_can_be_browsed_and_read_section_by_section() {
+    let s = start().await;
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let project = |name: &str| {
+        s.engine
+            .create_project(&user, NewProject { name: name.into(), ..Default::default() })
+            .unwrap()
+            .id
+    };
+    let (open, secret) = (project("Offen"), project("Geheim"));
+    s.engine.create_doc_page(&user, &secret, "Internes", "VERBORGEN", None).unwrap();
+
+    let (_, token) =
+        s.registry.create("KI", &[Scope::Read, Scope::Write], std::slice::from_ref(&open)).unwrap();
+    let c = connect(&s.url, &token).await;
+
+    let (t, _) = call(&c, "list_docs", json!({"project": "Offen"})).await;
+    assert!(t.contains("no documentation yet"), "{t}");
+
+    let body = "# Handbuch\nStart\n\n## Installation\nLANGER TEXT\n\n## Nutzung\nKURZ";
+    let page = json!({"project": "Offen", "title": "Handbuch", "body": body});
+    let (t, err) = call(&c, "write_doc", page).await;
+    assert!(!err && t.contains("Added"), "{t}");
+    let sub = json!({"project": "Offen", "title": "Details", "body": "Mehr", "parent": "Handbuch"});
+    let (t, err) = call(&c, "write_doc", sub).await;
+    assert!(!err, "{t}");
+    let bad = json!({"project": "Offen", "title": "X", "body": "", "parent": "Gibt es nicht"});
+    let (t, err) = call(&c, "write_doc", bad).await;
+    assert!(err && t.contains("No page"), "{t}");
+
+    let (t, _) = call(&c, "list_docs", json!({"project": "Offen"})).await;
+    assert!(t.contains("[installation]") && t.contains("[nutzung]"), "{t}");
+    assert!(t.contains("  - **Details**"), "subpages are indented: {t}");
+    assert!(!t.contains("[handbuch]"), "the page's own title is no section: {t}");
+
+    let (t, err) = call(&c, "read_doc", json!({"page": "Handbuch", "section": "nutzung"})).await;
+    assert!(!err && t.contains("KURZ") && !t.contains("LANGER TEXT"), "{t}");
+    let (t, _) = call(&c, "read_doc", json!({"page": "Handbuch"})).await;
+    assert!(
+        t.contains("KURZ") && t.contains("LANGER TEXT") && t.contains("<entry-content>"),
+        "{t}"
+    );
+    let (t, err) = call(&c, "read_doc", json!({"page": "Handbuch", "section": "fehlt"})).await;
+    assert!(err && t.contains("installation"), "{t}");
+
+    let update = json!({"project": "Offen", "title": "handbuch", "body": "Neu"});
+    let (t, err) = call(&c, "write_doc", update).await;
+    assert!(!err && t.contains("Updated"), "{t}");
+    let (t, _) = call(&c, "read_doc", json!({"page": "Handbuch"})).await;
+    assert!(t.contains("Neu") && !t.contains("KURZ"), "{t}");
+
+    // Other projects stay closed.
+    let (t, err) = call(&c, "list_docs", json!({"project": "Geheim"})).await;
+    assert!(err && !t.contains("Internes"), "{t}");
+    let (t, err) = call(&c, "read_doc", json!({"page": "Internes"})).await;
+    assert!(err && !t.contains("VERBORGEN"), "{t}");
+    let other = json!({"project": "Geheim", "title": "Y", "body": "Z"});
+    let (_, err) = call(&c, "write_doc", other).await;
+    assert!(err);
+
+    // A mirrored page refuses changes, whoever asks.
+    let files = tempfile::tempdir().unwrap();
+    std::fs::write(files.path().join("spec.md"), "# Spec\nAus der Datei").unwrap();
+    let source =
+        s.engine.add_doc_source(&user, &open, files.path().to_str().unwrap(), None).unwrap();
+    s.engine.sync_doc_source(&user, &source, files.path()).unwrap();
+    let (t, _) = call(&c, "list_docs", json!({"project": "Offen"})).await;
+    assert!(t.contains("read-only"), "{t}");
+    let (t, _) = call(&c, "read_doc", json!({"page": "Spec"})).await;
+    assert!(t.contains("Aus der Datei"), "{t}");
+    let change = json!({"project": "Offen", "title": "Spec", "body": "Anders"});
+    let (t, err) = call(&c, "write_doc", change).await;
+    assert!(err && t.contains("mirrors a file"), "{t}");
+
+    c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
 async fn prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
     c.list_all_prompts().await.unwrap().into_iter().map(|p| p.name).collect()
 }
