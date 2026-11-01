@@ -656,6 +656,8 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 
 **Seit 0.6.0**: Der Graph gruppiert nach Projekten (`app/src/lib/grouped-layout.ts`, im Worker). ForceAtlas2 läuft je Projekt nur über dessen interne Links und nicht mehr live; die Kreise werden darum herum gepackt, Links zwischen Projekten beeinflussen nur die Nähe. Gemessen auf dem Entwicklungs-Mac: 5.000 Einträge rund 7 s, 50.000 rund 60 s beim ersten Anordnen, ein neuer Eintrag bei 50.000 rund 2,4 s. Das Rendern bei 50.000 mit Kreisen ist nicht neu gemessen.
 
+**Seit 0.7.0**: Eingebaute MCP-Prompts in `crates/bm-mcp/src/prompts.rs`, auch im gesperrten Zustand verfügbar; eine geprüfte Vorlage gleichen Namens ersetzt sie. Kein zweiter Tresor für KI-Wissen: Es liegt im Hauptspeicher, was keinem Projekt zuzuordnen ist im Projekt `AI Memory`, das sich wie jedes andere ausblenden lässt. Persönliche Darstellung in `app/src/lib/prefs.svelte.ts`, je Mac im `localStorage`. Das Ausweichen beim Überfahren läuft nur über Styles und schreibt keine Positionen; über 3.000 Einträgen entfällt es.
+
 **Noch aus dem Plan offen**: gespeicherte Ansichten; Verbinden per ⌥-Drag; Binärdaten statt JSON für große Graphen.
 
 **Offen beim Prüfen**: Alle Funktionen aus §18 und §19 sind nur über Tests und das Mock geprüft, nicht in der echten App.

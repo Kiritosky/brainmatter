@@ -2,6 +2,17 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl.
 
+## 0.7.0 · 2026-11-01
+
+Du kannst Modellen jetzt Befehle für Brainmatter geben, und die App lässt sich stärker an dich anpassen.
+
+### Neu
+- **Befehle für KI-Modelle:** `setup-project` baut Struktur und Doku für ein Projekt auf, `update-docs` bringt die Doku auf den neuesten Stand, `capture-session` sichert das Wissen einer Sitzung, `recall` antwortet aus Brainmatter und `tidy-project` räumt ein Projekt auf. In Claude Code zum Beispiel als `/mcp__brainmatter__setup-project`.
+- **Gemeinsames Gedächtnis:** Modelle werden jetzt angewiesen, Entscheidungen, Erkenntnisse und deine Korrekturen von sich aus zu speichern, damit das nächste Modell darauf aufbauen kann. Was zu keinem Projekt passt, kommt in das Projekt `AI Memory`.
+- **Neues Verhalten beim Überfahren:** Ein Eintrag unter der Maus wird größer, und die Einträge daneben rücken zur Seite. Der große weiße Rand ist weg.
+- **Einstellungen für den Graph:** Hintergründe und Namen der Projekte, Ausweichen und Abdunkeln beim Überfahren, Größe der Einträge, Stärke der Linien und Menge der Beschriftungen.
+- **Mehr unter Allgemein:** Akzentfarbe, weniger Bewegung, KI-Aktivität ein- und ausblenden, Neuerungen nach Updates abschalten.
+
 ## 0.6.0 · 2026-11-01
 
 Im Graph sind deine Projekte jetzt klar getrennt. Linien zwischen ihnen gibt es nur dort, wo Einträge wirklich verlinkt sind.
