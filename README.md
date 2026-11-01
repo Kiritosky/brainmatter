@@ -90,7 +90,7 @@ Clients that only speak stdio can use the bridge inside the app bundle, `Brainma
 |---|---|
 | `search`, `get`, `explore`, `find_path`, `similar` | Finding and reading |
 | `capture`, `update`, `link`, `unlink`, `merge`, `attach` | Writing |
-| `list_projects`, `project_overview`, `create_project`, `add_to_project`, `remove_from_project` | Projects |
+| `list_projects`, `project_overview`, `create_project`, `update_project`, `delete_project`, `add_to_project`, `remove_from_project` | Projects |
 | `read_attachment`, `unreviewed`, `unlinked`, `recent_changes` | Reviewing |
 | `link_file`, `read_linked_file` | Files on your Mac |
 | `list_docs`, `read_doc`, `write_doc` | Project documentation |
