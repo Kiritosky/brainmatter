@@ -15,8 +15,8 @@
   --color-text: #e4e8f1;
   --color-muted: #9099ad;
   --color-faint: #5d6579;
-  --color-accent: #7f9dff;
-  --color-accent-strong: #6386ff;
+  --color-accent: var(--accent-on-dark);
+  --color-accent-strong: var(--accent-strong-on-dark);
   --color-ok: #5fd3a5;
   --color-warn: #f5c451;
   --color-danger: #ff7a7a;
@@ -36,13 +36,53 @@
     --color-text: #191e2a;
     --color-muted: #5b6477;
     --color-faint: #8a93a5;
-    --color-accent: #4f70f0;
-    --color-accent-strong: #3d5fe6;
+    --color-accent: var(--accent-on-light);
+    --color-accent-strong: var(--accent-strong-on-light);
     --color-ok: #17935f;
     --color-warn: #b37a00;
     --color-danger: #d93d3d;
     --color-ai: #8a4fe0;
   }
+}
+
+/* The accent the user picked, in a shade for each theme. */
+:root {
+  --accent-on-dark: #7f9dff;
+  --accent-strong-on-dark: #6386ff;
+  --accent-on-light: #4f70f0;
+  --accent-strong-on-light: #3d5fe6;
+}
+:root[data-accent='teal'] {
+  --accent-on-dark: #4fd1c5;
+  --accent-strong-on-dark: #2fb8ac;
+  --accent-on-light: #0f9488;
+  --accent-strong-on-light: #0b7d73;
+}
+:root[data-accent='green'] {
+  --accent-on-dark: #6ad48a;
+  --accent-strong-on-dark: #4fbf72;
+  --accent-on-light: #1f9d55;
+  --accent-strong-on-light: #18854a;
+}
+:root[data-accent='amber'] {
+  --accent-on-dark: #f2b15c;
+  --accent-strong-on-dark: #e89b3a;
+  --accent-on-light: #c77a12;
+  --accent-strong-on-light: #ad680c;
+}
+:root[data-accent='rose'] {
+  --accent-on-dark: #f58ab0;
+  --accent-strong-on-dark: #ee6d9a;
+  --accent-on-light: #d6437a;
+  --accent-strong-on-light: #bf3168;
+}
+
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 :root[data-theme='light'] {
@@ -55,8 +95,8 @@
   --color-text: #191e2a;
   --color-muted: #5b6477;
   --color-faint: #8a93a5;
-  --color-accent: #4f70f0;
-  --color-accent-strong: #3d5fe6;
+  --color-accent: var(--accent-on-light);
+  --color-accent-strong: var(--accent-strong-on-light);
   --color-ok: #17935f;
   --color-warn: #b37a00;
   --color-danger: #d93d3d;

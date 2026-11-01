@@ -27,6 +27,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - Projects nested to any depth, and an entry can be in several of them
 - A graph that stays smooth with 50,000 entries, coloured by project, kind or automatically detected theme
 - Projects drawn as separate groups, nested for subprojects, with lines only where entries are actually linked
+- Yours to adjust: group backgrounds, entry size, line weight, labels, accent colour, motion
 - A time slider that replays how your graph grew
 - Quick capture from anywhere with <kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd>
 

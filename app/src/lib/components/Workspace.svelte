@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { ChevronRight, Clock, Sparkles } from '@lucide/svelte';
-  import { api, createdAt, type Status } from '#lib/api.ts';
+  import { api, createdAt, type Id, type Status } from '#lib/api.ts';
   import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
+  import { prefs } from '#lib/prefs.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
   import Sidebar from './Sidebar.svelte';
   import GraphView from './GraphView.svelte';
@@ -33,6 +34,7 @@
   ];
 
   const suggested = $derived(ws.suggestions.map((s) => s.node.id));
+  const NOTHING_PULSING = new Set<Id>();
   const graphProjects = $derived(
     ws.projects.map(({ project }) => ({
       id: project.id,
@@ -119,14 +121,14 @@
         {suggested}
         {until}
         hidden={ws.hiddenNodes}
-        pulsing={ws.pulsing}
+        pulsing={prefs.values.aiActivity ? ws.pulsing : NOTHING_PULSING}
         projects={graphProjects}
         onopenproject={(id) => ws.setView(id)}
         colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />
 
-      {#if ws.aiActivity && ws.main === 'graph'}
+      {#if ws.aiActivity && prefs.values.aiActivity && ws.main === 'graph'}
         <div class="glass-pill pointer-events-none absolute top-3 left-1/2 z-10 !h-8 max-w-[70%] -translate-x-1/2 gap-2 !px-3 text-xs" role="status" transition:pop={{ duration: 180, y: -6 }}>
           <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-ai"></span>
           <span class="shrink-0 font-medium text-ai">{ws.aiActivityName}</span>

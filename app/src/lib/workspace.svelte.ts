@@ -20,6 +20,7 @@ import {
   type Similar,
 } from './api';
 import { isNewer, releasesSince, type Release } from './changelog';
+import { prefs } from './prefs.svelte.ts';
 
 const PROJECT_PALETTE = [
   '#7c9cff', '#5fd3a5', '#ff8a7a', '#f5c451', '#c38bff',
@@ -279,7 +280,7 @@ class Workspace {
     const updated = seen ? isNewer(current, seen) : (this.graph?.nodes.length ?? 0) > 0;
     if (!updated) return;
     const items = releasesSince(seen, current);
-    if (items.length) this.changelog = { heading: 'Was ist neu', items };
+    if (items.length && prefs.values.whatsNew) this.changelog = { heading: 'Was ist neu', items };
   }
 
   stop() {

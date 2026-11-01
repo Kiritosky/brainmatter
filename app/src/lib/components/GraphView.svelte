@@ -6,6 +6,8 @@
   import { api, createdAt, type GraphNode, type GraphSnapshot, type Id } from '#lib/api.ts';
   import { assignGroups, NO_PROJECT, type Circle, type LayoutInput, type LayoutResult } from '#lib/grouped-layout.ts';
   import LayoutWorker from '#lib/grouped-layout.worker.ts?worker';
+  import { keepInside, pushAround, type Point } from '#lib/hover-push.ts';
+  import { motionAllowed, prefs } from '#lib/prefs.svelte.ts';
   import { theme } from '#lib/theme.svelte.ts';
 
   let {
@@ -68,6 +70,136 @@
   // Likewise, and not node attributes: Sigma would have to repaint nodes the sync
   // just added and hasn't processed yet, and throws.
   let filteredOut: Set<Id> = new Set();
+  // Likewise read by the styles.
+  const NODE_SCALE = { small: 0.75, medium: 1, large: 1.35 };
+  const EDGE_SCALE = { small: 0.7, medium: 1, large: 1.6 };
+  const LABELS = {
+    few: { labelDensity: 0.4, labelGridCellSize: 140 },
+    normal: { labelDensity: 0.8, labelGridCellSize: 90 },
+    many: { labelDensity: 2, labelGridCellSize: 60 },
+  };
+  let nodeScale = 1;
+  let edgeScale = 1;
+
+  // ---------------------------------------------------- pointer ---
+  /** Around the entry under the pointer, on screen. */
+  const PUSH_RADIUS_PX = 150;
+  const PUSH_PX = 85;
+  const MAX_PUSHED = 80;
+  const HOVER_GROW = 1.45;
+  /** Time constant of the movement: nearly there after three of these. */
+  const HOVER_TAU_MS = 50;
+  const ROOM_MARGIN = 3;
+
+  interface Lift {
+    x: number;
+    y: number;
+    toX: number;
+    toY: number;
+    scale: number;
+    toScale: number;
+  }
+  /**
+   * What the pointer changes on screen. It is applied by the styles and never
+   * written to the graph, whose positions are the ones that get saved and laid out.
+   */
+  const lifted = new Map<string, Lift>();
+  let hoverFrame = 0;
+  let hoverStepAt = 0;
+
+  function liftOf(id: string) {
+    let lift = lifted.get(id);
+    if (!lift) {
+      lift = { x: 0, y: 0, toX: 0, toY: 0, scale: 1, toScale: 1 };
+      lifted.set(id, lift);
+    }
+    return lift;
+  }
+
+  function pixelsPerUnit() {
+    const zero = renderer!.graphToViewport({ x: 0, y: 0 });
+    const one = renderer!.graphToViewport({ x: 1, y: 0 });
+    return Math.hypot(one.x - zero.x, one.y - zero.y) || 1;
+  }
+
+  function hoverOver(node: string | null) {
+    for (const lift of lifted.values()) {
+      lift.toX = lift.toY = 0;
+      lift.toScale = 1;
+    }
+    if (renderer && node && graph.hasNode(node)) {
+      const lift = liftOf(node);
+      // It stays where it is on screen, or moving it could take it away from the
+      // pointer, which would end the hover and bring it back.
+      lift.toX = lift.x;
+      lift.toY = lift.y;
+      lift.toScale = HOVER_GROW;
+      if (prefs.values.hoverPush && motionAllowed() && graph.order <= MAX_ANIMATED) {
+        const a = graph.getNodeAttributes(node);
+        const anchor = { x: a.x + lift.x, y: a.y + lift.y };
+        const perUnit = pixelsPerUnit();
+        const others: (Point & { id: string })[] = [];
+        graph.forEachNode((id, n) => {
+          if (id !== node && !filteredOut.has(id) && (n.born as number) <= visibleUntil) others.push({ id, x: n.x, y: n.y });
+        });
+        const pushes = pushAround(anchor, others, PUSH_RADIUS_PX / perUnit, PUSH_PX / perUnit, MAX_PUSHED);
+        const rooms = new Map(circles.map((c) => [c.id, c]));
+        for (const [id, push] of pushes) {
+          const { x, y } = graph.getNodeAttributes(id);
+          const home = { x, y };
+          const room = rooms.get(groupOf.get(id) ?? '');
+          // Pushed along, but never out of its project.
+          const offset = room ? keepInside(home, push, { x: room.x, y: room.y, r: room.r - ROOM_MARGIN }) : push;
+          const other = liftOf(id);
+          other.toX = offset.x;
+          other.toY = offset.y;
+        }
+      }
+    }
+    if (!hoverFrame) {
+      hoverStepAt = performance.now();
+      hoverFrame = requestAnimationFrame(hoverStep);
+    }
+  }
+
+  function hoverStep(now: number) {
+    hoverFrame = 0;
+    if (!renderer) return;
+    const k = motionAllowed() ? 1 - Math.exp(-(now - hoverStepAt) / HOVER_TAU_MS) : 1;
+    hoverStepAt = now;
+    const closeEnough = 0.3 / pixelsPerUnit();
+    const changed: string[] = [];
+    let moving = false;
+    for (const [id, lift] of lifted) {
+      if (!graph.hasNode(id)) {
+        lifted.delete(id);
+        continue;
+      }
+      lift.x += (lift.toX - lift.x) * k;
+      lift.y += (lift.toY - lift.y) * k;
+      lift.scale += (lift.toScale - lift.scale) * k;
+      const settled = Math.abs(lift.toScale - lift.scale) < 0.004 && Math.hypot(lift.toX - lift.x, lift.toY - lift.y) < closeEnough;
+      if (settled) {
+        lift.x = lift.toX;
+        lift.y = lift.toY;
+        lift.scale = lift.toScale;
+        if (!lift.x && !lift.y && lift.scale === 1) lifted.delete(id);
+      } else {
+        moving = true;
+      }
+      changed.push(id);
+    }
+    if (changed.length) renderer.refresh({ partialGraph: { nodes: changed }, skipIndexation: false });
+    if (moving) hoverFrame = requestAnimationFrame(hoverStep);
+  }
+
+  /** For when positions are about to change for real. */
+  function dropLifts() {
+    cancelAnimationFrame(hoverFrame);
+    hoverFrame = 0;
+    lifted.clear();
+  }
+
   /** A burst of this many says as much as a thousand, and stays cheap. */
   const MAX_RINGS = 30;
   // Plain elements above the canvas: animating node sizes would redraw the graph
@@ -191,13 +323,12 @@
     return box;
   }
 
+  /** A fixed frame, so that entries moved for a moment never rescale the whole picture. */
   function fitToCircles() {
     if (!renderer) return;
-    if (!circles.length) {
-      renderer.setCustomBBox(null);
-      return;
-    }
-    renderer.setCustomBBox(boxAround(circles.filter((c) => c.parent === null), [...placed.values()]));
+    const box = boxAround(circles.filter((c) => c.parent === null), [...placed.values()]);
+    const flat = !(box.x[1] > box.x[0]) && !(box.y[1] > box.y[0]);
+    renderer.setCustomBBox(flat ? null : box);
     // Only a refresh rescales; `frameShown` converts coordinates right after this.
     renderer.refresh();
   }
@@ -281,6 +412,7 @@
 
     const target = new Map(positions.map((p) => [p.id, p]));
     placed = target;
+    dropLifts();
     const finish = () => {
       markGrouped(pendingView);
       saveLayout();
@@ -297,7 +429,7 @@
     graph.forEachNode((id, a) => {
       if (target.has(id)) start.set(id, { x: a.x, y: a.y });
     });
-    const motion = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : MOVE_MS;
+    const motion = motionAllowed() ? MOVE_MS : 0;
     if (!motion || start.size > MAX_ANIMATED) {
       graph.updateEachNodeAttributes((id, a) => {
         const p = target.get(id);
@@ -328,7 +460,8 @@
   /** Highlight a node and its direct neighbours (hover wins over selection). */
   function applyHighlight() {
     if (!renderer) return;
-    const focus = hovered ?? (selected && graph.hasNode(selected) ? selected : null);
+    const pointedAt = prefs.values.hoverDim ? hovered : null;
+    const focus = pointedAt ?? (selected && graph.hasNode(selected) ? selected : null);
     const nodes = new Set<string>();
     const edges = new Set<string>();
     if (focus) {
@@ -349,6 +482,7 @@
     const viewChanged = snap.view !== currentView;
     if (viewChanged) {
       cancelAnimationFrame(moveFrame);
+      dropLifts();
       graph.clear();
       circles = [];
       placed = new Map();
@@ -481,8 +615,7 @@
         itemSizesReference: 'screen',
         // Room for labels of nodes at the edge of the view.
         stagePadding: 60,
-        labelDensity: 0.8,
-        labelGridCellSize: 90,
+        ...LABELS[prefs.values.labels],
         // The label grid already avoids collisions; don't also hide small nodes.
         labelRenderedSizeThreshold: 3,
       },
@@ -491,6 +624,11 @@
           DEFAULT_STYLES.nodes,
           {
             visibility: (a) => (filteredOut.has(a.key as Id) || (a.born as number) > visibleUntil ? 'hidden' : 'visible'),
+            x: (a) => (a.x as number) + (lifted.get(a.key as string)?.x ?? 0),
+            y: (a) => (a.y as number) + (lifted.get(a.key as string)?.y ?? 0),
+            size: (a) => (a.size as number) * nodeScale * (lifted.get(a.key as string)?.scale ?? 1),
+            // Sigma's default here is a white plate with a shadow behind the entry.
+            backdropVisibility: 'hidden',
             color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? colors.dimNode : (a.color as string)),
             labelColor: (a, s, gs) =>
               gs.hasHighlighted && !s.isHighlighted ? colors.dimLabel : a.reviewed === false ? colors.labelAi : colors.label,
@@ -506,7 +644,7 @@
               filteredOut.has(a.src as Id) || filteredOut.has(a.dst as Id) || (a.born as number) > visibleUntil ? 'hidden' : 'visible',
             color: (a, s, gs) =>
               a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : gs.hasHighlighted ? colors.edgeDim : isBridge(a) ? colors.edgeBridge : colors.edge,
-            size: (a, s) => (a.ghost ? 1 : s.isHighlighted ? 1.5 : isBridge(a) ? 0.9 : 0.6),
+            size: (a, s) => edgeScale * (a.ghost ? 1 : s.isHighlighted ? 1.5 : isBridge(a) ? 0.9 : 0.6),
           },
         ],
       },
@@ -529,17 +667,35 @@
     renderer.on('enterNode', ({ node }) => {
       hovered = node;
       applyHighlight();
+      hoverOver(node);
     });
     renderer.on('leaveNode', () => {
       hovered = null;
       applyHighlight();
+      hoverOver(null);
     });
-    renderer.on('nodeDragStart', () => cancelAnimationFrame(moveFrame));
+    renderer.on('nodeDragStart', () => {
+      cancelAnimationFrame(moveFrame);
+      // Dragging works on real positions, so nothing may be off them any more.
+      dropLifts();
+      renderer?.refresh();
+    });
     renderer.on('nodeDragEnd', ({ node }) => {
       graph.setNodeAttribute(node, 'fixed', true);
       // The circle follows what it contains.
       if (snapshot) requestLayout(snapshot, [], false);
     });
+
+    // For the walkthrough: the canvas has nothing else to look at from outside.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __bmGraph: unknown }).__bmGraph = {
+        onScreen: (title: string) => {
+          const id = graph.findNode((_n, a) => a.label === title);
+          const d = id && renderer?.getNodeDisplayData(id);
+          return d && id ? { ...renderer!.framedGraphToViewport(d), size: d.size, savedX: graph.getNodeAttribute(id, 'x') } : null;
+        },
+      };
+    }
 
     // Sigma only reacts to window resizes; panels also change the container.
     resizeObserver = new ResizeObserver(() => {
@@ -554,6 +710,7 @@
   onDestroy(() => {
     resizeObserver?.disconnect();
     cancelAnimationFrame(moveFrame);
+    cancelAnimationFrame(hoverFrame);
     worker.terminate();
     renderer?.kill();
   });
@@ -594,8 +751,22 @@
 
   $effect(() => {
     void theme.tick;
+    void prefs.values.accent;
     colors = readColors();
     renderer?.refresh();
+  });
+
+  $effect(() => {
+    nodeScale = NODE_SCALE[prefs.values.nodeSize];
+    edgeScale = EDGE_SCALE[prefs.values.edgeWeight];
+    const { labelDensity, labelGridCellSize } = LABELS[prefs.values.labels];
+    void prefs.values.hoverDim;
+    untrack(() => {
+      renderer?.setSetting('labelDensity', labelDensity);
+      renderer?.setSetting('labelGridCellSize', labelGridCellSize);
+      applyHighlight();
+      renderer?.refresh();
+    });
   });
 
   $effect(() => {
@@ -607,9 +778,11 @@
 
 <!-- Beneath the canvas, whose background is transparent. -->
 <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-  {#each onScreen as c (c.id)}
-    <div class="group-circle" style="left: {c.x - c.r}px; top: {c.y - c.r}px; width: {c.r * 2}px; height: {c.r * 2}px; --group: {c.color}"></div>
-  {/each}
+  {#if prefs.values.groupBackgrounds}
+    {#each onScreen as c (c.id)}
+      <div class="group-circle" style="left: {c.x - c.r}px; top: {c.y - c.r}px; width: {c.r * 2}px; height: {c.r * 2}px; --group: {c.color}"></div>
+    {/each}
+  {/if}
 </div>
 
 <div class="absolute inset-0" bind:this={container}></div>
@@ -617,7 +790,7 @@
 <!-- Above it, so that the names can be clicked. -->
 <div class="pointer-events-none absolute inset-0 overflow-hidden">
   {#each onScreen as c (c.id)}
-    {#if c.labelled}
+    {#if c.labelled && prefs.values.groupNames}
       {#if c.id === NO_PROJECT}
         <span class="group-label" style="left: {c.x}px; top: {c.y - c.r + 7}px; max-width: {c.r * 1.5}px; --group: {c.color}">{c.name}</span>
       {:else}

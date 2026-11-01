@@ -1,5 +1,7 @@
 // Light or dark. The choice also lives in localStorage, so the first frame after
 // starting already has the right colours, before the settings have loaded.
+import './prefs.svelte.ts';
+
 const KEY = 'bm.theme';
 
 export type ThemeMode = 'system' | 'light' | 'dark';

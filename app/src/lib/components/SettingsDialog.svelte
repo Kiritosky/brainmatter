@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Palette, Sparkles } from '@lucide/svelte';
+  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Network, Palette, Sparkles } from '@lucide/svelte';
   import { api, errorMessage, type Settings, type Status } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
+  import { DEFAULT_PREFS, prefs, type Accent } from '#lib/prefs.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import { theme } from '#lib/theme.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
@@ -10,10 +11,21 @@
   import { fadeQuick, pop } from '#lib/ui/motion.ts';
   import AiConnections from './AiConnections.svelte';
   import BackupSettings from './BackupSettings.svelte';
+  import GraphSettings from './GraphSettings.svelte';
   import ModelSettings from './ModelSettings.svelte';
   import UpdateSettings from './UpdateSettings.svelte';
 
-  type Tab = 'general' | 'security' | 'password' | 'backups' | 'search' | 'ai';
+  type Tab = 'general' | 'graph' | 'security' | 'password' | 'backups' | 'search' | 'ai';
+
+  // Fixed colours: each swatch shows its own accent, whichever one is active.
+  const ACCENTS: { value: Accent; label: string; color: string }[] = [
+    { value: 'blue', label: 'Blau', color: '#6386ff' },
+    { value: 'teal', label: 'Türkis', color: '#2fb8ac' },
+    { value: 'green', label: 'Grün', color: '#4fbf72' },
+    { value: 'amber', label: 'Bernstein', color: '#e89b3a' },
+    { value: 'rose', label: 'Rosa', color: '#ee6d9a' },
+  ];
+  const isDefault = $derived((Object.keys(DEFAULT_PREFS) as (keyof typeof DEFAULT_PREFS)[]).every((k) => prefs.values[k] === DEFAULT_PREFS[k]));
   let tab = $state<Tab>('general');
   let status = $state<Status | null>(null);
   let settings = $state<Settings | null>(null);
@@ -40,6 +52,7 @@
 
   const tabs: { id: Tab; label: string; icon: typeof Lock }[] = [
     { id: 'general', label: 'Allgemein', icon: Palette },
+    { id: 'graph', label: 'Graph', icon: Network },
     { id: 'security', label: 'Sperren', icon: Lock },
     { id: 'password', label: 'Passwort & Schlüssel', icon: KeyRound },
     { id: 'backups', label: 'Backups', icon: Archive },
@@ -139,14 +152,52 @@
                 </div>
               </div>
               <div class="row">
+                <div class="flex-1">Akzentfarbe</div>
+                <div class="flex gap-2" role="radiogroup" aria-label="Akzentfarbe">
+                  {#each ACCENTS as a (a.value)}
+                    <button class="swatch" style="--swatch: {a.color}" role="radio" aria-checked={prefs.values.accent === a.value}
+                      aria-label={a.label} title={a.label} onclick={() => prefs.set('accent', a.value)}></button>
+                  {/each}
+                </div>
+              </div>
+              <div class="row">
+                <div class="flex-1">
+                  <div>Weniger Bewegung</div>
+                  <div class="text-xs text-faint">Übergänge und Animationen entfallen</div>
+                </div>
+                <Toggle checked={prefs.values.reduceMotion} label="Weniger Bewegung" onchange={(v) => prefs.set('reduceMotion', v)} />
+              </div>
+              <div class="row">
                 <div class="flex-1">
                   <div>Quick Capture</div>
                   <div class="text-xs text-faint">Mit <kbd class="kbd">⌥⇧Space</kbd> von überall aus etwas festhalten</div>
                 </div>
                 <Toggle checked={settings.quick_capture} label="Quick Capture" onchange={(v) => save({ quick_capture: v })} />
               </div>
+              <div class="row">
+                <div class="flex-1">
+                  <div>KI-Aktivität anzeigen</div>
+                  <div class="text-xs text-faint">Einblendung und pulsierende Einträge, wenn eine KI etwas schreibt</div>
+                </div>
+                <Toggle checked={prefs.values.aiActivity} label="KI-Aktivität anzeigen" onchange={(v) => prefs.set('aiActivity', v)} />
+              </div>
+              <div class="row">
+                <div class="flex-1">
+                  <div>Neuerungen nach Updates zeigen</div>
+                  <div class="text-xs text-faint">Die Liste bleibt in den Update-Einstellungen erreichbar</div>
+                </div>
+                <Toggle checked={prefs.values.whatsNew} label="Neuerungen nach Updates zeigen" onchange={(v) => prefs.set('whatsNew', v)} />
+              </div>
             </div>
             <UpdateSettings {settings} onsave={save} />
+            {#if !isDefault}
+              <button class="btn-ghost mt-4" onclick={() => prefs.reset()}>Darstellung zurücksetzen</button>
+            {/if}
+          {:else if tab === 'graph'}
+            <GraphSettings />
+            {#if !isDefault}
+              <button class="btn-ghost mt-4" onclick={() => prefs.reset()}>Darstellung zurücksetzen</button>
+            {/if}
           {:else if tab === 'security'}
             <h2 class="mb-1 text-lg font-semibold">Sperren</h2>
             <p class="mb-5 text-muted">Gesperrt ist alles verschlüsselt, und auch KIs erhalten keinen Zugriff.</p>
@@ -243,3 +294,21 @@
     </div>
   </div>
 </div>
+
+<style>
+  .swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--swatch);
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition: outline-color 140ms, transform 140ms var(--ease-out-soft);
+  }
+  .swatch:hover {
+    transform: scale(1.12);
+  }
+  .swatch[aria-checked='true'] {
+    outline-color: var(--swatch);
+  }
+</style>

@@ -62,6 +62,52 @@ try {
   await page.waitForTimeout(5000);
   await shot(page, '05-graph');
 
+  // Hovering: the entry grows, its surroundings make room and come back, nothing is saved.
+  {
+    const spot = (title: string) =>
+      page.evaluate((t) => (window as unknown as { __bmGraph: { onScreen(t: string): { x: number; y: number; size: number; savedX: number } | null } }).__bmGraph.onScreen(t), title);
+    const apart = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+    const canvas = (await page.locator('main canvas').first().boundingBox())!;
+    const [entry, nearby] = [(await spot('SQLCipher'))!, (await spot('Hybrid-Suche'))!];
+    await page.mouse.move(canvas.x + entry.x, canvas.y + entry.y);
+    await page.waitForTimeout(450);
+    const [grown, pushed] = [(await spot('SQLCipher'))!, (await spot('Hybrid-Suche'))!];
+    await shot(page, '05b-hover');
+    if (grown.size < entry.size * 1.3) errors.push(`hovered entry did not grow: ${entry.size} to ${grown.size}`);
+    if (apart(grown, pushed) < apart(entry, nearby) + 8) errors.push(`neighbour did not move away: ${apart(entry, nearby)} to ${apart(grown, pushed)}`);
+    if (pushed.savedX !== nearby.savedX) errors.push('hovering changed a saved position');
+    await page.mouse.move(canvas.x + 4, canvas.y + 4);
+    await page.waitForTimeout(500);
+    const back = (await spot('Hybrid-Suche'))!;
+    if (apart(back, nearby) > 1) errors.push(`neighbour did not come back: ${apart(back, nearby)} px off`);
+    const size = (await spot('SQLCipher'))!.size;
+    if (Math.abs(size - entry.size) > 0.05) errors.push(`entry did not shrink back: ${size}`);
+  }
+
+  // The personal settings take effect right away.
+  {
+    await page.keyboard.press('Meta+,');
+    const dialog = page.getByRole('dialog', { name: 'Einstellungen' });
+    await dialog.getByRole('button', { name: 'Graph', exact: true }).click();
+    await dialog.getByRole('switch', { name: 'Hintergründe der Projekte' }).click();
+    await page.waitForTimeout(250);
+    await shot(page, '05c-graph-settings');
+    if (await page.locator('.group-circle').count()) errors.push('group backgrounds stayed after switching them off');
+    await dialog.getByRole('button', { name: 'Darstellung zurücksetzen' }).click();
+    if (!(await page.locator('.group-circle').count())) errors.push('resetting did not bring group backgrounds back');
+    await dialog.getByRole('button', { name: 'Allgemein', exact: true }).click();
+    const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim());
+    const before = await accent();
+    await dialog.getByRole('radio', { name: 'Grün' }).click();
+    await page.waitForTimeout(200);
+    await shot(page, '05d-general-settings');
+    if ((await accent()) === before) errors.push(`accent stayed ${before}`);
+    await dialog.getByRole('button', { name: 'Darstellung zurücksetzen' }).click();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await page.waitForTimeout(300);
+  }
+
   await page.keyboard.press('Meta+k');
   await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill('sigma');
   await page.waitForTimeout(300);

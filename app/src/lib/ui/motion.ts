@@ -1,10 +1,10 @@
-// Shared transitions. Everything collapses to instant when the user asks the
-// system for reduced motion.
+// Shared transitions. Everything collapses to instant when the user asks for
+// reduced motion, in the settings here or in the system's.
 import { cubicOut, quintOut } from 'svelte/easing';
 import type { TransitionConfig } from 'svelte/transition';
+import { motionAllowed } from '#lib/prefs.svelte.ts';
 
-const reduced = () =>
-  typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = () => !motionAllowed();
 
 /** Dialogs and popovers: fade in while growing from 97 % and rising 6 px. */
 export function pop(_node: Element, { duration = 180, y = 6 } = {}): TransitionConfig {
