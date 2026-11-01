@@ -50,8 +50,10 @@ jobs:
           mkdir -p app/src-tauri/binaries
           cp target/release/brainmatter-mcp "app/src-tauri/binaries/brainmatter-mcp-$TARGET"
 
+      # In release mode, so the app build below reuses these compiled dependencies
+      # instead of building everything a second time.
       - name: Run all tests
-        run: cargo test --workspace
+        run: cargo test --workspace --release
 
       - name: Build and sign
         working-directory: app
