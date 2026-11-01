@@ -654,6 +654,8 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 
 **Dazu seit 0.5.0**: Favoriten und Tags in der Sidebar, Projekte und Aktionen in ⌘K, Filter im Graph, lokaler Graph, Projekte ausblenden (nur Ansicht, liegt im `localStorage`, gilt nicht für KIs), Tags für Doku-Seiten. Seit 0.5.1 zeigt der Graph Schreibzugriffe von KIs live an und lässt die betroffenen Einträge pulsieren; Lesezugriffe erzeugen keine Ereignisse und bleiben unsichtbar. Die Token-Kosten der MCP-Schnittstelle misst `crates/bm-mcp/tests/token_cost.rs` und begrenzt sie mit Budgets.
 
+**Seit 0.6.0**: Der Graph gruppiert nach Projekten (`app/src/lib/grouped-layout.ts`, im Worker). ForceAtlas2 läuft je Projekt nur über dessen interne Links und nicht mehr live; die Kreise werden darum herum gepackt, Links zwischen Projekten beeinflussen nur die Nähe. Gemessen auf dem Entwicklungs-Mac: 5.000 Einträge rund 7 s, 50.000 rund 60 s beim ersten Anordnen, ein neuer Eintrag bei 50.000 rund 2,4 s. Das Rendern bei 50.000 mit Kreisen ist nicht neu gemessen.
+
 **Noch aus dem Plan offen**: gespeicherte Ansichten; Verbinden per ⌥-Drag; Binärdaten statt JSON für große Graphen.
 
 **Offen beim Prüfen**: Alle Funktionen aus §18 und §19 sind nur über Tests und das Mock geprüft, nicht in der echten App.

@@ -2,6 +2,20 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl.
 
+## 0.6.0 · 2026-11-01
+
+Im Graph sind deine Projekte jetzt klar getrennt. Linien zwischen ihnen gibt es nur dort, wo Einträge wirklich verlinkt sind.
+
+### Neu
+- **Projekte als Gruppen:** Jedes Projekt bekommt im Graph einen eigenen Kreis mit seinem Namen, Unterprojekte liegen darin. Ein Klick auf den Namen öffnet das Projekt.
+- **Verbindungen über Projektgrenzen:** Links zwischen zwei Projekten bleiben als Linien sichtbar und ziehen die Kreise nicht ineinander. Verlinkte Projekte liegen näher beieinander.
+- **Ausblenden ohne Lücke:** Blendest du Projekte aus, rückt die Ansicht auf das, was übrig bleibt.
+
+### Geändert
+- Beim ersten Öffnen ordnet Brainmatter jede Ansicht einmal neu an. Von Hand verschobene Positionen gehen dabei einmalig verloren.
+- Auch nach dem Verschieben eines Projekts wird die Ansicht neu angeordnet.
+- Sehr große Graphen brauchen beim ersten Anordnen etwas Zeit: Bei 50.000 Einträgen rund eine Minute. Die App bleibt dabei bedienbar.
+
 ## 0.5.1 · 2026-11-01
 
 Du siehst jetzt live, wenn eine KI etwas in Brainmatter schreibt.

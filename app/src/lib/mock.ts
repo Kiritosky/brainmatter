@@ -648,7 +648,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     nodes.delete(n.id);
     notify({ type: 'node_deleted', id: n.id });
   },
-  app_version: () => '0.5.1',
+  app_version: () => '0.6.0',
   // Only when asked, so screenshots do not all show an update.
   check_update: () => (updateChecks++ > 0 ? { version: '0.5.0', notes: '### Neu\n- **Etwas Schönes:** Ein Beispiel für Update-Notizen.' } : null),
   install_update: () => undefined,
