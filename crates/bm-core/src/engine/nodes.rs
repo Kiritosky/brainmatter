@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rusqlite::params;
 
 use super::{
-    attachments, edges, projects, refs,
+    attachments, edges, file_links, projects, refs,
     rows::{self, clean_tags, clean_title, snake},
     writer::{Entity, Writer},
 };
@@ -197,6 +197,7 @@ pub(crate) fn purge(w: &mut Writer<'_>, id: &NodeId) -> Result<Vec<String>> {
     };
     let edge_ids = column("SELECT id FROM edges WHERE src = ?1 OR dst = ?1")?;
     let attachment_ids = column("SELECT id FROM attachments WHERE node_id = ?1")?;
+    let file_link_ids = column("SELECT id FROM file_links WHERE node_id = ?1")?;
     let blobs = column("SELECT DISTINCT blob_id FROM attachments WHERE node_id = ?1")?;
 
     let forget = |entity: &str, filter: &str, value: &str| -> Result<()> {
@@ -221,6 +222,9 @@ pub(crate) fn purge(w: &mut Writer<'_>, id: &NodeId) -> Result<Vec<String>> {
     for attachment in &attachment_ids {
         forget(Entity::Attachment.as_str(), "entity_id = ?2", attachment)?;
     }
+    for link in &file_link_ids {
+        forget(Entity::FileLink.as_str(), "entity_id = ?2", link)?;
+    }
 
     for sql in [
         "DELETE FROM edges WHERE src = ?1 OR dst = ?1",
@@ -229,6 +233,7 @@ pub(crate) fn purge(w: &mut Writer<'_>, id: &NodeId) -> Result<Vec<String>> {
         "DELETE FROM embeddings WHERE node_id = ?1",
         "DELETE FROM layout_positions WHERE node_id = ?1",
         "DELETE FROM attachments WHERE node_id = ?1",
+        "DELETE FROM file_links WHERE node_id = ?1",
         "DELETE FROM project_members WHERE node_id = ?1",
         "DELETE FROM node_tags WHERE node_id = ?1",
         "DELETE FROM nodes WHERE id = ?1",
@@ -290,6 +295,9 @@ pub(crate) fn merge(w: &mut Writer<'_>, keep: &NodeId, others: &[NodeId]) -> Res
         }
         for attachment in attachments::of_node(w.conn, other)? {
             attachments::move_to(w, &attachment, keep)?;
+        }
+        for link in file_links::of_node(w.conn, other)? {
+            file_links::move_to(w, &link, keep)?;
         }
         let current = rows::live_node(w.conn, keep)?;
         let body = source.body.trim();

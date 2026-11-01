@@ -297,6 +297,110 @@ async fn rejects_bad_tokens_and_browser_origins() {
     s.shutdown.cancel();
 }
 
+#[tokio::test]
+async fn an_ai_cannot_read_files_the_user_has_not_approved() {
+    let s = start().await;
+    let files = tempfile::tempdir().unwrap();
+    let secret = files.path().join("geheim.txt");
+    std::fs::write(&secret, "KENNWORT").unwrap();
+    let secret = secret.to_str().unwrap().to_string();
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+
+    let (_, token) = s.registry.create("KI", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let c = connect(&s.url, &token).await;
+    call(&c, "capture", json!({"entries": [{"title": "Notiz"}, {"title": "Andere"}]})).await;
+    let read = |file: &str| json!({"entry": "Notiz", "file": file});
+
+    // Paths that were never linked.
+    let (t, err) = call(&c, "read_linked_file", read(&secret)).await;
+    assert!(err && !t.contains("KENNWORT") && t.contains("Only linked files"), "{t}");
+
+    // Linking it itself gets an AI nowhere.
+    let link = json!({"entry": "Notiz", "path": secret, "label": "Datei"});
+    let (t, err) = call(&c, "link_file", link).await;
+    assert!(!err && t.contains("approve"), "{t}");
+    for name in ["Datei", secret.as_str()] {
+        let (t, err) = call(&c, "read_linked_file", read(name)).await;
+        assert!(err && !t.contains("KENNWORT") && t.contains("not approved"), "{t}");
+    }
+
+    // No way to tell whether a path exists before the approval.
+    let missing = json!({"entry": "Notiz", "path": "/gibt/es/nicht.txt", "label": "Fehlt"});
+    let (t, err) = call(&c, "link_file", missing).await;
+    assert!(!err && !t.contains("nicht gefunden"), "{t}");
+    let (t, _) = call(&c, "read_linked_file", read("Fehlt")).await;
+    assert!(t.contains("not approved"), "{t}");
+
+    let id = s.engine.resolve_node("Notiz").unwrap();
+    let detail = s.engine.node_detail(&id).unwrap();
+    let approved = detail.file_links.iter().find(|l| l.label == "Datei").unwrap();
+    s.engine.set_file_link_approved(&user, &approved.id, true).unwrap();
+    let (t, err) = call(&c, "read_linked_file", read("Datei")).await;
+    assert!(!err && t.contains("KENNWORT") && t.contains("<entry-content>"), "{t}");
+
+    // An approval belongs to one link: the same file on another entry is not read.
+    let (t, err) = call(&c, "read_linked_file", json!({"entry": "Andere", "file": secret})).await;
+    assert!(err && !t.contains("KENNWORT"), "{t}");
+
+    // Taking it back works.
+    s.engine.set_file_link_approved(&user, &approved.id, false).unwrap();
+    let (t, err) = call(&c, "read_linked_file", read("Datei")).await;
+    assert!(err && !t.contains("KENNWORT"), "{t}");
+
+    // Folders and binary files are refused plainly.
+    let folder =
+        s.engine.add_file_link(&user, &id, files.path().to_str().unwrap(), Some("Ordner"), None);
+    assert!(folder.unwrap().approved_for_ai);
+    let (t, err) = call(&c, "read_linked_file", read("Ordner")).await;
+    assert!(err && t.contains("folder"), "{t}");
+    let binary = files.path().join("bild.bin");
+    std::fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
+    s.engine.add_file_link(&user, &id, binary.to_str().unwrap(), Some("Binär"), None).unwrap();
+    let (t, err) = call(&c, "read_linked_file", read("Binär")).await;
+    assert!(err && t.contains("binary"), "{t}");
+
+    let (t, _) = call(&c, "get", json!({"entry": "Notiz"})).await;
+    assert!(t.contains("waiting for the user's approval") && t.contains("can read it"), "{t}");
+
+    c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn linked_files_stay_within_project_scope() {
+    let s = start().await;
+    let files = tempfile::tempdir().unwrap();
+    let path = files.path().join("x.txt");
+    std::fs::write(&path, "INHALT").unwrap();
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let project = |name: &str| {
+        s.engine
+            .create_project(&user, NewProject { name: name.into(), ..Default::default() })
+            .unwrap()
+            .id
+    };
+    let (open, secret) = (project("Offen"), project("Geheim"));
+    let hidden = s
+        .engine
+        .create_node(
+            &user,
+            NewNode { title: "Versteckt".into(), projects: vec![secret], ..Default::default() },
+        )
+        .unwrap();
+    s.engine.add_file_link(&user, &hidden.id, path.to_str().unwrap(), Some("x"), None).unwrap();
+
+    let (_, token) = s.registry.create("Begrenzt", &[Scope::Read, Scope::Write], &[open]).unwrap();
+    let c = connect(&s.url, &token).await;
+    let (t, err) = call(&c, "read_linked_file", json!({"entry": "Versteckt", "file": "x"})).await;
+    assert!(err && !t.contains("INHALT"), "{t}");
+    let link = json!({"entry": "Versteckt", "path": "/a.txt"});
+    let (t, err) = call(&c, "link_file", link).await;
+    assert!(err && !t.contains("Linked"), "{t}");
+
+    c.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
 async fn prompt_names(c: &RunningService<RoleClient, ClientConfig>) -> Vec<String> {
     c.list_all_prompts().await.unwrap().into_iter().map(|p| p.name).collect()
 }

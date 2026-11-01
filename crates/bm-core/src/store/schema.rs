@@ -16,6 +16,7 @@ const MIGRATIONS: &[(&str, Option<DataStep>)] = &[
     (V4, None),
     (V5, None),
     (V6, None),
+    (V7, None),
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
@@ -277,4 +278,20 @@ CREATE VIRTUAL TABLE nodes_fts_vocab USING fts5vocab(nodes_fts, 'row');
 const V6: &str = r#"
 CREATE INDEX nodes_graph_idx ON nodes(id, title, kind, reviewed, updated_at, created_by)
     WHERE deleted_at IS NULL;
+"#;
+
+// References to files on the Mac. The bookmark finds a file again after it moved.
+const V7: &str = r#"
+CREATE TABLE file_links (
+    id              TEXT PRIMARY KEY,
+    node_id         TEXT NOT NULL REFERENCES nodes(id),
+    path            TEXT NOT NULL,
+    label           TEXT NOT NULL,
+    bookmark        BLOB,
+    approved_for_ai INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL,
+    created_by      TEXT NOT NULL REFERENCES actors(id),
+    deleted_at      INTEGER
+);
+CREATE INDEX file_links_node_idx ON file_links(node_id);
 "#;

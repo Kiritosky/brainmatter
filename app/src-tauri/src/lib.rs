@@ -53,6 +53,10 @@ impl Hub for SessionHub {
         self.0.open_engine()
     }
 
+    fn resolve_bookmark(&self, bookmark: &[u8]) -> Option<String> {
+        bm_macos::bookmarks::resolve(bookmark)?.to_str().map(str::to_string)
+    }
+
     fn embedder(&self) -> Option<Arc<dyn Embedder>> {
         self.0.embedder()
     }
@@ -287,6 +291,12 @@ pub fn run() {
             commands::check_update,
             commands::install_update,
             commands::templates,
+            commands::file_links,
+            commands::link_files,
+            commands::set_file_link_approved,
+            commands::delete_file_link,
+            commands::reveal_file,
+            commands::open_file,
             commands::trash,
             commands::restore_node,
             commands::purge_node,

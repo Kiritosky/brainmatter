@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{ActorId, AttachmentId, ChangeSetId, EdgeId, NodeId, ProjectId};
+use crate::ids::{ActorId, AttachmentId, ChangeSetId, EdgeId, FileLinkId, NodeId, ProjectId};
 
 pub const DEFAULT_KIND: &str = "note";
 pub const DEFAULT_RELATION: &str = "related_to";
@@ -122,6 +122,21 @@ pub struct NodeDetail {
     pub outgoing: Vec<EdgeView>,
     pub incoming: Vec<EdgeView>,
     pub attachments: Vec<Attachment>,
+    pub file_links: Vec<FileLink>,
+}
+
+/// A reference from an entry to a file or folder on the Mac.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileLink {
+    pub id: FileLinkId,
+    pub node_id: NodeId,
+    pub path: String,
+    pub label: String,
+    /// May AI clients read it through Brainmatter?
+    pub approved_for_ai: bool,
+    pub created_at: i64,
+    pub created_by: ActorId,
+    pub deleted_at: Option<i64>,
 }
 
 /// A template in the library.

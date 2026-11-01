@@ -20,7 +20,7 @@ use bm_core::{
 use rmcp::schemars::{self, JsonSchema};
 use serde::Deserialize;
 
-use crate::{Client, format};
+use crate::{Client, Hub, format};
 
 pub(crate) struct ToolCx {
     pub engine: Arc<Engine>,
@@ -29,6 +29,7 @@ pub(crate) struct ToolCx {
     /// Projects (with subprojects) this client may see; `None` = all.
     pub scope: Option<HashSet<ProjectId>>,
     pub embedder: Option<Arc<dyn Embedder>>,
+    pub hub: Arc<dyn Hub>,
 }
 
 /// What a client may see: `None` for everything, otherwise the projects it was
@@ -105,10 +106,10 @@ impl ToolCx {
         engine: Arc<Engine>,
         ctx: Ctx,
         client: Client,
-        embedder: Option<Arc<dyn Embedder>>,
+        hub: Arc<dyn Hub>,
     ) -> Result<Self, ToolError> {
         let scope = project_scope(&engine, &client)?;
-        Ok(Self { engine, ctx, client, scope, embedder })
+        Ok(Self { engine, ctx, client, scope, embedder: hub.embedder(), hub })
     }
 
     fn visible_project(&self, p: &ProjectId) -> bool {
@@ -585,6 +586,85 @@ pub(crate) fn restore(cx: &ToolCx, a: RestoreArgs) -> Out {
     };
     let n = cx.engine.restore_node(&cx.ctx, &t.node.id)?;
     Ok(format!("Restored **{}** ({}) with its links.", n.title, format::short(&n.id)))
+}
+
+/// Larger files are refused before reading them into memory.
+const MAX_LINKED_FILE_BYTES: u64 = 10 * 1024 * 1024;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LinkFileArgs {
+    /// The entry: exact title, short id or full id.
+    pub entry: String,
+    /// Absolute path of the file or folder.
+    pub path: String,
+    /// What to call it; defaults to the file name.
+    pub label: Option<String>,
+}
+
+pub(crate) fn link_file(cx: &ToolCx, a: LinkFileArgs) -> Out {
+    let id = cx.entry(&a.entry)?;
+    // Without looking at the file system: an AI must not be able to find out what
+    // exists on the Mac by trying paths. The bookmark comes with the approval.
+    let link = cx.engine.add_file_link(&cx.ctx, &id, &a.path, a.label.as_deref(), None)?;
+    let state = if link.approved_for_ai {
+        "It can be read with `read_linked_file`."
+    } else {
+        "The user has to approve it before it can be read with `read_linked_file`."
+    };
+    Ok(format!("Linked {} to the entry. {state}", link.path))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadLinkedFileArgs {
+    /// The entry: exact title, short id or full id.
+    pub entry: String,
+    /// The link's label or path, as listed by `get`.
+    pub file: String,
+}
+
+pub(crate) fn read_linked_file(cx: &ToolCx, a: ReadLinkedFileArgs) -> Out {
+    let id = cx.entry(&a.entry)?;
+    let detail = cx.engine.node_detail(&id)?;
+    let Some(link) = detail.file_links.iter().find(|l| l.label == a.file || l.path == a.file)
+    else {
+        return Err(fail(format!(
+            "„{}“ has no linked file „{}“. Only linked files can be read.",
+            detail.node.title, a.file
+        )));
+    };
+    // First of all, so that no answer below reveals anything about the file.
+    if !link.approved_for_ai {
+        return Err(fail(format!(
+            "The user has not approved reading „{}“. They can do so in Brainmatter, on this entry.",
+            link.label
+        )));
+    }
+    let bookmark = cx.engine.file_link_bookmark(&link.id)?;
+    let path = bookmark.and_then(|b| cx.hub.resolve_bookmark(&b)).unwrap_or(link.path.clone());
+    if path != link.path {
+        cx.engine.set_file_link_location(&link.id, &path, None)?;
+    }
+    let unreadable = |e: std::io::Error| fail(format!("„{}“ cannot be read: {e}", link.label));
+    let meta = std::fs::metadata(&path).map_err(unreadable)?;
+    if meta.is_dir() {
+        return Err(fail(format!("„{}“ is a folder, which cannot be read as text.", link.label)));
+    }
+    if meta.len() > MAX_LINKED_FILE_BYTES {
+        return Err(fail(format!("„{}“ is too large to read here.", link.label)));
+    }
+    let Ok(text) = String::from_utf8(std::fs::read(&path).map_err(unreadable)?) else {
+        return Err(fail(format!(
+            "„{}“ is a binary file, which cannot be read as text.",
+            link.label
+        )));
+    };
+    let shown: String = text.chars().take(MAX_ATTACHMENT_CHARS).collect();
+    let cut = if shown.len() < text.len() {
+        format!("\n\n(Cut off after {MAX_ATTACHMENT_CHARS} characters.)")
+    } else {
+        String::new()
+    };
+    Ok(format!("<entry-content>\n{shown}\n</entry-content>{cut}"))
 }
 
 /// Global templates are for everyone, project templates for who may see the

@@ -67,6 +67,17 @@ pub(crate) fn node_detail(d: &NodeDetail, author: &str) -> String {
             let _ = writeln!(out, "← {}: {}{}", e.edge.relation, brief(&e.other), note(&e.edge));
         }
     }
+    if !d.file_links.is_empty() {
+        out.push_str("\nLinked files on the user's Mac:\n");
+        for l in &d.file_links {
+            let access = if l.approved_for_ai {
+                "`read_linked_file` can read it"
+            } else {
+                "waiting for the user's approval"
+            };
+            let _ = writeln!(out, "- {}: {} ({access})", l.label, l.path);
+        }
+    }
     if !d.attachments.is_empty() {
         out.push_str("\nAttachments (use `read_attachment`):\n");
         for a in &d.attachments {

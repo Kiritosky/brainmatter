@@ -71,6 +71,17 @@ export interface NodeDetail {
   outgoing: EdgeView[];
   incoming: EdgeView[];
   attachments: Attachment[];
+  file_links: Omit<FileLinkStatus, 'exists' | 'is_dir'>[];
+}
+
+export interface FileLinkStatus {
+  id: Id;
+  node_id: Id;
+  path: string;
+  label: string;
+  approved_for_ai: boolean;
+  exists: boolean;
+  is_dir: boolean;
 }
 
 export const TEMPLATE_KIND = 'template';
@@ -386,6 +397,12 @@ export const api = {
   createNode: (input: NewNode) => call<Node>('create_node', { input }),
   updateNode: (id: Id, patch: NodePatch) => call<Node>('update_node', { id, patch }),
   deleteNode: (id: Id) => call<void>('delete_node', { id }),
+  fileLinks: (node: Id) => call<FileLinkStatus[]>('file_links', { node }),
+  linkFiles: (node: Id, folders: boolean) => call<number>('link_files', { node, folders }),
+  setFileLinkApproved: (id: Id, approved: boolean) => call<void>('set_file_link_approved', { id, approved }),
+  deleteFileLink: (id: Id) => call<void>('delete_file_link', { id }),
+  revealFile: (id: Id) => call<void>('reveal_file', { id }),
+  openFile: (id: Id) => call<void>('open_file', { id }),
   templates: () => call<TemplateInfo[]>('templates'),
   trash: (limit = 500) => call<TrashedNode[]>('trash', { limit }),
   restoreNode: (id: Id) => call<Node>('restore_node', { id }),

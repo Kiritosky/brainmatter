@@ -8,6 +8,7 @@
 mod analytics;
 mod attachments;
 mod edges;
+mod file_links;
 mod graph;
 mod history;
 mod nodes;
@@ -32,7 +33,7 @@ use crate::{
     blobs::BlobStore,
     error::{CoreError, Result},
     events::Event,
-    ids::{ActorId, AttachmentId, ChangeSetId, NodeId, ProjectId},
+    ids::{ActorId, AttachmentId, ChangeSetId, FileLinkId, NodeId, ProjectId},
     model::*,
     store::{Db, DbKey},
     time::now_ms,
@@ -299,8 +300,79 @@ impl Engine {
                 incoming.extend(view(e, &src)?);
             }
             let attachments = attachments::of_node(c, id)?;
-            Ok(NodeDetail { node, projects, outgoing, incoming, attachments })
+            let file_links = file_links::of_node(c, id)?;
+            Ok(NodeDetail { node, projects, outgoing, incoming, attachments, file_links })
         })
+    }
+
+    // -------------------------------------------------------- file links ---
+
+    /// Links an entry to a file or folder. Whether AI clients may read it depends
+    /// on who links it; see [`file_links`].
+    pub fn add_file_link(
+        &self,
+        ctx: &Ctx,
+        node: &NodeId,
+        path: &str,
+        label: Option<&str>,
+        bookmark: Option<&[u8]>,
+    ) -> Result<FileLink> {
+        let path = file_links::clean_path(path)?;
+        let label = file_links::label_for(&path, label);
+        let title = self.read(|c| Ok(rows::live_node(c, node)?.title))?;
+        let summary = format!("„{label}“ mit „{title}“ verknüpft");
+        Ok(self.write(ctx, summary, |w| file_links::insert(w, node, &path, &label, bookmark))?.0)
+    }
+
+    /// A live link of a live entry.
+    pub fn file_link(&self, id: &FileLinkId) -> Result<FileLink> {
+        self.read(|c| {
+            let found = file_links::get(c, id)?.filter(|l| l.deleted_at.is_none());
+            let link = found.ok_or_else(|| CoreError::not_found("file link", id.as_str()))?;
+            rows::live_node(c, &link.node_id)?;
+            Ok(link)
+        })
+    }
+
+    pub fn file_link_bookmark(&self, id: &FileLinkId) -> Result<Option<Vec<u8>>> {
+        self.read(|c| {
+            Ok(c.query_row("SELECT bookmark FROM file_links WHERE id = ?1", [id], |r| r.get(0))
+                .optional()?
+                .flatten())
+        })
+    }
+
+    /// Where a link's file is now. Follows the file on disk, so this is not a
+    /// change the user made and leaves no trace in the history.
+    pub fn set_file_link_location(
+        &self,
+        id: &FileLinkId,
+        path: &str,
+        bookmark: Option<&[u8]>,
+    ) -> Result<()> {
+        let path = file_links::clean_path(path)?;
+        self.writer.lock().execute(
+            "UPDATE file_links SET path = ?2, bookmark = coalesce(?3, bookmark) WHERE id = ?1",
+            params![id, path, bookmark],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_file_link_approved(&self, ctx: &Ctx, id: &FileLinkId, approved: bool) -> Result<()> {
+        let link = self.file_link(id)?;
+        let verb = if approved { "für KIs freigegeben" } else { "für KIs gesperrt" };
+        let summary = format!("„{}“ {verb}", link.label);
+        let after = FileLink { approved_for_ai: approved, ..link.clone() };
+        self.write(ctx, summary, |w| file_links::store(w, &link, &after))?;
+        Ok(())
+    }
+
+    pub fn delete_file_link(&self, ctx: &Ctx, id: &FileLinkId) -> Result<()> {
+        let link = self.file_link(id)?;
+        let summary = format!("Verknüpfung „{}“ entfernt", link.label);
+        let after = FileLink { deleted_at: Some(now_ms()), ..link.clone() };
+        self.write(ctx, summary, |w| file_links::store(w, &link, &after))?;
+        Ok(())
     }
 
     // ------------------------------------------------------- attachments ---

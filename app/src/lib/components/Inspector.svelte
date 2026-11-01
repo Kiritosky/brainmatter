@@ -6,6 +6,7 @@
   import { renderMarkdown } from '#lib/markdown.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import AttachmentPreview from './AttachmentPreview.svelte';
+  import FileLinks from './FileLinks.svelte';
   import MarkdownEditor from './MarkdownEditor.svelte';
   import TemplateUse from './TemplateUse.svelte';
   import { pop } from '#lib/ui/motion.ts';
@@ -362,6 +363,8 @@
         Dateien hierher ziehen oder klicken
       </button>
     {/each}
+
+    <FileLinks node={nodeId} />
 
     {#if groups.length}
       <div class="section-title mt-7">Verbindungen</div>

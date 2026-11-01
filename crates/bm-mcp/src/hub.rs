@@ -16,6 +16,12 @@ pub trait Hub: Send + Sync + 'static {
     /// requests clients make on their own, such as listing prompts on connect.
     fn open_engine(&self) -> Option<Arc<Engine>>;
 
+    /// Where a bookmarked file is now. Platform dependent; without it, links keep
+    /// the path they were created with.
+    fn resolve_bookmark(&self, _bookmark: &[u8]) -> Option<String> {
+        None
+    }
+
     /// The embedding model, once the user has set it up. Without one, search
     /// falls back to full text and similarity hints are skipped.
     fn embedder(&self) -> Option<Arc<dyn Embedder>> {

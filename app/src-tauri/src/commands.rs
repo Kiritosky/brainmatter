@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use bm_core::{
     backups::BackupInfo,
-    ids::{AttachmentId, ChangeSetId, NodeId, ProjectId},
+    ids::{AttachmentId, ChangeSetId, FileLinkId, NodeId, ProjectId},
     model::*,
 };
 use bm_mcp::{Client, ClientRegistry, RegistryError, Scope};
@@ -305,6 +305,111 @@ pub fn orphans(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
 pub fn unreviewed(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
     let (engine, _) = session.engine()?;
     Ok(engine.unreviewed(limit.min(500))?)
+}
+
+/// A link as the inspector shows it, checked against the disk.
+#[derive(Serialize)]
+pub struct FileLinkStatus {
+    #[serde(flatten)]
+    link: FileLink,
+    exists: bool,
+    is_dir: bool,
+}
+
+/// The entry's links, following files that moved. An AI's link was made without
+/// touching the disk, and only gets a bookmark once it is approved.
+#[tauri::command(async)]
+pub fn file_links(session: S<'_>, node: NodeId) -> ApiResult<Vec<FileLinkStatus>> {
+    let (engine, _) = session.engine()?;
+    let mut out = Vec::new();
+    for mut link in engine.node_detail(&node)?.file_links {
+        let bookmark = engine.file_link_bookmark(&link.id)?;
+        let moved = bookmark.as_deref().and_then(bm_macos::bookmarks::resolve);
+        if let Some(path) = moved.as_ref().and_then(|p| p.to_str())
+            && path != link.path
+        {
+            engine.set_file_link_location(&link.id, path, None)?;
+            link.path = path.to_string();
+        }
+        let meta = std::fs::metadata(&link.path);
+        let is_dir = meta.as_ref().is_ok_and(|m| m.is_dir());
+        out.push(FileLinkStatus { exists: meta.is_ok(), is_dir, link });
+    }
+    Ok(out)
+}
+
+/// Asks which files or folders to link. Returns how many were linked.
+#[tauri::command(async)]
+pub fn link_files(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    node: NodeId,
+    folders: bool,
+) -> ApiResult<usize> {
+    let (engine, ctx) = session.engine()?;
+    let dialog = app.dialog().file();
+    let picked =
+        if folders { dialog.blocking_pick_folders() } else { dialog.blocking_pick_files() };
+    let mut linked = 0;
+    for target in picked.unwrap_or_default() {
+        let path = target.into_path().map_err(ApiError::internal)?;
+        let text = path
+            .to_str()
+            .ok_or_else(|| ApiError::new("invalid", "Dieser Dateiname wird nicht unterstützt."))?;
+        let bookmark = bm_macos::bookmarks::create(&path);
+        engine.add_file_link(&ctx, &node, text, None, bookmark.as_deref())?;
+        linked += 1;
+    }
+    Ok(linked)
+}
+
+#[tauri::command(async)]
+pub fn set_file_link_approved(session: S<'_>, id: FileLinkId, approved: bool) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    // Approving is the first time this app looks at a path an AI suggested.
+    let link = engine.file_link(&id)?;
+    if approved && engine.file_link_bookmark(&id)?.is_none() {
+        let bookmark = bm_macos::bookmarks::create(std::path::Path::new(&link.path));
+        engine.set_file_link_location(&id, &link.path, bookmark.as_deref())?;
+    }
+    Ok(engine.set_file_link_approved(&ctx, &id, approved)?)
+}
+
+#[tauri::command(async)]
+pub fn delete_file_link(session: S<'_>, id: FileLinkId) -> ApiResult<()> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.delete_file_link(&ctx, &id)?)
+}
+
+fn run_open(args: &[&std::ffi::OsStr]) -> ApiResult<()> {
+    let status = std::process::Command::new("/usr/bin/open").args(args).status();
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        _ => Err(ApiError::new("not_found", "Die Datei wurde nicht gefunden.")),
+    }
+}
+
+#[tauri::command(async)]
+pub fn reveal_file(session: S<'_>, id: FileLinkId) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    let path = engine.file_link(&id)?.path;
+    run_open(&["-R".as_ref(), path.as_ref()])
+}
+
+/// Opens the file with its default app, which for a script or program means
+/// running it. So a path an AI suggested can only be shown in the Finder until the
+/// user has approved it.
+#[tauri::command(async)]
+pub fn open_file(session: S<'_>, id: FileLinkId) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    let link = engine.file_link(&id)?;
+    if !link.approved_for_ai {
+        return Err(ApiError::new(
+            "invalid",
+            "Diesen Pfad hat eine KI vorgeschlagen. Gib ihn erst frei oder zeige ihn im Finder.",
+        ));
+    }
+    run_open(&[link.path.as_ref()])
 }
 
 #[tauri::command(async)]

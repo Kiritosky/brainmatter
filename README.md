@@ -44,7 +44,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - Unlock with your password or Touch ID. While locked, an AI's request can ask you for Touch ID
 - Locks automatically after a set time, on sleep, or with the screen
 
-**Also included:** a library of templates and prompts with `{{placeholders}}`, encrypted attachments with previews, verified daily backups with restore, a trash, light and dark themes, signed automatic updates.
+**Also included:** a library of templates and prompts with `{{placeholders}}`, links to files on your Mac, encrypted attachments with previews, verified daily backups with restore, a trash, light and dark themes, signed automatic updates.
 
 <table>
   <tr>
@@ -87,10 +87,13 @@ Clients that only speak stdio can use the bridge inside the app bundle, `Brainma
 | `capture`, `update`, `link`, `unlink`, `merge`, `attach` | Writing |
 | `list_projects`, `project_overview`, `create_project`, `add_to_project`, `remove_from_project` | Projects |
 | `read_attachment`, `unreviewed`, `unlinked`, `recent_changes` | Reviewing |
+| `link_file`, `read_linked_file` | Files on your Mac |
 | `delete`, `trash`, `restore`, `revert` | Removing and undoing |
 | `list_templates`, `get_template`, `save_template` | Reusable templates and prompts |
 
 Templates you have reviewed also appear as MCP prompts, so in Claude Code a template called "Code Review" becomes `/mcp__brainmatter__code-review`. Whatever an AI writes or changes in a template stays out of that list until you have looked at it.
+
+Entries can link to files and folders on your Mac; the link follows a file when it moves, and only the reference is stored. AI clients can read only linked text files, and a link an AI creates itself stays unreadable until you approve it.
 
 Only you can mark entries as reviewed, erase them for good, manage backups or change settings.
 

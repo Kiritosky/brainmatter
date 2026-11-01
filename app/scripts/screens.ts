@@ -219,6 +219,21 @@ try {
   await page.getByRole('button', { name: 'Alles', exact: true }).first().click();
   await page.waitForTimeout(400);
 
+  // File links: a link an AI suggested needs approval before it can be opened.
+  await openEntry('Tresor');
+  await page.getByRole('button', { name: 'Datei verknüpfen' }).click();
+  await page.getByText('Spezifikation.md', { exact: true }).waitFor();
+  await page.getByText('KIs dürfen diese Datei nicht lesen.').waitFor();
+  await page.getByText('Spezifikation.md', { exact: true }).hover();
+  await page.waitForTimeout(250);
+  await shot(page, '47-file-links');
+  if (await page.getByRole('button', { name: '„config“ öffnen' }).count()) errors.push('an unapproved path can be opened');
+  await page.getByRole('button', { name: 'Freigeben' }).click();
+  await page.getByRole('button', { name: '„config“ öffnen' }).waitFor({ state: 'attached' });
+  await page.getByRole('button', { name: 'Verknüpfung „config“ entfernen' }).click({ force: true });
+  await page.getByText('/Users/alex/.ssh/config').waitFor({ state: 'detached' });
+  await page.getByLabel('Schließen').first().click();
+
   // Library: fill in a template, and check what would be copied.
   await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
   await page.getByText('Code-Review', { exact: true }).waitFor();

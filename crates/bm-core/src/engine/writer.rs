@@ -17,6 +17,7 @@ pub(crate) enum Entity {
     Project,
     Membership,
     Attachment,
+    FileLink,
 }
 
 impl Entity {
@@ -27,6 +28,7 @@ impl Entity {
             Self::Project => "project",
             Self::Membership => "membership",
             Self::Attachment => "attachment",
+            Self::FileLink => "file_link",
         }
     }
 
@@ -37,6 +39,7 @@ impl Entity {
             "project" => Self::Project,
             "membership" => Self::Membership,
             "attachment" => Self::Attachment,
+            "file_link" => Self::FileLink,
             _ => return None,
         })
     }

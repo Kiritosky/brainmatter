@@ -8,6 +8,7 @@ import type {
   ChangeSetInfo,
   DomainEvent,
   Edge,
+  FileLinkStatus,
   GraphSnapshot,
   Attachment,
   ModelStatus,
@@ -52,6 +53,7 @@ const DAY = 86_400_000;
 const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
 let updateChecks = 0;
+const fileLinks: FileLinkStatus[] = [];
 const MODEL_BYTES = 487_724_985;
 let modelState: ModelStatus['state'] = 'missing';
 let modelBytes = 0;
@@ -280,6 +282,7 @@ function detail(nid: string): NodeDetail {
     outgoing: active.filter((e) => e.src === nid).map((e) => ({ edge: e, other: brief(e.dst) })),
     incoming: active.filter((e) => e.dst === nid).map((e) => ({ edge: e, other: brief(e.src) })),
     attachments: [...attachments.values()].filter((a) => a.meta.node_id === nid && !a.deleted).map((a) => a.meta),
+    file_links: fileLinks.filter((l) => l.node_id === nid),
   };
 }
 
@@ -438,6 +441,21 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   node_detail: (a) => detail(a.id),
   search: (a) => search(a.query),
+  // Copies, like every answer of the real backend.
+  file_links: (a) => fileLinks.filter((l) => l.node_id === a.node).map((l) => ({ ...l })),
+  link_files: (a) => {
+    fileLinks.push({ id: id(), node_id: a.node, path: a.folders ? '/Users/alex/Projekte/docs' : '/Users/alex/Projekte/Spezifikation.md', label: a.folders ? 'docs' : 'Spezifikation.md', approved_for_ai: true, exists: true, is_dir: a.folders });
+    fileLinks.push({ id: id(), node_id: a.node, path: '/Users/alex/.ssh/config', label: 'config', approved_for_ai: false, exists: true, is_dir: false });
+    fileLinks.push({ id: id(), node_id: a.node, path: '/Users/alex/Alt/Entwurf.md', label: 'Entwurf.md', approved_for_ai: true, exists: false, is_dir: false });
+    return 1;
+  },
+  set_file_link_approved: (a) => {
+    const link = fileLinks.find((l) => l.id === a.id);
+    if (link) link.approved_for_ai = a.approved;
+  },
+  delete_file_link: (a) => void fileLinks.splice(fileLinks.findIndex((l) => l.id === a.id), 1),
+  reveal_file: () => undefined,
+  open_file: () => undefined,
   templates: () =>
     [...nodes.values()]
       .filter((n) => !n.deleted_at && n.kind === 'template')

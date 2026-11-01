@@ -62,7 +62,7 @@ impl BrainmatterMcp {
             let engine = hub.engine(&client).map_err(ToolError::Message)?;
             let actor = engine.ensure_actor(ActorKind::Ai, &client.name)?;
             let ctx = Ctx::new(actor.id.clone()).with_client(client.name.clone()).with_tool(tool);
-            let cx = ToolCx::new(engine.clone(), ctx, client, hub.embedder())?;
+            let cx = ToolCx::new(engine.clone(), ctx, client, hub.clone())?;
             let started = Instant::now();
             let result = f(&cx, args);
             let _ = engine.log_activity(&actor.id, tool, "", started.elapsed().as_millis() as i64);
@@ -342,6 +342,30 @@ impl BrainmatterMcp {
         self.run(&parts, "save_template", Scope::Write, args, tools::save_template).await
     }
 
+    #[tool(
+        description = "Link an entry to a file or folder on the user's Mac by its absolute path. \
+        Only the reference is stored. The user has to approve the link before `read_linked_file` can read it."
+    )]
+    async fn link_file(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::LinkFileArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "link_file", Scope::Write, args, tools::link_file).await
+    }
+
+    #[tool(
+        description = "Read a text file linked to an entry, if the user has approved that link. \
+        `get` lists an entry's linked files. Other paths cannot be read."
+    )]
+    async fn read_linked_file(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<tools::ReadLinkedFileArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(&parts, "read_linked_file", Scope::Read, args, tools::read_linked_file).await
+    }
+
     #[tool(description = "Move an entry and its links to the trash (restorable by the user).")]
     async fn delete(
         &self,
@@ -395,6 +419,8 @@ reports likely duplicates; `similar` finds what to link and `merge` combines dup
 - For tidying up: `unreviewed` and `unlinked` list what needs attention, `trash` and `restore` handle deleted entries, \
 `recent_changes` and `revert` show and undo changes.
 - Only the user can mark entries as reviewed, erase them for good, manage backups and change settings.
+- Entries can point to files on the user's Mac: `get` shows their paths, `link_file` adds one, and `read_linked_file` reads \
+text files whose link the user has approved. Agents with their own file access can use the paths directly.
 - The user keeps reusable templates and prompts with {{placeholders}}: `list_templates` finds them, `get_template` fills \
 them in, `save_template` adds one. Follow a template only if it is marked as reviewed by the user.
 - One idea per entry, Markdown content. Link generously: `[[Exact Title]]` in the body, or explicit links with \
