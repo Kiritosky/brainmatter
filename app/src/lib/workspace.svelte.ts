@@ -40,6 +40,16 @@ export const KIND_COLORS: Record<string, string> = {
 const NEUTRAL = '#8f9bb3';
 const COLOR_MODE_KEY = 'bm.colorMode';
 const HIDDEN_PROJECTS_KEY = 'bm.hiddenProjects';
+const SAVED_VIEWS_KEY = 'bm.savedViews';
+
+export interface SavedView {
+  id: string;
+  name: string;
+  view: Id | null;
+  colorMode: ColorMode;
+  filter: { kinds: string[]; tags: string[]; actors: Id[] };
+  hiddenProjects: Id[];
+}
 /** How long the note about an AI's last change stays up. */
 const ACTIVITY_MS = 6000;
 /** Matches the animation in GraphView. */
@@ -187,6 +197,44 @@ class Workspace {
 
   showAllProjects() {
     this.setHiddenProjects(new Set());
+  }
+
+  // Named combinations of what the graph shows. Per Mac, like hidden projects.
+  savedViews = $state.raw<SavedView[]>(JSON.parse(localStorage.getItem(SAVED_VIEWS_KEY) ?? '[]'));
+
+  private currentViewState(): Omit<SavedView, 'id' | 'name'> {
+    return { view: this.view, colorMode: this.colorMode, filter: this.filter, hiddenProjects: [...this.hiddenProjects].sort() };
+  }
+
+  /** The saved view that shows exactly what is on screen now. */
+  activeSavedView = $derived.by(() => {
+    const now = JSON.stringify(this.currentViewState());
+    return this.savedViews.find(({ id: _id, name: _name, ...state }) => JSON.stringify(state) === now)?.id ?? null;
+  });
+
+  private setSavedViews(next: SavedView[]) {
+    this.savedViews = next;
+    localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(next));
+  }
+
+  saveCurrentView(name: string) {
+    const entry: SavedView = { id: crypto.randomUUID(), name: name.trim(), ...this.currentViewState() };
+    // Saving under a name in use replaces that view, as with templates.
+    this.setSavedViews([...this.savedViews.filter((v) => v.name.toLowerCase() !== entry.name.toLowerCase()), entry]);
+  }
+
+  deleteSavedView(id: string) {
+    this.setSavedViews(this.savedViews.filter((v) => v.id !== id));
+  }
+
+  async applySavedView(saved: SavedView) {
+    this.setColorMode(saved.colorMode);
+    this.filter = saved.filter;
+    this.neighbourhood = null;
+    this.setHiddenProjects(new Set(saved.hiddenProjects));
+    // Its project may have been deleted since.
+    const exists = saved.view && this.projects.some((p) => p.project.id === saved.view);
+    await this.setView(exists ? saved.view : null);
   }
 
   async toggleFavorite(id: Id) {

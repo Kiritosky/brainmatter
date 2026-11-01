@@ -150,6 +150,7 @@ function analytics(ids: string[], links: [string, string][]) {
 
 const status = (): Status => ({
   state,
+  capture_shortcut_blocked: new URLSearchParams(location.search).has('shortcutBlocked'),
   touch_id_enrolled: touchId,
   biometry_available: true,
   user_name: state === 'unlocked' ? userName : null,

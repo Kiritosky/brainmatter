@@ -123,7 +123,11 @@ fn front_matter(detail: &NodeDetail, attachments: &[String]) -> Result<String> {
     Ok(out)
 }
 
-fn project_folders(projects: &[ProjectSummary], root: &Path, names: &mut Names) -> HashMap<ProjectId, PathBuf> {
+fn project_folders(
+    projects: &[ProjectSummary],
+    root: &Path,
+    names: &mut Names,
+) -> HashMap<ProjectId, PathBuf> {
     let mut folders: HashMap<ProjectId, PathBuf> = HashMap::new();
     let mut waiting: Vec<&Project> = projects.iter().map(|p| &p.project).collect();
     // Parents first, however the list is sorted. Whatever is left when nothing moves
@@ -188,7 +192,8 @@ impl Engine {
 
     fn write_export(&self, root: &Path) -> Result<ExportSummary> {
         let ids: Vec<NodeId> = self.read(|c| {
-            let mut stmt = c.prepare("SELECT id FROM nodes WHERE deleted_at IS NULL ORDER BY id")?;
+            let mut stmt =
+                c.prepare("SELECT id FROM nodes WHERE deleted_at IS NULL ORDER BY id")?;
             let rows = stmt.query_map([], |r| r.get::<_, NodeId>(0))?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         })?;
@@ -226,7 +231,8 @@ impl Engine {
                 match self.attachment_data(&attachment.id) {
                     Ok((_, bytes)) => {
                         fs::create_dir_all(&attachments_dir)?;
-                        let path = names.claim(&attachments_dir, &safe_name(&attachment.filename), "");
+                        let path =
+                            names.claim(&attachments_dir, &safe_name(&attachment.filename), "");
                         fs::write(&path, bytes)?;
                         let relative = path.strip_prefix(root).unwrap_or(&path);
                         saved.push(relative.to_string_lossy().into_owned());

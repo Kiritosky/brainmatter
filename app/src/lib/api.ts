@@ -275,6 +275,7 @@ export interface BackupStatus {
 
 export interface Status {
   state: 'none' | 'locked' | 'unlocked';
+  capture_shortcut_blocked: boolean;
   touch_id_enrolled: boolean;
   biometry_available: boolean;
   user_name: string | null;

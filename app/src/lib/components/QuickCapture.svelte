@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { Check, CornerDownLeft, Fingerprint, Lock, Zap } from '@lucide/svelte';
-  import { api, errorMessage, onCaptureOpen, onSession, type Status } from '#lib/api.ts';
+  import { Check, CornerDownLeft, Fingerprint, FolderOpen, Lock, Zap } from '@lucide/svelte';
+  import { api, errorMessage, onCaptureOpen, onSession, type Id, type ProjectSummary, type Status } from '#lib/api.ts';
   import { pop } from '#lib/ui/motion.ts';
 
   let { status: initial }: { status: Status } = $props();
@@ -18,13 +18,60 @@
 
   const locked = $derived(status.state !== 'unlocked');
 
+  // Where it goes. Remembered, because captures tend to come in runs for one topic.
+  const PROJECT_KEY = 'bm.captureProject';
+  let projects = $state.raw<ProjectSummary[]>([]);
+  let project = $state<Id | null>(localStorage.getItem(PROJECT_KEY));
+  let picking = $state(false);
+  let pickerQuery = $state('');
+  let pickerIndex = $state(0);
+  let pickerField: HTMLInputElement | undefined = $state();
+
+  const projectName = $derived(projects.find((p) => p.project.id === project)?.project.name ?? null);
+  const pickable = $derived.by(() => {
+    const query = pickerQuery.trim().toLowerCase();
+    const found = projects.map((p) => ({ id: p.project.id as Id | null, name: p.project.name })).filter((p) => p.name.toLowerCase().includes(query));
+    return query ? found : [{ id: null, name: 'Ohne Projekt' }, ...found];
+  });
+
+  async function openPicker() {
+    picking = true;
+    pickerQuery = '';
+    pickerIndex = 0;
+    await tick();
+    pickerField?.focus();
+  }
+
+  async function pick(id: Id | null) {
+    project = id;
+    if (id) localStorage.setItem(PROJECT_KEY, id);
+    else localStorage.removeItem(PROJECT_KEY);
+    picking = false;
+    await tick();
+    field?.focus();
+  }
+
   async function reset() {
     text = '';
     saved = false;
     error = null;
+    picking = false;
     status = await api.status();
+    await loadProjects();
     await tick();
     field?.focus();
+  }
+
+  // On every opening and after unlocking here, since nothing can be read before.
+  async function loadProjects() {
+    if (status.state !== 'unlocked') return;
+    try {
+      projects = await api.projects();
+      // Its project may have been deleted since.
+      if (project && !projects.some((p) => p.project.id === project)) project = null;
+    } catch {
+      // Without the list the entry still saves, in the project already chosen.
+    }
   }
 
   async function close() {
@@ -40,7 +87,7 @@
     saving = true;
     error = null;
     try {
-      await api.createNode({ title, body: rest.join('\n').trim() });
+      await api.createNode({ title, body: rest.join('\n').trim(), projects: project ? [project] : [] });
       saved = true;
       setTimeout(close, 450);
     } catch (e) {
@@ -65,8 +112,20 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (picking) {
+      if (e.key === 'Escape') pick(project);
+      else if (e.key === 'ArrowDown') pickerIndex = Math.min(pickerIndex + 1, pickable.length - 1);
+      else if (e.key === 'ArrowUp') pickerIndex = Math.max(pickerIndex - 1, 0);
+      else if (e.key === 'Enter' && pickable[pickerIndex]) pick(pickable[pickerIndex].id);
+      else return;
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Escape') close();
-    else if (e.key === 'Enter' && !e.shiftKey && !locked) {
+    else if ((e.metaKey || e.ctrlKey) && e.key === 'p' && !locked) {
+      e.preventDefault();
+      openPicker();
+    } else if (e.key === 'Enter' && !e.shiftKey && !locked) {
       e.preventDefault();
       submit();
     }
@@ -75,7 +134,10 @@
   onMount(() => {
     const cleanups = [
       onCaptureOpen(reset),
-      onSession((s) => (status = s)),
+      onSession((s) => {
+        status = s;
+        loadProjects();
+      }),
       // Clicking elsewhere dismisses it, like Spotlight. Not in a plain browser.
       document.documentElement.classList.contains('tauri')
         ? getCurrentWindow().onFocusChanged(({ payload: focused }) => {
@@ -109,6 +171,23 @@
       <div class="flex flex-1 items-center justify-center gap-2.5 font-medium text-ok" in:pop={{ duration: 180, y: 0 }}>
         <span class="flex h-6 w-6 items-center justify-center rounded-full bg-ok/15"><Check size={14} /></span> Festgehalten
       </div>
+    {:else if picking}
+      <!-- In place of the text, because a popup could not leave this small window. -->
+      <div class="flex min-h-0 flex-1 flex-col" in:pop={{ duration: 120, y: 2 }}>
+        <input class="w-full shrink-0 border-b border-line-soft bg-transparent px-4 py-2.5 outline-none placeholder:text-faint" placeholder="Projekt suchen …" aria-label="Projekt suchen"
+          bind:this={pickerField} bind:value={pickerQuery} oninput={() => (pickerIndex = 0)} />
+        <div class="min-h-0 flex-1 overflow-y-auto p-1" role="listbox" aria-label="Projekte">
+          {#each pickable as option, i (option.id ?? 'none')}
+            <button class="flex w-full items-center gap-2 rounded-md px-3 py-1 text-left transition-colors {i === pickerIndex ? 'bg-accent/15 text-text' : 'text-muted'}"
+              role="option" aria-selected={i === pickerIndex} onmouseenter={() => (pickerIndex = i)} onclick={() => pick(option.id)}>
+              <span class="truncate">{option.name}</span>
+              {#if option.id === project}<Check size={13} class="ml-auto shrink-0 text-accent" />{/if}
+            </button>
+          {:else}
+            <div class="px-3 py-1 text-faint">Kein Projekt gefunden</div>
+          {/each}
+        </div>
+      </div>
     {:else}
       <div class="flex min-h-0 flex-1 gap-3 px-4 pt-3.5">
         <Zap size={16} class="mt-0.5 shrink-0 text-accent" />
@@ -123,7 +202,9 @@
         {#if error}
           <span class="truncate text-danger">{error}</span>
         {:else}
-          <span>Erste Zeile wird zum Titel</span>
+          <button class="flex min-w-0 items-center gap-1.5 rounded transition-colors hover:text-text" title="Projekt wählen" onclick={openPicker}>
+            <FolderOpen size={12} class="shrink-0" /> <span class="max-w-40 truncate">{projectName ?? 'Ohne Projekt'}</span> <span class="kbd shrink-0">⌘P</span>
+          </button>
         {/if}
         <span class="ml-auto flex items-center gap-1.5"><span class="kbd">⇧↵</span> Neue Zeile</span>
         <span class="flex items-center gap-1.5"><span class="kbd"><CornerDownLeft size={10} /></span> Sichern</span>

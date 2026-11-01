@@ -23,9 +23,12 @@
     onselect,
     onopen,
     onopenproject,
+    onlink,
   }: {
     projects: { id: Id; parent: Id | null; name: string; color: string }[];
     onopenproject: (id: Id) => void;
+    /** Dragged from one entry to another with ⌥. */
+    onlink: (src: Id, dst: Id) => void;
     /** Entries the filters hide. They keep their place in the layout. */
     hidden: Set<Id>;
     /** Entries to point out for a moment, because an AI just changed them. */
@@ -46,6 +49,8 @@
   let renderer: Sigma | undefined;
   let currentView: string | null = null;
   let hovered: string | null = null;
+  /** The line being drawn with ⌥ from one entry to another, in viewport coordinates. */
+  let linking = $state.raw<{ from: string; x: number; y: number; toX: number; toY: number } | null>(null);
   let resizeObserver: ResizeObserver | undefined;
   const graph = new Graph({ type: 'directed', multi: true });
 
@@ -61,6 +66,7 @@
     edgeActive: css('--color-muted'),
     edgeGhost: css('--color-accent'),
     edgeBridge: css('--color-faint'),
+    plate: css('--color-bg'),
   });
   let colors = readColors();
   const GHOST = 'ghost:';
@@ -629,6 +635,9 @@
             size: (a) => (a.size as number) * nodeScale * (lifted.get(a.key as string)?.scale ?? 1),
             // Sigma's default here is a white plate with a shadow behind the entry.
             backdropVisibility: 'hidden',
+            // So that a line leaving the entry does not run through its name.
+            labelBackgroundColor: (_a, s) => (s.isHovered || s.isHighlighted ? colors.plate : 'rgba(0, 0, 0, 0)'),
+            labelBackgroundPadding: 2,
             color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? colors.dimNode : (a.color as string)),
             labelColor: (a, s, gs) =>
               gs.hasHighlighted && !s.isHighlighted ? colors.dimLabel : a.reviewed === false ? colors.labelAi : colors.label,
@@ -664,21 +673,44 @@
       onopen(node);
     });
     renderer.on('clickStage', () => onselect(null));
+    // Into the innermost project under the pointer. Elsewhere it zooms, as usual.
+    renderer.on('doubleClickStage', ({ event, preventSigmaDefault }) => {
+      const at = renderer!.viewportToGraph(event);
+      const inside = circles.filter((c) => c.id !== NO_PROJECT && shownGroups.has(c.id) && Math.hypot(at.x - c.x, at.y - c.y) <= c.r);
+      const innermost = inside.at(-1);
+      if (innermost) {
+        preventSigmaDefault();
+        onopenproject(innermost.id);
+      }
+    });
     renderer.on('enterNode', ({ node }) => {
       hovered = node;
       applyHighlight();
-      hoverOver(node);
+      if (!linking) hoverOver(node);
     });
     renderer.on('leaveNode', () => {
       hovered = null;
       applyHighlight();
       hoverOver(null);
     });
-    renderer.on('nodeDragStart', () => {
-      cancelAnimationFrame(moveFrame);
+    renderer.on('nodeDragStart', ({ node, event, preventSigmaDefault }) => {
       // Dragging works on real positions, so nothing may be off them any more.
+      cancelAnimationFrame(moveFrame);
       dropLifts();
       renderer?.refresh();
+      if ((event.original as MouseEvent).altKey) {
+        preventSigmaDefault();
+        const { x, y } = graph.getNodeAttributes(node) as { x: number; y: number };
+        linking = { from: node, ...renderer!.graphToViewport({ x, y }), toX: event.x, toY: event.y };
+      }
+    });
+    renderer.on('moveBody', ({ event, preventSigmaDefault }) => {
+      if (!linking) return;
+      preventSigmaDefault();
+      linking = { ...linking, toX: event.x, toY: event.y };
+    });
+    renderer.on('upNode', ({ node }) => {
+      if (linking && node !== linking.from) onlink(linking.from, node);
     });
     renderer.on('nodeDragEnd', ({ node }) => {
       graph.setNodeAttribute(node, 'fixed', true);
@@ -694,6 +726,13 @@
           const d = id && renderer?.getNodeDisplayData(id);
           return d && id ? { ...renderer!.framedGraphToViewport(d), size: d.size, savedX: graph.getNodeAttribute(id, 'x') } : null;
         },
+        ringOnScreen: (project: string) => {
+          const c = circles.find((circle) => circle.id === project);
+          if (!c || !renderer) return null;
+          const centre = renderer.graphToViewport(c);
+          return { ...centre, radius: Math.abs(renderer.graphToViewport({ x: c.x + c.r, y: c.y }).x - centre.x) };
+        },
+        camera: () => renderer?.getCamera().getState(),
       };
     }
 
@@ -801,6 +840,16 @@
   {/each}
 </div>
 
+{#if linking}
+  <svg class="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
+    <line x1={linking.x} y1={linking.y} x2={linking.toX} y2={linking.toY} class="link-line" />
+    <circle cx={linking.toX} cy={linking.toY} r="4" class="link-end" />
+  </svg>
+{/if}
+
+<!-- Wherever the button is let go; `upNode` has already seen it by then. -->
+<svelte:window onmouseup={() => setTimeout(() => (linking = null))} />
+
 {#each rings as ring (ring.id)}
   <span class="pulse-ring" style="left: {ring.x}px; top: {ring.y}px"></span>
 {/each}
@@ -840,6 +889,14 @@
   }
   .group-link:hover {
     background: color-mix(in srgb, var(--group) 16%, transparent);
+  }
+  .link-line {
+    stroke: var(--color-accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+  }
+  .link-end {
+    fill: var(--color-accent);
   }
   .pulse-ring {
     position: absolute;

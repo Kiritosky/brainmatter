@@ -741,6 +741,147 @@ try {
   }
 }
 
+// Getting around the graph, and what the settings say when a shortcut is taken.
+{
+  const nav = await open('/?shortcutBlocked');
+  type Hook = {
+    onScreen(t: string): { x: number; y: number } | null;
+    ringOnScreen(id: string): { x: number; y: number; radius: number } | null;
+    camera(): { x: number; y: number; ratio: number };
+  };
+  const hook = <T,>(fn: (h: Hook, arg: string) => T, arg = '') =>
+    nav.evaluate(([f, a]) => new Function('h', 'a', `return (${f})(h, a)`)((window as unknown as { __bmGraph: Hook }).__bmGraph, a), [fn.toString(), arg] as const) as Promise<T>;
+  try {
+    await nav.getByPlaceholder('Master-Passwort').fill('demo1234');
+    await nav.getByRole('button', { name: 'Entsperren', exact: true }).click();
+    await nav.getByText('Einträge ·').waitFor();
+    await nav.waitForTimeout(1200);
+    const canvas = (await nav.locator('main canvas').first().boundingBox())!;
+
+    // ⌥-drag from one entry to another links them, and moves neither the entry nor the camera.
+    const from = (await hook((h, a) => h.onScreen(a), 'SQLCipher'))!;
+    const to = (await hook((h, a) => h.onScreen(a), 'Hybrid-Suche'))!;
+    const before = await hook((h) => h.camera());
+    await nav.keyboard.down('Alt');
+    await nav.mouse.move(canvas.x + from.x, canvas.y + from.y);
+    await nav.waitForTimeout(250);
+    await nav.mouse.down();
+    await nav.mouse.move(canvas.x + (from.x + to.x) / 2, canvas.y + (from.y + to.y) / 2, { steps: 6 });
+    await nav.waitForTimeout(80);
+    await shot(nav, '70-link-drag');
+    if (!(await nav.locator('svg line.link-line').count())) errors.push('alt-drag draws no line');
+    await nav.mouse.move(canvas.x + to.x, canvas.y + to.y, { steps: 6 });
+    await nav.waitForTimeout(100);
+    await nav.mouse.up();
+    await nav.keyboard.up('Alt');
+    await nav.getByText('„SQLCipher“ mit „Hybrid-Suche“ verbunden').waitFor();
+    await nav.waitForTimeout(100);
+    if (await nav.locator('svg line.link-line').count()) errors.push('link line stays after letting go');
+    const after = await hook((h) => h.camera());
+    if (Math.abs(before.x - after.x) + Math.abs(before.y - after.y) > 1e-6) errors.push('alt-drag moved the camera');
+    const moved = (await hook((h, a) => h.onScreen(a), 'SQLCipher'))!;
+    if (Math.hypot(moved.x - from.x, moved.y - from.y) > 30) errors.push('alt-drag moved the entry');
+
+    // Double-click on a subproject's circle opens it; Esc walks back up.
+    const ids = await nav.evaluate(async () => {
+      const list: { project: { id: string; name: string } }[] = await (window as any).__TAURI_INTERNALS__.invoke('projects');
+      return Object.fromEntries(list.map((p) => [p.project.name, p.project.id]));
+    });
+    const ring = (await hook((h, a) => h.ringOnScreen(a), ids.UI))!;
+    await nav.mouse.move(0, 0);
+    await nav.waitForTimeout(300);
+    await nav.mouse.dblclick(canvas.x + ring.x + ring.radius * 0.88, canvas.y + ring.y);
+    const crumbs = nav.locator('header');
+    await crumbs.getByText('UI').first().waitFor({ timeout: 3000 });
+    await nav.waitForTimeout(300);
+    await nav.keyboard.press('Escape');
+    await crumbs.getByText('Brainmatter').first().waitFor({ timeout: 3000 });
+    await nav.waitForTimeout(300);
+    await nav.keyboard.press('Escape');
+    await crumbs.getByText('Alles').first().waitFor({ timeout: 3000 });
+
+    // A saved view brings back the project and the filter, and can be deleted.
+    await nav.getByRole('button', { name: 'Privat' }).first().click();
+    await nav.getByTitle('Graph filtern', { exact: true }).click();
+    await nav.getByLabel('Name für diese Ansicht').fill('Nur privat');
+    await nav.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await nav.getByRole('button', { name: 'Nur privat', exact: true }).waitFor();
+    await nav.waitForTimeout(300);
+    await shot(nav, '71-saved-view');
+    await nav.keyboard.press('Escape');
+    await nav.getByRole('button', { name: 'Alles', exact: true }).first().click();
+    await nav.waitForTimeout(300);
+    await nav.getByRole('button', { name: 'Nur privat', exact: true }).click();
+    await crumbs.getByText('Privat').first().waitFor({ timeout: 3000 });
+    await nav.getByRole('button', { name: 'Nur privat', exact: true }).hover();
+    await nav.getByRole('button', { name: 'Ansicht löschen: Nur privat' }).click();
+    await nav.getByRole('button', { name: 'Nur privat', exact: true }).waitFor({ state: 'detached' });
+
+    // A taken shortcut is said in the settings, not just in a log.
+    await nav.keyboard.press('Meta+,');
+    const settings = nav.getByRole('dialog', { name: 'Einstellungen' });
+    await settings.getByText('Eine andere App belegt').waitFor({ timeout: 3000 });
+    await nav.waitForTimeout(300);
+    await shot(nav, '72-shortcut-blocked');
+
+    // Exporting asks for the password and warns that the result is not encrypted.
+    await settings.getByRole('button', { name: 'Backups' }).click();
+    await settings.getByRole('button', { name: 'Exportieren' }).click();
+    await settings.getByText('Der Export ist nicht verschlüsselt').waitFor();
+    await settings.getByLabel('Master-Passwort für den Export').fill('falsch');
+    await settings.getByRole('button', { name: 'Ordner wählen' }).click();
+    await settings.getByText('Falsches Passwort').waitFor();
+    await settings.getByLabel('Master-Passwort für den Export').fill('demo1234');
+    await settings.getByRole('button', { name: 'Ordner wählen' }).click();
+    await settings.getByText(/Einträge/).first().waitFor();
+    await nav.waitForTimeout(300);
+    await shot(nav, '73-exported');
+  } catch (e) {
+    await shot(nav, 'zz-nav-failure');
+    errors.push(`getting around failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await nav.close();
+}
+
+// Quick capture: where the entry goes is picked in place and remembered.
+{
+  const capture = await open('/?window=capture&touchid=ok');
+  try {
+    await capture.setViewportSize({ width: 620, height: 168 });
+    await capture.getByRole('button', { name: 'Touch ID' }).click();
+    const field = capture.getByLabel('Neuer Eintrag');
+    await field.waitFor();
+    await field.press('Meta+p');
+    const search = capture.getByLabel('Projekt suchen');
+    await search.waitFor();
+    await search.fill('pri');
+    await capture.waitForTimeout(150);
+    await shot(capture, '74-capture-project');
+    await search.press('Enter');
+    await field.waitFor();
+    await capture.getByRole('button', { name: /Privat/ }).waitFor();
+    // Esc leaves the list only, not the window.
+    await field.press('Meta+p');
+    await search.waitFor();
+    await search.press('Escape');
+    await field.waitFor();
+    await field.fill('Geht ins Projekt');
+    await field.press('Enter');
+    await capture.getByText('Festgehalten').waitFor();
+    const projects = await capture.evaluate(async () => {
+      const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+      const hits: any[] = await invoke('search', { query: { text: 'Geht ins Projekt', kinds: [], tags: [], limit: 5, include_subprojects: true } });
+      return (await invoke('node_detail', { id: hits[0].node.id })).projects.map((p: { name: string }) => p.name);
+    });
+    if (projects.join() !== 'Privat') errors.push(`capture went to the wrong project: ${projects}`);
+    await capture.evaluate(() => localStorage.removeItem('bm.captureProject'));
+  } catch (e) {
+    await shot(capture, 'zz-capture-project-failure');
+    errors.push(`capture project failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await capture.close();
+}
+
 // After an update the app says once what changed, back to the last seen version.
 {
   const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });

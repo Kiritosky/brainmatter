@@ -160,7 +160,10 @@ fn main() {
         rules.push(("today".into(), Box::new(|s| floor_margin(&s.0, 0.80, 0.02))));
         for t in [0.14f32, 0.16, 0.18, 0.20, 0.22] {
             for m in [0.06f32, 0.10] {
-                rules.push((format!("centred {t:.2} / {m:.2}"), Box::new(move |s| floor_margin(&s.1, t, m))));
+                rules.push((
+                    format!("centred {t:.2} / {m:.2}"),
+                    Box::new(move |s| floor_margin(&s.1, t, m)),
+                ));
             }
         }
         println!("{:24} {:>8} {:>11} {:>12}", "rule", "found", "false(hit)", "false(none)");

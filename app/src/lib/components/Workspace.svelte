@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { ChevronRight, Clock, Sparkles } from '@lucide/svelte';
-  import { api, createdAt, type Id, type Status } from '#lib/api.ts';
+  import { api, createdAt, errorMessage, type Id, type Status } from '#lib/api.ts';
   import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
   import { prefs } from '#lib/prefs.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
@@ -52,6 +52,16 @@
     until = Math.max(...nodes.map((n) => createdAt(n.id)));
   }
 
+  async function linkEntries(src: Id, dst: Id) {
+    try {
+      await api.link(src, dst);
+      const title = (id: Id) => ws.graph?.nodes.find((n) => n.id === id)?.title ?? '';
+      ws.notify(`„${title(src)}“ mit „${title(dst)}“ verbunden`);
+    } catch (e) {
+      ws.notify(errorMessage(e));
+    }
+  }
+
   let lastTouch = 0;
   function activity() {
     const now = Date.now();
@@ -83,7 +93,10 @@
       ws.settingsOpen = false;
     } else if (e.key === 'Escape' && !ws.palette) {
       const tag = (e.target as HTMLElement).tagName;
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target as HTMLElement).isContentEditable) ws.select(null);
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+      // One step back at a time: the selection first, then up the projects.
+      if (ws.selected) ws.select(null);
+      else if (ws.view && !ws.panel && !ws.changelog && ws.main === 'graph') ws.setView(ws.breadcrumb.at(-2)?.id ?? null);
     }
   }
 
@@ -124,6 +137,7 @@
         pulsing={prefs.values.aiActivity ? ws.pulsing : NOTHING_PULSING}
         projects={graphProjects}
         onopenproject={(id) => ws.setView(id)}
+        onlink={linkEntries}
         colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />

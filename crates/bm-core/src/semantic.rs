@@ -213,7 +213,8 @@ impl VectorIndex {
             .map(|(i, (v, centre_dot))| {
                 // |v| is 1, so |v - centre|² needs no second pass over the vector.
                 let norm = (1.0 - 2.0 * centre_dot + centre_sq).max(1e-9).sqrt();
-                let score = (dot(v, query) - centre_dot - query_dot + centre_sq) / (norm * query_norm);
+                let score =
+                    (dot(v, query) - centre_dot - query_dot + centre_sq) / (norm * query_norm);
                 (i, score)
             })
             .collect();
@@ -284,7 +285,12 @@ mod tests {
     #[test]
     fn centred_scores_match_the_definition_and_survive_changes() {
         let mut ix = VectorIndex::default();
-        let vectors = [unit([1.0, 0.1, 0.0]), unit([1.0, 0.0, 0.1]), unit([1.0, -0.1, 0.0]), unit([1.0, 0.0, -0.1])];
+        let vectors = [
+            unit([1.0, 0.1, 0.0]),
+            unit([1.0, 0.0, 0.1]),
+            unit([1.0, -0.1, 0.0]),
+            unit([1.0, 0.0, -0.1]),
+        ];
         for (i, v) in vectors.iter().enumerate() {
             ix.upsert(&id(&format!("n{i}")), v);
         }
@@ -294,7 +300,8 @@ mod tests {
 
         // By hand: subtract the mean from both sides, then take the cosine.
         let query = unit([1.0, 0.3, 0.0]);
-        let centre: Vec<f32> = (0..3).map(|d| vectors.iter().map(|v| v[d]).sum::<f32>() / 4.0).collect();
+        let centre: Vec<f32> =
+            (0..3).map(|d| vectors.iter().map(|v| v[d]).sum::<f32>() / 4.0).collect();
         let minus = |v: &[f32]| {
             let mut out: Vec<f32> = v.iter().zip(&centre).map(|(a, c)| a - c).collect();
             normalize(&mut out);

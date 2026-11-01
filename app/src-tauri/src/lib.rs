@@ -150,10 +150,11 @@ fn apply_settings(app: &AppHandle, settings: &Settings) {
         (false, true) => shortcuts.unregister(shortcut),
         _ => Ok(()),
     };
-    if let Err(e) = result {
+    if let Err(e) = &result {
         // Most likely another app holds the same keys.
         tracing::warn!("quick capture shortcut: {e}");
     }
+    app.state::<Arc<Session>>().set_capture_shortcut_blocked(result.is_err());
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {

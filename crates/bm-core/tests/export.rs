@@ -18,13 +18,18 @@ fn setup() -> Fixture {
 }
 
 impl Fixture {
-    fn project(&self, name: &str, parent: Option<&bm_core::ids::ProjectId>) -> bm_core::ids::ProjectId {
+    fn project(
+        &self,
+        name: &str,
+        parent: Option<&bm_core::ids::ProjectId>,
+    ) -> bm_core::ids::ProjectId {
         let input = NewProject { name: name.into(), parent: parent.cloned(), ..Default::default() };
         self.engine.create_project(&self.user, input).unwrap().id
     }
 
     fn note(&self, title: &str, body: &str, projects: Vec<bm_core::ids::ProjectId>) -> Node {
-        let input = NewNode { title: title.into(), body: body.into(), projects, ..Default::default() };
+        let input =
+            NewNode { title: title.into(), body: body.into(), projects, ..Default::default() };
         self.engine.create_node(&self.user, input).unwrap()
     }
 
@@ -47,9 +52,20 @@ fn entries_end_up_in_their_project_folders_with_their_data() {
     let b = f.note("Rechnung", "Offen.", vec![parent.clone()]);
     f.note("Lose Notiz", "Ohne alles.", vec![]);
     f.engine
-        .link(&f.user, NewEdge { src: a.id.clone(), dst: b.id.clone(), relation: Some("depends_on".into()), weight: None, note: None })
+        .link(
+            &f.user,
+            NewEdge {
+                src: a.id.clone(),
+                dst: b.id.clone(),
+                relation: Some("depends_on".into()),
+                weight: None,
+                note: None,
+            },
+        )
         .unwrap();
-    f.engine.create_doc_page(&f.user, &parent, "Handbuch", "# Text", None, vec!["intern".into()]).unwrap();
+    f.engine
+        .create_doc_page(&f.user, &parent, "Handbuch", "# Text", None, vec!["intern".into()])
+        .unwrap();
 
     let (root, summary) = f.export();
     assert_eq!(summary.entries, 4);
@@ -80,9 +96,15 @@ fn hostile_and_repeated_titles_stay_inside_the_export() {
     assert_eq!(summary.entries, 4);
     assert!(!f.dir.path().join("ausgebrochen.md").exists());
     let folder = root.join("Ohne Projekt");
-    assert!(folder.join("ausgebrochen.md").is_file(), "{:?}", fs::read_dir(&folder).unwrap().count());
-    let names: Vec<String> =
-        fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+    assert!(
+        folder.join("ausgebrochen.md").is_file(),
+        "{:?}",
+        fs::read_dir(&folder).unwrap().count()
+    );
+    let names: Vec<String> = fs::read_dir(&folder)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
     assert_eq!(names.len(), 4, "{names:?}");
 
     // The odd title is one quoted YAML line, so it cannot end the front matter.

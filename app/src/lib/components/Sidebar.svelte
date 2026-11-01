@@ -3,7 +3,7 @@
   import { slide } from 'svelte/transition';
   import DeleteProjectDialog from './DeleteProjectDialog.svelte';
   import ProjectMenu from './ProjectMenu.svelte';
-  import { ArrowUpCircle, BookMarked, ChevronRight, Ellipsis, Eye, EyeOff, Star, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2 } from '@lucide/svelte';
+  import { ArrowUpCircle, BookMarked, Bookmark, ChevronRight, Ellipsis, Eye, EyeOff, Star, Network, FolderPlus, Lock, Search, Plus, Activity, Settings, ListChecks, Trash2, X } from '@lucide/svelte';
   import { api, errorMessage, type Id, type Project } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -213,6 +213,19 @@
         <button class="nav-row {ws.selected === favorite.id ? 'active' : ''}" onclick={() => ws.select(favorite.id, true)}>
           <Star size={13} class="shrink-0 fill-warn/70 text-warn" /> <span class="truncate">{favorite.title}</span>
         </button>
+      {/each}
+    {/if}
+
+    {#if ws.savedViews.length}
+      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">Ansichten</span></div>
+      {#each ws.savedViews as saved (saved.id)}
+        <div class="group relative">
+          <button class="nav-row w-full pr-7 {ws.activeSavedView === saved.id ? 'active' : ''}" onclick={() => ws.applySavedView(saved)}>
+            <Bookmark size={13} class="shrink-0 {ws.activeSavedView === saved.id ? 'text-accent' : ''}" /> <span class="truncate">{saved.name}</span>
+          </button>
+          <button class="icon-btn absolute top-1/2 right-1 !h-6 !w-6 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            aria-label="Ansicht löschen: {saved.name}" title="Ansicht löschen" onclick={() => ws.deleteSavedView(saved.id)}><X size={12} /></button>
+        </div>
       {/each}
     {/if}
 

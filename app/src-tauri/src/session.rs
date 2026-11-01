@@ -126,6 +126,7 @@ struct Unlocked {
 pub struct Status {
     /// `"none"`, `"locked"` or `"unlocked"`.
     pub state: &'static str,
+    pub capture_shortcut_blocked: bool,
     pub touch_id_enrolled: bool,
     pub biometry_available: bool,
     pub user_name: Option<String>,
@@ -177,6 +178,7 @@ pub struct Session {
     backup_running: AtomicBool,
     backup_error: Mutex<Option<String>>,
     restoring: AtomicBool,
+    capture_shortcut_blocked: AtomicBool,
 }
 
 impl Session {
@@ -193,6 +195,7 @@ impl Session {
             backup_running: AtomicBool::new(false),
             backup_error: Mutex::new(None),
             restoring: AtomicBool::new(false),
+            capture_shortcut_blocked: AtomicBool::new(false),
             dir,
             emit,
             kdf,
@@ -202,6 +205,11 @@ impl Session {
             prompting: AtomicBool::new(false),
             prompt_blocked_until: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Another app has the keys, which only the settings can tell the user.
+    pub fn set_capture_shortcut_blocked(&self, blocked: bool) {
+        self.capture_shortcut_blocked.store(blocked, Ordering::Relaxed);
     }
 
     pub fn status(&self) -> Status {
@@ -218,6 +226,7 @@ impl Session {
         };
         Status {
             state: name,
+            capture_shortcut_blocked: self.capture_shortcut_blocked.load(Ordering::Relaxed),
             touch_id_enrolled,
             biometry_available: biometrics::available().is_ok(),
             user_name,

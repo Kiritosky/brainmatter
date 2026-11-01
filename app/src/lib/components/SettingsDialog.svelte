@@ -170,9 +170,13 @@
               <div class="row">
                 <div class="flex-1">
                   <div>Quick Capture</div>
-                  <div class="text-xs text-faint">Mit <kbd class="kbd">⌥⇧Space</kbd> von überall aus etwas festhalten</div>
+                  {#if settings.quick_capture && status.capture_shortcut_blocked}
+                    <div class="text-xs text-warn" role="alert">Eine andere App belegt <kbd class="kbd">⌥⇧Space</kbd>. Gib es dort frei, dann schalte das hier aus und wieder ein.</div>
+                  {:else}
+                    <div class="text-xs text-faint">Mit <kbd class="kbd">⌥⇧Space</kbd> von überall aus etwas festhalten</div>
+                  {/if}
                 </div>
-                <Toggle checked={settings.quick_capture} label="Quick Capture" onchange={(v) => save({ quick_capture: v })} />
+                <Toggle checked={settings.quick_capture} label="Quick Capture" onchange={async (v) => { await save({ quick_capture: v }); status = await api.status(); }} />
               </div>
               <div class="row">
                 <div class="flex-1">

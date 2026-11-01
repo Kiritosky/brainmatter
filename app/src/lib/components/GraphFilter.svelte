@@ -21,6 +21,15 @@
   });
   const shown = $derived((ws.graph?.nodes.length ?? 0) - ws.hiddenNodes.size);
 
+  let viewName = $state('');
+
+  function saveView(e: SubmitEvent) {
+    e.preventDefault();
+    ws.saveCurrentView(viewName);
+    ws.notify(`Ansicht „${viewName.trim()}“ gespeichert`);
+    viewName = '';
+  }
+
   function onkeydowncapture(e: KeyboardEvent) {
     if (open && e.key === 'Escape') {
       e.stopPropagation();
@@ -101,6 +110,11 @@
         </div>
         <span class="text-xs text-faint">{ws.selected ? 'Verbindungen um die Auswahl' : 'Wähle zuerst einen Eintrag'}</span>
       </div>
+
+      <form class="mt-3 flex gap-1.5 border-t border-line-soft pt-3" onsubmit={saveView}>
+        <input class="field !h-7.5 min-w-0 flex-1 text-xs" placeholder="Name für diese Ansicht" aria-label="Name für diese Ansicht" bind:value={viewName} />
+        <button class="btn-ghost !h-7.5 shrink-0 text-xs" disabled={!viewName.trim()}>Speichern</button>
+      </form>
     </div>
   {/if}
 </div>
