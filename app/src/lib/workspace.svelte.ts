@@ -461,9 +461,15 @@ class Workspace {
 
   /** Coalesces bursts of events (e.g. an AI capturing 50 entries). Project
    * node counts change with almost every event, so everything reloads. */
+  private refreshMs = 0;
+
   private scheduleRefresh() {
     clearTimeout(this.refreshTimer);
+    // A large vault takes a while to reload, and must not spend all its time on that
+    // while an AI keeps writing.
+    const pause = Math.min(5000, 120 + this.refreshMs * 4);
     this.refreshTimer = setTimeout(async () => {
+      const started = performance.now();
       // A change set's events arrive in one burst. Whatever is left over never got its
       // commit event, and pointing at the wrong entry is worse than at none.
       this.touched = new Set();
@@ -475,9 +481,10 @@ class Workspace {
         this.refreshDetail(),
         this.refreshSuggestions(),
       ]);
+      this.refreshMs = performance.now() - started;
       this.startPulse();
       this.revision++;
-    }, 120);
+    }, pause);
   }
 }
 

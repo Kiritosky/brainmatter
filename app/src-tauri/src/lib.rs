@@ -4,6 +4,7 @@
 mod commands;
 pub mod error;
 pub mod integrations;
+mod perf;
 pub mod session;
 mod updates;
 
@@ -192,8 +193,14 @@ pub fn run() {
         )
         .init();
 
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+    // Measuring runs beside an installed copy, which would otherwise take over.
+    let builder = tauri::Builder::default();
+    let builder = if perf::script().is_some() {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+    };
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
@@ -206,7 +213,11 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let dir = app.path().app_data_dir()?.join(VAULT_DIR);
+            let dir = match perf::vault_dir() {
+                Some(dir) => dir,
+                None => app.path().app_data_dir()?.join(VAULT_DIR),
+            };
+            perf::attach(app.handle());
             tracing::info!("vault directory: {}", dir.display());
             let handle = app.handle().clone();
             let emit: Emit = Arc::new(move |name, payload| {
@@ -252,6 +263,7 @@ pub fn run() {
             build_tray(app.handle())?;
             Ok(())
         })
+        .on_page_load(|webview, payload| perf::run_script(webview, payload))
         .on_window_event(|window, event| {
             // Closing the window keeps Brainmatter running in the menu bar.
             if let WindowEvent::CloseRequested { api, .. } = event {

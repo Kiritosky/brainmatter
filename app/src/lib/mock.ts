@@ -290,7 +290,38 @@ function projectList(): ProjectSummary[] {
   return out;
 }
 
+/** `?stress=50000` in a browser: a large invented graph, to profile what it costs to draw. */
+const STRESS = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('stress')) || 0 : 0;
+let stressed: GraphSnapshot | null = null;
+
+function stressGraph(): GraphSnapshot {
+  if (stressed) {
+    return { ...stressed, nodes: stressed.nodes.map((n) => {
+      const l = layouts.get(`all|${n.id}`);
+      return l ? { ...n, x: l.x, y: l.y } : n;
+    }) };
+  }
+  const groups = [...projects.keys()];
+  const stamp = now().toString(16).padStart(12, '0');
+  const makeId = (i: number) => `${stamp.slice(0, 8)}-${stamp.slice(8, 12)}-7000-8000-${i.toString(16).padStart(12, '0')}`;
+  const batch = 160;
+  const nodes = Array.from({ length: STRESS }, (_, i) => ({
+    id: makeId(i), title: `Eintrag Nummer ${i}`, kind: 'note', reviewed: true, updated_at: 0, created_by: USER, tags: [],
+    projects: [groups[Math.floor(i / batch) % groups.length]], degree: 6, rank: 1 / STRESS, cluster: 0, x: null, y: null, pinned: false,
+  }));
+  const edges = [];
+  for (let i = 0; i < STRESS * 3; i++) {
+    const base = Math.floor(Math.random() * Math.floor(STRESS / batch)) * batch;
+    const src = base + Math.floor(Math.random() * batch);
+    const dst = base + Math.floor(Math.random() * batch);
+    if (src !== dst && src < STRESS && dst < STRESS) edges.push({ id: makeId(STRESS + i), src: makeId(src), dst: makeId(dst), relation: 'related_to', origin: 'manual' });
+  }
+  stressed = { view: 'all', nodes, edges } as unknown as GraphSnapshot;
+  return stressed;
+}
+
 function graph(project: string | null): GraphSnapshot {
+  if (STRESS) return stressGraph();
   const view = project ?? 'all';
   const scope = project ? subtree(project) : null;
   const ns = [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'template' && n.kind !== 'doc' && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));

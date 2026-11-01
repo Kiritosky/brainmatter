@@ -53,6 +53,34 @@
   let linking = $state.raw<{ from: string; x: number; y: number; toX: number; toY: number } | null>(null);
   let resizeObserver: ResizeObserver | undefined;
   const graph = new Graph({ type: 'directed', multi: true });
+  /**
+   * What Sigma looks at while a large view fills up. Otherwise it would process each entry
+   * and link on the way in, and then all of them again once they have their places.
+   */
+  const NOTHING = new Graph({ type: 'directed', multi: true });
+  let detached = false;
+
+  function detach() {
+    if (detached || !renderer) return;
+    detached = true;
+    renderer.setGraph(NOTHING);
+  }
+
+  function attach() {
+    if (!detached || !renderer) return;
+    detached = false;
+    renderer.setGraph(graph);
+  }
+
+  /** Coalesces what the settings and filters change in one go: each refresh goes through everything. */
+  let refreshFrame = 0;
+  function refreshSoon() {
+    if (refreshFrame) return;
+    refreshFrame = requestAnimationFrame(() => {
+      refreshFrame = 0;
+      renderer?.refresh();
+    });
+  }
 
   // WebGL needs concrete colours, so they are read from the theme.
   const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -195,15 +223,43 @@
       }
       changed.push(id);
     }
-    if (changed.length) renderer.refresh({ partialGraph: { nodes: changed }, skipIndexation: false });
+    repaint(changed);
     if (moving) hoverFrame = requestAnimationFrame(hoverStep);
+  }
+
+  /**
+   * Evaluates the styles of these entries again, and no others. A refresh, even of a
+   * single entry, goes through all of them: half a second at 50,000.
+   */
+  function repaint(ids: string[]) {
+    if (ids.length) renderer?.setNodesState(ids, { repaint: ++repaints } as never);
+  }
+  let repaints = 0;
+
+  /** An entry being moved in a large graph: shown as lifted, and written once at the end. */
+  let dragging: { node: string; from: Point } | null = null;
+
+  function endDrag() {
+    if (!dragging) return;
+    const { node } = dragging;
+    dragging = null;
+    const lift = lifted.get(node);
+    if (!lift || !graph.hasNode(node)) return;
+    const { x, y } = graph.getNodeAttributes(node) as { x: number; y: number };
+    lifted.delete(node);
+    if (!lift.x && !lift.y) return repaint([node]);
+    graph.mergeNodeAttributes(node, { x: x + lift.x, y: y + lift.y, fixed: true });
+    // The circle follows what it contains.
+    if (snapshot) requestLayout(snapshot, [], false);
   }
 
   /** For when positions are about to change for real. */
   function dropLifts() {
     cancelAnimationFrame(hoverFrame);
     hoverFrame = 0;
+    const were = [...lifted.keys()].filter((id) => graph.hasNode(id));
     lifted.clear();
+    repaint(were);
   }
 
   /** A burst of this many says as much as a thousand, and stays cheap. */
@@ -334,9 +390,11 @@
     if (!renderer) return;
     const box = boxAround(circles.filter((c) => c.parent === null), [...placed.values()]);
     const flat = !(box.x[1] > box.x[0]) && !(box.y[1] > box.y[0]);
-    renderer.setCustomBBox(flat ? null : box);
+    const next = flat ? null : box;
+    if (JSON.stringify(next) === JSON.stringify(renderer.getCustomBBox())) return;
+    renderer.setCustomBBox(next);
     // Only a refresh rescales; `frameShown` converts coordinates right after this.
-    renderer.refresh();
+    if (!detached) renderer.refresh();
   }
 
   /** The outermost circles still drawn, which need not be top-level ones. */
@@ -402,6 +460,8 @@
     if (e.data.run !== layoutRun) return;
     applyLayout(e.data.result);
   };
+  // Better in the wrong places than not there at all.
+  worker.onerror = () => attach();
 
   function markGrouped(view: string) {
     const views = new Set<string>(JSON.parse(localStorage.getItem(GROUPED_KEY) ?? '[]'));
@@ -419,28 +479,43 @@
     const target = new Map(positions.map((p) => [p.id, p]));
     placed = target;
     dropLifts();
+    // Usually nothing, since opening a view lays it out to find its circles.
+    let moved = false;
+    graph.forEachNode((id, a) => {
+      const p = target.get(id);
+      if (p && (Math.abs(p.x - a.x) > 1e-3 || Math.abs(p.y - a.y) > 1e-3)) moved = true;
+    });
     const finish = () => {
       markGrouped(pendingView);
-      saveLayout();
+      if (moved) saveLayout();
       updateShownGroups();
     };
+    const place = () =>
+      graph.updateEachNodeAttributes((id, a) => {
+        const p = target.get(id);
+        return p ? { ...a, x: p.x, y: p.y } : a;
+      });
+    if (moved && detached) place();
     fitToCircles();
+    const filled = detached;
+    attach();
     updateShownGroups();
     const reframe = fresh || frameNext;
     frameNext = false;
     framed = shownKey();
     if (reframe) frameShown();
 
+    if (filled || !moved) {
+      finish();
+      return;
+    }
     const start = new Map<string, { x: number; y: number }>();
     graph.forEachNode((id, a) => {
       if (target.has(id)) start.set(id, { x: a.x, y: a.y });
     });
     const motion = motionAllowed() ? MOVE_MS : 0;
     if (!motion || start.size > MAX_ANIMATED) {
-      graph.updateEachNodeAttributes((id, a) => {
-        const p = target.get(id);
-        return p ? { ...a, x: p.x, y: p.y } : a;
-      });
+      place();
       finish();
       return;
     }
@@ -463,6 +538,12 @@
   /** `rank * count` is 1 for an average entry, whatever the size of the view. */
   const sizeFor = (rank: number, count: number) => Math.min(18, Math.max(3.5, 2 + Math.sqrt(rank * count) * 3.6));
 
+  /** Above this many entries and links, greying out all the others takes too long to do on a hover. */
+  const MAX_DIMMED = 20_000;
+  let dimming = false;
+  let litNodes = new Set<string>();
+  let litEdges = new Set<string>();
+
   /** Highlight a node and its direct neighbours (hover wins over selection). */
   function applyHighlight() {
     if (!renderer) return;
@@ -478,9 +559,18 @@
         nodes.add(dst);
       });
     }
-    graph.forEachNode((n) => renderer!.setNodeState(n, { isHighlighted: nodes.has(n) }));
-    graph.forEachEdge((e) => renderer!.setEdgeState(e, { isHighlighted: edges.has(e) }));
-    renderer.setGraphState({ hasHighlighted: focus !== null });
+    // Only what changed, which at most is the neighbours of two entries.
+    for (const n of litNodes) if (!nodes.has(n) && graph.hasNode(n)) renderer.setNodeState(n, { isHighlighted: false });
+    for (const n of nodes) if (!litNodes.has(n)) renderer.setNodeState(n, { isHighlighted: true });
+    for (const e of litEdges) if (!edges.has(e) && graph.hasEdge(e)) renderer.setEdgeState(e, { isHighlighted: false });
+    for (const e of edges) if (!litEdges.has(e)) renderer.setEdgeState(e, { isHighlighted: true });
+    litNodes = nodes;
+    litEdges = edges;
+    const dim = focus !== null && graph.order + graph.size <= MAX_DIMMED;
+    if (dim !== dimming) {
+      dimming = dim;
+      renderer.refresh();
+    }
   }
 
   /** Incremental sync so positions, camera and running layouts survive updates. */
@@ -489,6 +579,7 @@
     if (viewChanged) {
       cancelAnimationFrame(moveFrame);
       dropLifts();
+      if (snap.nodes.length > MAX_ANIMATED) detach();
       graph.clear();
       circles = [];
       placed = new Map();
@@ -496,9 +587,16 @@
       groupOf = new Map();
       structure = '';
       currentView = snap.view;
+      litNodes = new Set();
+      litEdges = new Set();
     }
 
     const wanted = new Set(snap.nodes.map((n) => n.id));
+    // Sigma goes through everything for each entry or link that disappears.
+    const ghosts = graph.reduceEdges((count, e) => count + (e.startsWith(GHOST) ? 1 : 0), 0);
+    const bulk =
+      !viewChanged && graph.order > MAX_ANIMATED && (snap.nodes.length !== graph.order || snap.edges.length !== graph.size - ghosts);
+    if (bulk) detach();
     graph.forEachNode((n) => {
       if (!wanted.has(n)) graph.dropNode(n);
     });
@@ -515,7 +613,15 @@
         fixed: n.pinned,
       };
       if (graph.hasNode(n.id)) {
-        graph.mergeNodeAttributes(n.id, attrs);
+        // Only what really changed: Sigma goes through everything for each one that did.
+        const was = graph.getNodeAttributes(n.id);
+        const same =
+          was.label === attrs.label &&
+          Math.abs((was.size as number) - attrs.size) < 0.25 &&
+          was.color === attrs.color &&
+          was.reviewed === attrs.reviewed &&
+          was.fixed === attrs.fixed;
+        if (!same) graph.mergeNodeAttributes(n.id, attrs);
       } else {
         const placed = n.x !== null && n.y !== null;
         graph.addNode(n.id, { ...attrs, x: n.x ?? 0, y: n.y ?? 0 });
@@ -561,6 +667,7 @@
     structure = shape;
 
     syncGhosts();
+    if (bulk) attach();
     updateShownGroups();
     if (viewChanged) renderer?.getCamera().reset({ duration: 300 });
   }
@@ -568,7 +675,10 @@
   /** Ghost edges carry no weight, so they never pull on the layout. */
   function syncGhosts() {
     graph.forEachEdge((e) => {
-      if (e.startsWith(GHOST)) graph.dropEdge(e);
+      if (e.startsWith(GHOST)) {
+        graph.dropEdge(e);
+        litEdges.delete(e);
+      }
     });
     if (selected && graph.hasNode(selected)) {
       for (const id of suggested) {
@@ -638,9 +748,8 @@
             // So that a line leaving the entry does not run through its name.
             labelBackgroundColor: (_a, s) => (s.isHovered || s.isHighlighted ? `${colors.plate}b8` : 'rgba(0, 0, 0, 0)'),
             labelBackgroundPadding: 2,
-            color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? colors.dimNode : (a.color as string)),
-            labelColor: (a, s, gs) =>
-              gs.hasHighlighted && !s.isHighlighted ? colors.dimLabel : a.reviewed === false ? colors.labelAi : colors.label,
+            color: (a, s) => (dimming && !s.isHighlighted ? colors.dimNode : (a.color as string)),
+            labelColor: (a, s) => (dimming && !s.isHighlighted ? colors.dimLabel : a.reviewed === false ? colors.labelAi : colors.label),
             labelFont: '-apple-system, BlinkMacSystemFont, sans-serif',
             labelSize: 12,
             labelVisibility: (_a, s) => (s.isHighlighted || s.isHovered ? 'visible' : 'auto'),
@@ -651,13 +760,25 @@
           {
             visibility: (a) =>
               filteredOut.has(a.src as Id) || filteredOut.has(a.dst as Id) || (a.born as number) > visibleUntil ? 'hidden' : 'visible',
-            color: (a, s, gs) =>
-              a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : gs.hasHighlighted ? colors.edgeDim : isBridge(a) ? colors.edgeBridge : colors.edge,
+            color: (a, s) =>
+              a.ghost ? colors.edgeGhost : s.isHighlighted ? colors.edgeActive : dimming ? colors.edgeDim : isBridge(a) ? colors.edgeBridge : colors.edge,
             size: (a, s) => edgeScale * (a.ghost ? 1 : s.isHighlighted ? 1.5 : isBridge(a) ? 0.9 : 0.6),
           },
         ],
       },
     });
+
+    // Sigma assumes that a style given as a function reads the state of the graph, which
+    // changes whenever a gesture starts or ends, and then evaluates every entry and link
+    // again: half a second at 50,000. Ours read only the item's own state and our
+    // variables, whose changes come with a refresh. There is no setting for this; without
+    // these fields it would be slower, not wrong.
+    const analysed = renderer as unknown as {
+      internals?: { nodeStyleAnalysis?: { dependency: string } };
+      edgeStyleAnalysis?: { dependency: string };
+    };
+    if (analysed.internals?.nodeStyleAnalysis) analysed.internals.nodeStyleAnalysis.dependency = 'item-state';
+    if (analysed.edgeStyleAnalysis) analysed.edgeStyleAnalysis.dependency = 'item-state';
 
     // Untracked: effects call refresh(), which can render right there, and must not
     // come to depend on the rings this writes.
@@ -686,25 +807,37 @@
     renderer.on('enterNode', ({ node }) => {
       hovered = node;
       applyHighlight();
-      if (!linking) hoverOver(node);
+      if (!linking && !dragging) hoverOver(node);
     });
     renderer.on('leaveNode', () => {
       hovered = null;
       applyHighlight();
-      hoverOver(null);
+      if (!dragging) hoverOver(null);
     });
     renderer.on('nodeDragStart', ({ node, event, preventSigmaDefault }) => {
       // Dragging works on real positions, so nothing may be off them any more.
       cancelAnimationFrame(moveFrame);
       dropLifts();
-      renderer?.refresh();
       if ((event.original as MouseEvent).altKey) {
         preventSigmaDefault();
         const { x, y } = graph.getNodeAttributes(node) as { x: number; y: number };
         linking = { from: node, ...renderer!.graphToViewport({ x, y }), toX: event.x, toY: event.y };
+      } else if (graph.order > MAX_ANIMATED) {
+        // Sigma's own dragging goes through every entry at each step of the pointer.
+        preventSigmaDefault();
+        dragging = { node, from: renderer!.viewportToGraph(event) };
       }
     });
     renderer.on('moveBody', ({ event, preventSigmaDefault }) => {
+      if (dragging) {
+        preventSigmaDefault();
+        const at = renderer!.viewportToGraph(event);
+        const lift = liftOf(dragging.node);
+        lift.x = lift.toX = at.x - dragging.from.x;
+        lift.y = lift.toY = at.y - dragging.from.y;
+        repaint([dragging.node]);
+        return;
+      }
       if (!linking) return;
       preventSigmaDefault();
       linking = { ...linking, toX: event.x, toY: event.y };
@@ -737,10 +870,8 @@
     }
 
     // Sigma only reacts to window resizes; panels also change the container.
-    resizeObserver = new ResizeObserver(() => {
-      renderer?.resize();
-      renderer?.refresh();
-    });
+    // Sizes itself on rendering, and no entry changes because of it.
+    resizeObserver = new ResizeObserver(() => renderer?.scheduleRender());
     resizeObserver.observe(container);
 
     if (snapshot) sync(snapshot);
@@ -750,6 +881,7 @@
     resizeObserver?.disconnect();
     cancelAnimationFrame(moveFrame);
     cancelAnimationFrame(hoverFrame);
+    cancelAnimationFrame(refreshFrame);
     worker.terminate();
     renderer?.kill();
   });
@@ -765,20 +897,25 @@
   });
 
   $effect(() => {
-    visibleUntil = until ?? Infinity;
+    const next = until ?? Infinity;
+    if (next === visibleUntil) return;
+    visibleUntil = next;
     untrack(updateShownGroups);
-    renderer?.refresh();
+    refreshSoon();
   });
 
   $effect(() => {
-    filteredOut = hidden;
+    // A new set comes with every snapshot, nearly always with the same in it.
+    const next = hidden;
+    if (next.size === filteredOut.size && [...next].every((id) => filteredOut.has(id))) return;
+    filteredOut = next;
     untrack(() => {
       updateShownGroups();
       const key = shownKey();
       if (key !== framed && circles.length) frameShown();
       framed = key;
     });
-    renderer?.refresh();
+    refreshSoon();
   });
 
   // After the sync above, so entries it just added have a place.
@@ -792,7 +929,7 @@
     void theme.tick;
     void prefs.values.accent;
     colors = readColors();
-    renderer?.refresh();
+    refreshSoon();
   });
 
   $effect(() => {
@@ -804,7 +941,7 @@
       renderer?.setSetting('labelDensity', labelDensity);
       renderer?.setSetting('labelGridCellSize', labelGridCellSize);
       applyHighlight();
-      renderer?.refresh();
+      refreshSoon();
     });
   });
 
@@ -848,7 +985,10 @@
 {/if}
 
 <!-- Wherever the button is let go; `upNode` has already seen it by then. -->
-<svelte:window onmouseup={() => setTimeout(() => (linking = null))} />
+<svelte:window onmouseup={() => {
+  endDrag();
+  setTimeout(() => (linking = null));
+}} />
 
 {#each rings as ring (ring.id)}
   <span class="pulse-ring" style="left: {ring.x}px; top: {ring.y}px"></span>
