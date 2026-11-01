@@ -181,7 +181,7 @@
     {#if tagCounts.length}
       <div class="flex max-h-20 flex-wrap gap-1 overflow-y-auto px-3 pb-2" role="group" aria-label="Nach Tag filtern">
         {#each tagCounts as [tag, count] (tag)}
-          <button class="chip transition-colors {tagFilter === tag ? '!border-accent/40 !bg-accent/15 !text-accent' : 'hover:!border-faint hover:text-text'}"
+          <button class="chip transition-colors {tagFilter === tag ? '!border-accent/40 !bg-raised !text-text' : 'hover:!border-faint hover:text-text'}"
             aria-pressed={tagFilter === tag} onclick={() => (tagFilter = tagFilter === tag ? null : tag)}>
             #{tag}<span class="text-faint tabular-nums">{count}</span>
           </button>
@@ -320,7 +320,7 @@
     {:else if loaded}
       <div class="flex h-full items-center justify-center">
         <div class="flex max-w-sm flex-col items-center text-center" in:pop={{ duration: 280, y: 10 }}>
-          <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/12 text-accent"><BookOpen size={26} /></div>
+          <div class="mb-4 flex h-14 w-14 items-center justify-center text-faint"><BookOpen size={26} /></div>
           <h2 class="text-base font-semibold tracking-tight">Noch keine Doku für „{ws.currentProject?.name}“</h2>
           <p class="mt-2 leading-relaxed text-muted">Schreibe Seiten direkt hier, oder binde den Doku-Ordner eines Repos ein. Verbundene KIs können beides lesen.</p>
           <div class="mt-5 flex gap-2">

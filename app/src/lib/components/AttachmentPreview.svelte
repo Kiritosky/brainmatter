@@ -49,7 +49,7 @@
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-10 backdrop-blur-[2px]" role="presentation" transition:fadeQuick onclick={onclose}>
   <!-- svelte-ignore a11y_click_events_have_key_events -- the window handles Esc -->
-  <div class="surface flex h-full max-h-[780px] w-full max-w-[980px] flex-col overflow-hidden rounded-2xl" role="dialog" aria-label={attachment.filename} tabindex="-1"
+  <div class="surface flex h-full max-h-[780px] w-full max-w-[980px] flex-col overflow-hidden rounded-xl" role="dialog" aria-label={attachment.filename} tabindex="-1"
     transition:pop onclick={(e) => e.stopPropagation()}>
     <header class="flex h-12 shrink-0 items-center gap-3 border-b border-line-soft pr-2 pl-5">
       <span class="min-w-0 truncate font-medium">{attachment.filename}</span>

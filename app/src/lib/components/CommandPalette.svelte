@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, BookMarked, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Sparkles, Sun, Trash2 } from '@lucide/svelte';
+  import { Activity, BookMarked, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Newspaper, Sun, Trash2 } from '@lucide/svelte';
   import { releases } from '#lib/changelog.ts';
   import { theme } from '#lib/theme.svelte.ts';
   import { api, errorMessage, type SearchHit } from '#lib/api.ts';
@@ -33,7 +33,7 @@
     { label: 'Bibliothek öffnen', icon: BookMarked, run: panel('library') },
     { label: 'Papierkorb öffnen', icon: Trash2, run: panel('trash') },
     { label: 'Einstellungen', icon: Settings, hint: '⌘,', run: () => (ws.settingsOpen = true) },
-    { label: 'Was ist neu', icon: Sparkles, run: () => (ws.changelog = { heading: 'Alle Änderungen', items: releases }) },
+    { label: 'Was ist neu', icon: Newspaper, run: () => (ws.changelog = { heading: 'Alle Änderungen', items: releases }) },
     { label: 'Filter zurücksetzen', icon: ListFilter, run: () => ws.clearFilters() },
     { label: 'Helles Design', icon: Sun, run: setTheme('light') },
     { label: 'Dunkles Design', icon: Moon, run: setTheme('dark') },
@@ -135,7 +135,7 @@
 </script>
 
 <div class="fixed inset-0 z-50 flex justify-center bg-black/45 pt-[13vh] backdrop-blur-[2px]" role="presentation" transition:fadeQuick onclick={close}>
-  <div class="surface h-fit w-[640px] rounded-2xl" role="dialog" aria-label="Suche" tabindex="-1"
+  <div class="surface h-fit w-[640px] rounded-xl" role="dialog" aria-label="Suche" tabindex="-1"
     transition:pop onclick={(e) => e.stopPropagation()} {onkeydown}>
     <div class="flex items-center gap-3 border-b border-line-soft px-4">
       {#if mode === 'link'}<Link2 size={17} class="shrink-0 text-accent" />{:else}<Search size={17} class="shrink-0 text-faint" />{/if}
@@ -171,7 +171,7 @@
                 <span class="truncate font-medium">{opt.hit.node.title}</span>
                 <span class="shrink-0 text-[11px] text-faint">{opt.hit.node.kind}</span>
                 {#if opt.hit.semantic}
-                  <span class="flex shrink-0 items-center gap-1 self-center text-[11px] text-accent" title="Passt vom Sinn her"><Sparkles size={10} /> ähnlich</span>
+                  <span class="flex shrink-0 items-center gap-1 self-center text-[11px] text-accent" title="Passt vom Sinn her"><Newspaper size={10} /> ähnlich</span>
                 {/if}
               </div>
               {#if opt.hit.snippet}

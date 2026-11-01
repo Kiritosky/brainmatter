@@ -184,7 +184,7 @@
   }
 </script>
 
-<nav class="sidebar-glass flex h-full flex-col">
+<nav class="sidebar-glass flex h-full min-h-0 flex-col">
   <!-- Space for the macOS traffic lights; draggable like a title bar. -->
   <div class="h-11 shrink-0" data-tauri-drag-region></div>
 
@@ -195,12 +195,12 @@
       <Search size={14} class="shrink-0" /> <span class="truncate">Suchen</span>
       <span class="kbd ml-auto">⌘K</span>
     </button>
-    <button class="btn-primary !h-8 !w-8 shrink-0 !px-0" aria-label="Neuer Eintrag" title="Neuer Eintrag (⌘N)" onclick={() => ws.createNode('Neuer Eintrag')}>
+    <button class="btn-ghost !h-8 !w-8 shrink-0 !bg-bg/50 !px-0 text-muted hover:text-text" aria-label="Neuer Eintrag" title="Neuer Eintrag (⌘N)" onclick={() => ws.createNode('Neuer Eintrag')}>
       <Plus size={15} />
     </button>
   </div>
 
-  <div class="flex-1 overflow-y-auto px-2">
+  <div class="scroll-fade min-h-0 flex-1 overflow-y-auto px-2 pb-3">
     <button
       class="nav-row {ws.view === null ? 'active' : ''}"
       onclick={() => ws.setView(null)}>
@@ -348,7 +348,7 @@
     {/if}
   </div>
 
-  <div class="px-2 pb-1.5">
+  <div class="shrink-0 px-2 pb-1.5">
     {#if ws.update}
       <button class="nav-row !text-accent" in:pop={{ duration: 200, y: 4 }} onclick={() => (ws.settingsOpen = true)}>
         <ArrowUpCircle size={14} /> Update auf {ws.update.version}
@@ -387,19 +387,19 @@
     <DeleteProjectDialog project={deleting} onclose={() => (deleting = null)} />
   {/if}
 
-  <footer class="flex items-center gap-1 border-t border-line-soft px-3 py-2">
+  <footer class="flex shrink-0 items-center gap-1 border-t border-line-soft px-3 py-2">
     <div class="mr-1 flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">
       {(userName ?? '?').slice(0, 1).toUpperCase()}
     </div>
     <span class="min-w-0 flex-1 truncate text-muted">{userName}</span>
-    <button class="icon-btn relative {ws.panel === 'review' ? '!bg-accent/15 !text-accent' : ''}" aria-label="Prüfen" title="Prüfen"
+    <button class="icon-btn relative {ws.panel === 'review' ? '!bg-raised !text-text' : ''}" aria-label="Prüfen" title="Prüfen"
       onclick={() => ((ws.panel = ws.panel === 'review' ? null : 'review'), ws.select(null))}>
       <ListChecks size={15} />
       {#if ws.unreviewed.length}
         <span class="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-ai" in:pop={{ duration: 160, y: 0 }}></span>
       {/if}
     </button>
-    <button class="icon-btn {ws.panel === 'activity' ? '!bg-accent/15 !text-accent' : ''}" aria-label="Aktivität" title="Aktivität"
+    <button class="icon-btn {ws.panel === 'activity' ? '!bg-raised !text-text' : ''}" aria-label="Aktivität" title="Aktivität"
       onclick={() => ((ws.panel = ws.panel === 'activity' ? null : 'activity'), ws.select(null))}><Activity size={15} /></button>
     <button class="icon-btn" aria-label="Einstellungen" title="Einstellungen (⌘,)" onclick={() => (ws.settingsOpen = true)}><Settings size={15} /></button>
     <button class="icon-btn" aria-label="Sperren" title="Sperren (⌘⇧L)" onclick={() => api.lock()}><Lock size={15} /></button>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { ArrowLeft, Bot, Check, Copy, Plus, Sparkles, Trash2 } from '@lucide/svelte';
+  import { ArrowLeft, Bot, Check, Copy, Plus, Plug, Trash2 } from '@lucide/svelte';
   import { api, errorMessage, type AiClient, type Integration, type McpInfo, type Scope } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
@@ -210,7 +210,7 @@
       </div>
     {:else}
       <div class="mb-4 flex flex-col items-center rounded-xl border border-dashed border-line px-6 py-8 text-center">
-        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-accent/12 text-accent"><Bot size={20} /></div>
+        <div class="mb-3 flex h-11 w-11 items-center justify-center text-faint"><Bot size={20} /></div>
         <p class="font-medium">Noch keine KI verbunden</p>
         <p class="mt-1 text-xs text-faint">Verbinde Claude, Cursor oder Codex, damit sie dein Wissen lesen und erweitern können.</p>
       </div>
@@ -228,7 +228,7 @@
       {#each PRESETS as p (p)}
         {@const hint = presetHint(p)}
         <button type="button"
-          class="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-center transition-[background-color,border-color,scale] duration-150 active:scale-[0.97] {preset === p ? 'border-accent bg-accent/12' : 'border-line-soft bg-elevated/50 hover:border-line hover:bg-elevated'}"
+          class="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-center transition-[background-color,border-color] duration-150 {preset === p ? 'border-accent bg-accent/12' : 'border-line-soft bg-elevated/50 hover:border-line hover:bg-elevated'}"
           aria-pressed={preset === p}
           onclick={() => choose(p)}>
           <span class="text-xs leading-tight font-medium">{p}</span>
@@ -285,7 +285,7 @@
     <div class="flex items-center gap-2">
       {#if integration?.available}
         <button type="button" class="btn-primary" disabled={busy || invalid} onclick={connect}>
-          <Sparkles size={15} /> {busy ? 'Wird eingerichtet …' : 'Automatisch einrichten'}
+          <Plug size={15} /> {busy ? 'Wird eingerichtet …' : 'Automatisch einrichten'}
         </button>
         <button class="btn-ghost" disabled={busy || invalid}>Manuell einrichten</button>
       {:else}

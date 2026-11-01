@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Network, Palette, Sparkles } from '@lucide/svelte';
+  import { Archive, Bot, X, Copy, Check, ShieldCheck, KeyRound, Lock, Network, Palette, ScanSearch } from '@lucide/svelte';
   import { api, errorMessage, type Settings, type Status } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
   import { DEFAULT_PREFS, prefs, type Accent } from '#lib/prefs.svelte.ts';
@@ -56,7 +56,7 @@
     { id: 'security', label: 'Sperren', icon: Lock },
     { id: 'password', label: 'Passwort & Schlüssel', icon: KeyRound },
     { id: 'backups', label: 'Backups', icon: Archive },
-    { id: 'search', label: 'Suche nach Sinn', icon: Sparkles },
+    { id: 'search', label: 'Suche nach Sinn', icon: ScanSearch },
     { id: 'ai', label: 'KI-Verbindungen', icon: Bot },
   ];
 
@@ -117,7 +117,7 @@
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-[2px]" role="presentation"
   transition:fadeQuick onclick={() => (ws.settingsOpen = false)}>
-  <div class="surface flex h-[560px] w-[760px] overflow-hidden rounded-2xl" role="dialog" aria-label="Einstellungen" tabindex="-1"
+  <div class="surface flex h-[560px] w-[760px] overflow-hidden rounded-xl" role="dialog" aria-label="Einstellungen" tabindex="-1"
     transition:pop onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (ws.settingsOpen = false)}>
 
     <nav class="flex w-52 shrink-0 flex-col gap-0.5 border-r border-line-soft bg-bg/40 p-3">

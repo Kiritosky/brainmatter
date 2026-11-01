@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Sparkles, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
+  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, GitMerge, Link2, Paperclip, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
   import { api, errorMessage, TEMPLATE_KIND, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
   import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, previewKind } from '#lib/attachments.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
@@ -249,7 +249,7 @@
     </button>
     <button class="icon-btn" aria-label="Im Graph zeigen" title="Im Graph zeigen" onclick={() => ws.focusTick++}><Crosshair size={15} /></button>
     <button class="icon-btn" aria-label="Verbinden" title="Verbinden (⌘L)" onclick={() => (ws.palette = 'link')}><Link2 size={15} /></button>
-    <button class="icon-btn {showHistory ? '!bg-accent/15 !text-accent' : ''}" aria-label="Verlauf" title="Verlauf" onclick={openHistory}><History size={15} /></button>
+    <button class="icon-btn {showHistory ? '!bg-raised !text-text' : ''}" aria-label="Verlauf" title="Verlauf" onclick={openHistory}><History size={15} /></button>
     {#if detail.read_only}
       <!-- Goes away with its file. -->
     {:else if confirmDelete}
@@ -403,7 +403,7 @@
     {/if}
 
     {#if ws.suggestions.length}
-      <div class="section-title mt-7 flex items-center gap-1.5"><Sparkles size={11} class="text-accent" /> Vorschläge</div>
+      <div class="section-title mt-7 flex items-center gap-1.5"><Link2 size={11} /> Vorschläge</div>
       {#each ws.suggestions as s (s.node.id)}
         <div class="group flex h-8 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-elevated" in:pop={{ duration: 160, y: 3 }}>
           <button class="min-w-0 flex-1 truncate text-left text-muted transition-colors hover:text-text" onclick={() => ws.select(s.node.id, true)}>{s.node.title}</button>

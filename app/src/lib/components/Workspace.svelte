@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { ChevronRight, Clock, Sparkles } from '@lucide/svelte';
+  import { ChevronRight, Clock, Network } from '@lucide/svelte';
   import { api, createdAt, errorMessage, type Id, type Status } from '#lib/api.ts';
   import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
   import { prefs } from '#lib/prefs.svelte.ts';
@@ -51,6 +51,11 @@
     const nodes = ws.graph?.nodes ?? [];
     until = Math.max(...nodes.map((n) => createdAt(n.id)));
   }
+
+  // With the inspector open in a small window, the graph may be under 300 px wide.
+  let mainWidth = $state(Infinity);
+  const narrow = $derived(mainWidth < 620);
+  const tight = $derived(mainWidth < 400);
 
   async function linkEntries(src: Id, dst: Id) {
     try {
@@ -106,27 +111,28 @@
 
 <svelte:window {onkeydown} onmousemove={activity} />
 
-<div class="workspace grid h-full" style="grid-template-columns: 232px minmax(0, 1fr) {ws.detail || ws.panel ? '400px' : '0px'}">
+<!-- The row is as high as the window whatever its content: what does not fit scrolls inside. -->
+<div class="workspace grid h-full" style="grid-template-rows: minmax(0, 1fr); grid-template-columns: 232px minmax(0, 1fr) {ws.detail || ws.panel ? '400px' : '0px'}">
   <Sidebar userName={status.user_name} />
 
-  <main class="canvas-dots relative flex min-w-0 flex-col border-l border-line-soft">
+  <main class="canvas relative flex min-h-0 min-w-0 flex-col border-l border-line-soft" bind:clientWidth={mainWidth}>
     <header class="relative z-10 flex h-11 shrink-0 items-center gap-1 px-4 text-muted" data-tauri-drag-region>
-      <button class="rounded px-1 transition-colors hover:text-text {ws.view === null ? 'text-text' : ''}" onclick={() => ws.setView(null)}>Alles</button>
+      <button class="shrink-0 rounded px-1 transition-colors hover:text-text {ws.view === null ? 'text-text' : ''}" onclick={() => ws.setView(null)}>Alles</button>
       {#each ws.breadcrumb as p (p.id)}
-        <ChevronRight size={13} class="text-faint" />
-        <button class="rounded px-1 transition-colors hover:text-text {p.id === ws.view ? 'font-medium text-text' : ''}" onclick={() => ws.setView(p.id)}>{p.name}</button>
+        <ChevronRight size={13} class="shrink-0 text-faint" />
+        <button class="min-w-0 truncate rounded px-1 transition-colors hover:text-text {p.id === ws.view ? 'font-medium text-text' : ''}" onclick={() => ws.setView(p.id)}>{p.name}</button>
       {/each}
-      <div class="h-full flex-1" data-tauri-drag-region></div>
-      {#if ws.graph && ws.main === 'graph'}
+      <div class="h-full min-w-2 flex-1" data-tauri-drag-region></div>
+      {#if ws.graph && ws.main === 'graph' && !narrow}
         {@const edges = ws.graph.edges.filter((e) => !ws.hiddenNodes.has(e.src) && !ws.hiddenNodes.has(e.dst)).length}
-        <span class="text-[11px] text-faint tabular-nums">{ws.hiddenNodes.size ? `${ws.graph.nodes.length - ws.hiddenNodes.size} von ${ws.graph.nodes.length}` : ws.graph.nodes.length} Einträge · {edges} Verbindungen</span>
+        <span class="shrink-0 text-[11px] text-faint tabular-nums">{ws.hiddenNodes.size ? `${ws.graph.nodes.length - ws.hiddenNodes.size} von ${ws.graph.nodes.length}` : ws.graph.nodes.length} Einträge · {edges} Verbindungen</span>
       {/if}
       {#if ws.view}
-        <div class="ml-3 w-36"><Segmented bind:value={ws.main} options={MAIN_VIEWS} label="Ansicht" /></div>
+        <div class="ml-3 w-36 shrink-0"><Segmented bind:value={ws.main} options={MAIN_VIEWS} label="Ansicht" /></div>
       {/if}
     </header>
 
-    <div class="relative flex-1">
+    <div class="relative min-h-0 flex-1">
       <GraphView
         snapshot={ws.graph}
         selected={ws.selected}
@@ -152,18 +158,20 @@
 
       {#if ws.graph && ws.graph.nodes.length > 0}
         <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2">
-          <div class="w-56">
-            <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
-          </div>
+          {#if !narrow}
+            <div class="w-56">
+              <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
+            </div>
+          {/if}
           <GraphFilter />
           {#if until === null}
-            <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs text-muted transition-colors hover:text-text" title="Das Wachstum des Graphen ansehen" onclick={openTimeSlider}>
-              <Clock size={13} /> Zeitregler
+            <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs text-muted transition-colors hover:text-text" aria-label="Zeitregler" title="Das Wachstum des Graphen ansehen" onclick={openTimeSlider}>
+              <Clock size={13} />{#if !tight}<span>Zeitregler</span>{/if}
             </button>
           {/if}
         </div>
         {#if until !== null}
-          <div class="absolute right-34 bottom-4 left-[352px] z-10">
+          <div class="absolute z-10 {narrow ? 'right-4 bottom-15 left-4' : 'right-34 bottom-4 left-[352px]'}">
             <TimeSlider nodes={ws.graph.nodes} bind:until onclose={() => (until = null)} />
           </div>
         {/if}
@@ -179,7 +187,7 @@
       {#if ws.graph && ws.graph.nodes.length === 0}
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div class="pointer-events-auto flex max-w-sm flex-col items-center text-center" in:pop={{ duration: 320, y: 10 }}>
-            <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/12 text-accent"><Sparkles size={26} /></div>
+            <Network size={26} class="mb-4 text-faint" />
             <h2 class="text-base font-semibold tracking-tight">{ws.currentProject ? `„${ws.currentProject.name}“ ist noch leer` : 'Dein Graph ist noch leer'}</h2>
             <p class="mt-2 leading-relaxed text-muted">
               Lege mit <kbd class="kbd">⌘N</kbd> einen Eintrag an oder suche mit <kbd class="kbd">⌘K</kbd>.

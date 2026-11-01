@@ -62,7 +62,7 @@
   });
 </script>
 
-<div class="aurora flex h-full items-center justify-center" data-tauri-drag-region>
+<div class="backdrop flex h-full items-center justify-center" data-tauri-drag-region>
   <div class="flex w-[320px] flex-col items-center" in:pop={{ duration: 320, y: 10 }}>
     <img src="/icon.png" alt="" class="mb-5 h-20 w-20 drop-shadow-[0_12px_24px_rgba(0,0,0,0.45)]" draggable="false" />
     <h1 class="text-xl font-semibold tracking-tight">Brainmatter</h1>
@@ -70,7 +70,7 @@
 
     {#if canTouchId && !useRecovery}
       <button
-        class="mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-accent/40 bg-accent/10 text-accent transition-[background-color,scale] duration-150 hover:bg-accent/20 active:scale-95 {waitingForFinger ? 'pulse' : ''}"
+        class="mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-line bg-elevated text-text transition-colors duration-150 hover:bg-raised {waitingForFinger ? 'pulse' : ''}"
         aria-label="Mit Touch ID entsperren"
         onclick={touchId}>
         <Fingerprint size={26} />

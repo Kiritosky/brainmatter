@@ -8,7 +8,6 @@
     Link2,
     Pencil,
     Plus,
-    Sparkles,
     Trash2,
     Undo2,
     X,
@@ -114,7 +113,7 @@
     if (verb.includes('gelöscht')) return { icon: Trash2, color: 'var(--color-danger)' };
     if (verb.includes('Projekt')) return { icon: FolderPlus, color: 'var(--color-accent)' };
     if (verb.includes('Verbindung')) return { icon: Link2, color: 'var(--color-accent)' };
-    if (verb.includes('erfasst')) return { icon: Sparkles, color: 'var(--color-ai)' };
+    if (verb.includes('erfasst')) return { icon: Plus, color: 'var(--color-ai)' };
     if (verb.includes('bearbeitet')) return { icon: Pencil, color: 'var(--color-muted)' };
     return { icon: Plus, color: 'var(--color-ok)' };
   }
@@ -201,7 +200,7 @@
 
             {#if !c.reverted_by}
               <button
-                class="absolute top-2 right-2 inline-flex h-7 items-center gap-1 rounded-md border border-line bg-raised px-2 text-[11px] text-muted opacity-0 shadow-sm transition-[opacity,color,scale] duration-150 group-hover:opacity-100 hover:text-text focus-visible:opacity-100 active:scale-95"
+                class="absolute top-2 right-2 inline-flex h-7 items-center gap-1 rounded-md border border-line bg-raised px-2 text-[11px] text-muted opacity-0 shadow-sm transition-[opacity,color] duration-150 group-hover:opacity-100 hover:text-text focus-visible:opacity-100"
                 onclick={() => revert(c)}>
                 <Undo2 size={12} /> Rückgängig
               </button>

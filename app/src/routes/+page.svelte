@@ -31,7 +31,7 @@
 {#if isCapture}
   {#if status}<QuickCapture {status} />{/if}
 {:else if !status}
-  <div class="aurora h-full" data-tauri-drag-region></div>
+  <div class="backdrop h-full" data-tauri-drag-region></div>
 {:else if onboarding}
   <Onboarding {status} ondone={async () => ((status = await api.status()), (onboarding = false))} />
 {:else if status.state === 'unlocked'}

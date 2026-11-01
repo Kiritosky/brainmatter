@@ -65,9 +65,9 @@
   }
 </script>
 
-<div class="aurora flex h-full flex-col items-center justify-center" data-tauri-drag-region>
+<div class="backdrop flex h-full flex-col items-center justify-center" data-tauri-drag-region>
   {#key step}
-    <div class="surface w-[430px] rounded-2xl p-8" in:pop={{ duration: 300, y: 12 }}>
+    <div class="surface w-[430px] rounded-xl p-8" in:pop={{ duration: 300, y: 12 }}>
       {#if step === 'create'}
         <img src="/icon.png" alt="" class="mb-4 h-14 w-14" draggable="false" />
         <h1 class="text-xl font-semibold tracking-tight">Willkommen bei Brainmatter</h1>
@@ -122,7 +122,7 @@
             else ondone();
           }}>Weiter</button>
       {:else}
-        <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent"><Fingerprint size={24} /></div>
+        <div class="mb-4 flex h-12 w-12 items-center justify-center text-faint"><Fingerprint size={24} /></div>
         <h1 class="text-xl font-semibold tracking-tight">Mit Touch ID entsperren?</h1>
         <p class="mt-1 mb-6 leading-relaxed text-muted">
           Statt des Passworts genügt dann dein Finger. Nach App-Updates fragt Brainmatter einmal nach dem Passwort.

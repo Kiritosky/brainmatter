@@ -636,7 +636,7 @@
             // Sigma's default here is a white plate with a shadow behind the entry.
             backdropVisibility: 'hidden',
             // So that a line leaving the entry does not run through its name.
-            labelBackgroundColor: (_a, s) => (s.isHovered || s.isHighlighted ? colors.plate : 'rgba(0, 0, 0, 0)'),
+            labelBackgroundColor: (_a, s) => (s.isHovered || s.isHighlighted ? `${colors.plate}b8` : 'rgba(0, 0, 0, 0)'),
             labelBackgroundPadding: 2,
             color: (a, s, gs) => (gs.hasHighlighted && !s.isHighlighted ? colors.dimNode : (a.color as string)),
             labelColor: (a, s, gs) =>

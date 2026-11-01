@@ -153,10 +153,10 @@
 <svelte:window {onkeydown} />
 
 <div class="flex h-full items-start justify-center p-2">
-  <div class="surface flex h-full w-full flex-col overflow-hidden rounded-2xl" role="dialog" aria-label="Quick Capture" in:pop={{ duration: 160, y: -6 }}>
+  <div class="surface flex h-full w-full flex-col overflow-hidden rounded-xl" role="dialog" aria-label="Quick Capture" in:pop={{ duration: 160, y: -6 }}>
     {#if locked}
       <div class="flex flex-1 items-center gap-4 px-5">
-        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/12 text-accent"><Lock size={20} /></div>
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center text-faint"><Lock size={20} /></div>
         <div class="min-w-0 flex-1">
           <div class="font-medium">Brainmatter ist gesperrt</div>
           <div class="truncate text-xs {error ? 'text-danger' : 'text-faint'}">{error ?? 'Zum Festhalten erst entsperren.'}</div>

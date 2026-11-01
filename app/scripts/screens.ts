@@ -843,6 +843,65 @@ try {
   await nav.close();
 }
 
+// A full sidebar in a small window scrolls inside; nothing is pushed out of the window.
+{
+  const full = await open('/');
+  try {
+    await full.setViewportSize({ width: 900, height: 600 });
+    await full.getByPlaceholder('Master-Passwort').fill('demo1234');
+    await full.getByRole('button', { name: 'Entsperren', exact: true }).click();
+    await full.getByText('Einträge ·').waitFor();
+    await full.evaluate(async () => {
+      const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+      for (let i = 0; i < 40; i++) await invoke('create_project', { input: { name: `Projekt ${i + 1}` } });
+    });
+    // Any change of the project list brings all of them in.
+    await full.getByRole('button', { name: 'Neues Projekt' }).click();
+    await full.getByPlaceholder('Projektname').fill('Projekt 0');
+    await full.getByPlaceholder('Projektname').press('Enter');
+    await full.getByRole('button', { name: 'Projekt 40' }).first().waitFor({ state: 'attached' });
+    await full.getByRole('button', { name: 'Alles', exact: true }).first().click();
+    await full.waitForTimeout(900);
+    await shot(full, '75-small-window-full-sidebar');
+    const inWindow = async (name: string, target: ReturnType<Page['locator']>) => {
+      const box = await target.boundingBox();
+      if (!box || box.y < 0 || box.y + box.height > 600) errors.push(`${name} is out of the window: ${JSON.stringify(box)}`);
+    };
+    await inWindow('sidebar footer', full.getByRole('button', { name: 'Einstellungen', exact: true }));
+    await inWindow('trash button', full.getByRole('button', { name: 'Papierkorb' }));
+    await inWindow('graph filter', full.getByTitle('Graph filtern', { exact: true }));
+    await inWindow('fit to window', full.locator('main').getByRole('button').last());
+    const scrolled = await full.getByRole('button', { name: 'Projekt 40' }).first().evaluate((row) => {
+      const list = row.closest('.scroll-fade') as HTMLElement;
+      list.scrollTop = list.scrollHeight;
+      return { scrolls: list.scrollHeight > list.clientHeight, doc: document.scrollingElement!.scrollTop };
+    });
+    if (!scrolled.scrolls) errors.push('sidebar list does not scroll');
+    if (scrolled.doc !== 0) errors.push('the whole page scrolled');
+    await full.waitForTimeout(100);
+    await inWindow('last project after scrolling', full.getByRole('button', { name: 'Projekt 40' }).first());
+
+    // With the inspector open too, the graph has little width left, and its tools still fit.
+    await full.getByRole('button', { name: 'Neuer Eintrag' }).click();
+    await full.waitForTimeout(500);
+    await shot(full, '76-small-window-inspector');
+    await inWindow('graph filter beside the inspector', full.getByTitle('Graph filtern', { exact: true }));
+    const crowded = await full.evaluate(() => {
+      const main = document.querySelector('main')!.getBoundingClientRect();
+      const tools = [...document.querySelectorAll('main .absolute.bottom-4')].map((t) => t.getBoundingClientRect()).filter((r) => r.width > 0);
+      return {
+        out: tools.some((r) => r.right > main.right + 0.5 || r.left < main.left - 0.5),
+        overlap: tools.some((a, i) => tools.some((b, j) => i < j && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)),
+      };
+    });
+    if (crowded.out || crowded.overlap) errors.push(`graph tools do not fit beside the inspector: ${JSON.stringify(crowded)}`);
+  } catch (e) {
+    await shot(full, 'zz-full-sidebar-failure');
+    errors.push(`full sidebar failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await full.close();
+}
+
 // Quick capture: where the entry goes is picked in place and remembered.
 {
   const capture = await open('/?window=capture&touchid=ok');

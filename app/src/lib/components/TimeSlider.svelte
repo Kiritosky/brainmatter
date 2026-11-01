@@ -90,7 +90,7 @@
     <div class="h-1 w-full overflow-hidden rounded-full bg-line">
       <div class="h-full rounded-full bg-accent" style="width: {share * 100}%"></div>
     </div>
-    <div class="absolute h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-white shadow-md ring-1 ring-black/15 transition-transform duration-100 group-hover:scale-110 group-active:scale-95" style="left: {share * 100}%"></div>
+    <div class="absolute h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-white shadow-md ring-1 ring-black/15 transition-transform duration-100 group-hover:scale-110 group-" style="left: {share * 100}%"></div>
   </div>
 
   <div class="w-34 shrink-0 text-right text-[11px] leading-tight tabular-nums">

@@ -14,13 +14,13 @@
   --color-line-soft: #1c222d;
   --color-text: #e4e8f1;
   --color-muted: #9099ad;
-  --color-faint: #5d6579;
+  --color-faint: #6c7488;
   --color-accent: var(--accent-on-dark);
   --color-accent-strong: var(--accent-strong-on-dark);
   --color-ok: #5fd3a5;
   --color-warn: #f5c451;
   --color-danger: #ff7a7a;
-  --color-ai: #c38bff;
+  --color-ai: #b5a0ec;
 
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -35,13 +35,13 @@
     --color-line-soft: #e8ebf0;
     --color-text: #191e2a;
     --color-muted: #5b6477;
-    --color-faint: #8a93a5;
+    --color-faint: #7d8698;
     --color-accent: var(--accent-on-light);
     --color-accent-strong: var(--accent-strong-on-light);
     --color-ok: #17935f;
     --color-warn: #b37a00;
     --color-danger: #d93d3d;
-    --color-ai: #8a4fe0;
+    --color-ai: #7654c4;
   }
 }
 
@@ -94,13 +94,13 @@
   --color-line-soft: #e8ebf0;
   --color-text: #191e2a;
   --color-muted: #5b6477;
-  --color-faint: #8a93a5;
+  --color-faint: #7d8698;
   --color-accent: var(--accent-on-light);
   --color-accent-strong: var(--accent-strong-on-light);
   --color-ok: #17935f;
   --color-warn: #b37a00;
   --color-danger: #d93d3d;
-  --color-ai: #8a4fe0;
+  --color-ai: #7654c4;
 }
 
 /* ------------------------------------------------------------- base --- */
@@ -182,27 +182,25 @@ button {
     @apply h-9 rounded-lg border border-line bg-elevated px-3 text-text outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-faint hover:border-faint/60;
   }
   .field:focus {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-line));
+    box-shadow: none;
   }
   .btn-primary {
-    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg px-4 font-medium text-white transition-[filter,scale,opacity] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 92%, white) 0%, var(--color-accent-strong) 100%);
-    box-shadow:
-      0 1px 0 rgb(255 255 255 / 0.18) inset,
-      0 6px 16px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg px-4 font-medium text-white transition-[filter,opacity] duration-150 active:brightness-90 disabled:pointer-events-none disabled:opacity-40;
+    background: var(--color-accent-strong);
+    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 0.5px 0 rgb(255 255 255 / 0.14) inset;
   }
   .btn-primary:hover {
-    filter: brightness(1.08);
+    filter: brightness(1.06);
   }
   .btn-ghost {
-    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-line bg-elevated/40 px-3 text-text transition-[background-color,border-color,scale] duration-150 hover:border-faint/70 hover:bg-elevated active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-line bg-elevated/40 px-3 text-text transition-[background-color,border-color] duration-150 hover:border-faint/70 hover:bg-elevated active:bg-raised disabled:pointer-events-none disabled:opacity-40;
   }
   .btn-danger {
-    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-danger/15 px-3 text-danger transition-colors duration-150 hover:bg-danger/25 active:scale-[0.98];
+    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-danger/15 px-3 text-danger transition-colors duration-150 hover:bg-danger/25 active:bg-danger/30;
   }
   .icon-btn {
-    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-[background-color,color,scale] duration-150 hover:bg-elevated hover:text-text active:scale-90;
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-[background-color,color] duration-150 hover:bg-elevated hover:text-text active:bg-raised;
   }
   .chip {
     @apply inline-flex h-6 items-center gap-1 rounded-md border border-line-soft bg-elevated px-2 text-xs text-muted;
@@ -211,13 +209,13 @@ button {
     @apply inline-flex h-5 min-w-5 items-center justify-center rounded border border-line bg-elevated px-1 font-sans text-[10.5px] text-muted;
   }
   .section-title {
-    @apply mb-2 text-[10.5px] font-semibold tracking-[0.06em] text-faint uppercase;
+    @apply mb-2 text-[11.5px] font-medium text-faint;
   }
   .nav-row {
-    @apply flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-muted transition-colors duration-150 hover:bg-elevated/70 hover:text-text;
+    @apply flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-muted transition-colors duration-100 hover:bg-text/5 hover:text-text;
   }
   .nav-row.active {
-    @apply bg-accent/12 text-text;
+    @apply bg-text/8 text-text;
   }
   .glass-pill {
     @apply flex items-center rounded-xl border border-line-soft bg-panel/80 p-0.5 shadow-lg shadow-black/25 backdrop-blur-md;
@@ -247,19 +245,23 @@ html.tauri .sidebar-glass {
   background: color-mix(in srgb, var(--color-panel) 55%, transparent);
 }
 
-/* Dotted canvas behind the graph. */
-.canvas-dots {
+.canvas {
   background-color: var(--color-bg);
-  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-faint) 22%, transparent) 1px, transparent 0);
-  background-size: 22px 22px;
 }
 
-/* Soft glow used on the lock and onboarding screens. */
-.aurora {
-  background:
-    radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 70%),
-    radial-gradient(40% 40% at 85% 90%, color-mix(in srgb, var(--color-ai) 10%, transparent), transparent 70%),
-    var(--color-bg);
+/* What scrolls under a fixed part fades out instead of being cut off. */
+.scroll-fade {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
+}
+
+/* Behind the lock and onboarding screens. */
+.backdrop {
+  background: var(--color-bg);
+}
+
+/* Lucide's default weight is too heavy at the sizes used here. */
+.lucide {
+  stroke-width: 1.75;
 }
 
 @keyframes pulse-ring {

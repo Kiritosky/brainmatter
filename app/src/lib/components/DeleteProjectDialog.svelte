@@ -45,7 +45,7 @@
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-[2px]" role="presentation" transition:fadeQuick onclick={onclose}>
   <!-- svelte-ignore a11y_click_events_have_key_events -- the window handles Esc -->
-  <div class="surface w-[440px] rounded-2xl p-5" role="dialog" aria-label="Projekt löschen" tabindex="-1" transition:pop onclick={(e) => e.stopPropagation()}>
+  <div class="surface w-[440px] rounded-xl p-5" role="dialog" aria-label="Projekt löschen" tabindex="-1" transition:pop onclick={(e) => e.stopPropagation()}>
     <div class="mb-3 flex items-center gap-3">
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-danger/12 text-danger"><Trash2 size={17} /></div>
       <h2 class="min-w-0 truncate text-[15px] font-semibold tracking-tight">„{project.name}“ löschen?</h2>

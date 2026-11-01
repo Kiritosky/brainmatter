@@ -50,7 +50,7 @@
       </button>
     {:else}
       <div class="flex flex-col items-center px-8 pt-16 text-center" in:pop={{ duration: 240, y: 8 }}>
-        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent/12 text-accent"><BookMarked size={20} /></div>
+        <div class="mb-3 flex h-11 w-11 items-center justify-center text-faint"><BookMarked size={20} /></div>
         <div class="font-medium">Noch keine Vorlagen</div>
         <p class="mt-1 text-xs leading-relaxed text-muted">Zum Beispiel eine Code-Review-Checkliste oder dein Prompt für ein Projekt. Mit <code class="rounded bg-raised px-1 font-mono">{'{{name}}'}</code> markierst du, was sich ändert.</p>
       </div>
