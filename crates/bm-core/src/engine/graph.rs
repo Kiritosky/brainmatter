@@ -259,7 +259,8 @@ pub(crate) fn project_overview(conn: &Connection, id: &ProjectId) -> Result<Proj
     }
 
     let mut by_recency: Vec<_> = snap.nodes.iter().collect();
-    by_recency.sort_by_key(|n| std::cmp::Reverse(n.updated_at));
+    // Ids sort by creation, which settles entries changed in the same millisecond.
+    by_recency.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| b.id.cmp(&a.id)));
     let brief = |n: &GraphNode| NodeBrief {
         id: n.id.clone(),
         title: n.title.clone(),
