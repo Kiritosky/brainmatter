@@ -39,6 +39,10 @@ export const KIND_COLORS: Record<string, string> = {
 const NEUTRAL = '#8f9bb3';
 const COLOR_MODE_KEY = 'bm.colorMode';
 const HIDDEN_PROJECTS_KEY = 'bm.hiddenProjects';
+/** How long the note about an AI's last change stays up. */
+const ACTIVITY_MS = 6000;
+/** Matches the animation in GraphView. */
+const PULSE_MS = 2600;
 const SEEN_VERSION_KEY = 'bm.seenVersion';
 /** Embedding runs in small batches; suggestions need not follow each one. */
 const INDEX_REFRESH_MS = 1500;
@@ -107,6 +111,11 @@ class Workspace {
   filter = $state.raw<{ kinds: string[]; tags: string[]; actors: Id[] }>({ kinds: [], tags: [], actors: [] });
   /** Local graph: only what is this many links away from the selected entry. */
   neighbourhood = $state<number | null>(null);
+  /** The latest change by an AI, while it is recent. Reads leave no trace, so only writes show. */
+  aiActivity = $state<{ actor: Id; summary: string } | null>(null);
+  aiActivityName = $derived(this.actors.find((a) => a.id === this.aiActivity?.actor)?.name ?? 'KI');
+  /** Entries an AI just touched, for the graph to point out. */
+  pulsing = $state.raw(new Set<Id>());
   /** Projects kept out of sight. Only a view: AIs and search still reach them. */
   hiddenProjects = $state.raw(new Set<Id>(JSON.parse(localStorage.getItem(HIDDEN_PROJECTS_KEY) ?? '[]')));
 
@@ -235,6 +244,12 @@ class Workspace {
 
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private indexTimer: ReturnType<typeof setTimeout> | undefined;
+  private activityTimer: ReturnType<typeof setTimeout> | undefined;
+  private pulseTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Entries changed by the change set whose commit event is still to come. */
+  private touched = new Set<Id>();
+  /** Waiting for the refresh that puts them into the graph. */
+  private toPulse = new Set<Id>();
   private unlisten: (() => void)[] = [];
 
   async start() {
@@ -360,8 +375,30 @@ class Workspace {
     }, 4000);
   }
 
+  /** A change set's commit event comes after the events of what it changed. */
+  private noteChange(actor: Id, summary: string) {
+    const touched = this.touched;
+    this.touched = new Set();
+    // An actor not known yet is an AI writing for the first time: the user always exists.
+    if (this.actors.find((a) => a.id === actor)?.kind === 'user') return;
+    this.aiActivity = { actor, summary };
+    clearTimeout(this.activityTimer);
+    this.activityTimer = setTimeout(() => (this.aiActivity = null), ACTIVITY_MS);
+    touched.forEach((id) => this.toPulse.add(id));
+  }
+
+  private startPulse() {
+    if (!this.toPulse.size) return;
+    this.pulsing = this.toPulse;
+    this.toPulse = new Set();
+    clearTimeout(this.pulseTimer);
+    this.pulseTimer = setTimeout(() => (this.pulsing = new Set()), PULSE_MS);
+  }
+
   private onEvent(e: DomainEvent) {
     if (e.type !== 'index_updated') {
+      if (e.type === 'node_upserted') this.touched.add(e.id);
+      if (e.type === 'change_set_committed') this.noteChange(e.actor, e.summary);
       this.scheduleRefresh();
       return;
     }
@@ -376,6 +413,9 @@ class Workspace {
   private scheduleRefresh() {
     clearTimeout(this.refreshTimer);
     this.refreshTimer = setTimeout(async () => {
+      // A change set's events arrive in one burst. Whatever is left over never got its
+      // commit event, and pointing at the wrong entry is worse than at none.
+      this.touched = new Set();
       await Promise.all([
         this.loadProjects(),
         this.loadGraph(),
@@ -384,6 +424,7 @@ class Workspace {
         this.refreshDetail(),
         this.refreshSuggestions(),
       ]);
+      this.startPulse();
       this.revision++;
     }, 120);
   }

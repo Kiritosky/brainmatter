@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import Graph from 'graphology';
   import Sigma, { DEFAULT_STYLES } from 'sigma';
   import forceAtlas2 from 'graphology-layout-forceatlas2';
@@ -15,12 +15,15 @@
     suggested,
     until,
     hidden,
+    pulsing,
     colorFor,
     onselect,
     onopen,
   }: {
     /** Entries the filters hide. They keep their place in the layout. */
     hidden: Set<Id>;
+    /** Entries to point out for a moment, because an AI just changed them. */
+    pulsing: Set<Id>;
     /** Time slider: show only what existed at this time (ms). */
     until: number | null;
     snapshot: GraphSnapshot | null;
@@ -62,6 +65,26 @@
   // Likewise, and not node attributes: Sigma would have to repaint nodes the sync
   // just added and hasn't processed yet, and throws.
   let filteredOut: Set<Id> = new Set();
+  /** A burst of this many says as much as a thousand, and stays cheap. */
+  const MAX_RINGS = 30;
+  // Plain elements above the canvas: animating node sizes would redraw the graph
+  // every frame. The render callback keeps them on their nodes during layout and panning.
+  let rings = $state.raw<{ id: Id; x: number; y: number }[]>([]);
+
+  function placeRings() {
+    if (!renderer || !pulsing.size) {
+      if (rings.length) rings = [];
+      return;
+    }
+    const placed = [];
+    for (const id of pulsing) {
+      if (placed.length === MAX_RINGS) break;
+      if (!graph.hasNode(id) || filteredOut.has(id)) continue;
+      const { x, y } = graph.getNodeAttributes(id);
+      placed.push({ id, ...renderer.graphToViewport({ x, y }) });
+    }
+    rings = placed;
+  }
 
   /** `rank * count` is 1 for an average entry, whatever the size of the view. */
   const sizeFor = (rank: number, count: number) => Math.min(18, Math.max(3.5, 2 + Math.sqrt(rank * count) * 3.6));
@@ -252,6 +275,9 @@
       },
     });
 
+    // Untracked: effects call refresh(), which can render right there, and must not
+    // come to depend on the rings this writes.
+    renderer.on('afterRender', () => untrack(() => rings.length && placeRings()));
     renderer.on('clickNode', ({ node }) => onselect(node));
     renderer.on('doubleClickNode', ({ node, preventSigmaDefault }) => {
       preventSigmaDefault?.();
@@ -308,6 +334,13 @@
     renderer?.refresh();
   });
 
+  // After the sync above, so entries it just added have a place.
+  $effect(() => {
+    void snapshot;
+    void pulsing;
+    untrack(placeRings);
+  });
+
   $effect(() => {
     void theme.tick;
     colors = readColors();
@@ -323,6 +356,10 @@
 
 <div class="absolute inset-0" bind:this={container}></div>
 
+{#each rings as ring (ring.id)}
+  <span class="pulse-ring" style="left: {ring.x}px; top: {ring.y}px"></span>
+{/each}
+
 {#if snapshot && snapshot.nodes.length > 0}
   <div class="glass-pill absolute right-4 bottom-4 z-10">
     <button class="icon-btn" aria-label="Vergrößern" title="Vergrößern" onclick={() => renderer?.getCamera().zoomIn({ duration: 180 })}><Plus size={15} /></button>
@@ -331,3 +368,27 @@
     <button class="icon-btn" aria-label="Alles zeigen" title="Alles zeigen" onclick={() => renderer?.getCamera().reset({ duration: 300 })}><Maximize size={14} /></button>
   </div>
 {/if}
+
+<style>
+  .pulse-ring {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    border: 2px solid var(--color-ai);
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+    animation: pulse-ring 1.3s var(--ease-out-soft) 2;
+  }
+  @keyframes pulse-ring {
+    from {
+      transform: scale(0.35);
+      opacity: 0.95;
+    }
+    to {
+      transform: scale(1.7);
+      opacity: 0;
+    }
+  }
+</style>

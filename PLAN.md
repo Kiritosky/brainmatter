@@ -652,8 +652,8 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 - Keine `notifications/prompts/list_changed`; Clients sehen neue Prompts beim nächsten Abruf. Keine Verwendungsstatistik für Vorlagen, kein `from_template` in `capture`.
 - MCP `resources` fehlen weiterhin.
 
-**Dazu seit 0.5.0**: Favoriten und Tags in der Sidebar, Projekte und Aktionen in ⌘K, Filter im Graph, lokaler Graph, Projekte ausblenden (nur Ansicht, liegt im `localStorage`, gilt nicht für KIs), Tags für Doku-Seiten. Die Token-Kosten der MCP-Schnittstelle misst `crates/bm-mcp/tests/token_cost.rs` und begrenzt sie mit Budgets.
+**Dazu seit 0.5.0**: Favoriten und Tags in der Sidebar, Projekte und Aktionen in ⌘K, Filter im Graph, lokaler Graph, Projekte ausblenden (nur Ansicht, liegt im `localStorage`, gilt nicht für KIs), Tags für Doku-Seiten. Seit 0.5.1 zeigt der Graph Schreibzugriffe von KIs live an und lässt die betroffenen Einträge pulsieren; Lesezugriffe erzeugen keine Ereignisse und bleiben unsichtbar. Die Token-Kosten der MCP-Schnittstelle misst `crates/bm-mcp/tests/token_cost.rs` und begrenzt sie mit Budgets.
 
-**Noch aus dem Plan offen**: gespeicherte Ansichten; Verbinden per ⌥-Drag; Puls bei neuen KI-Einträgen; Binärdaten statt JSON für große Graphen; Live-Anzeige der KI-Aktivität.
+**Noch aus dem Plan offen**: gespeicherte Ansichten; Verbinden per ⌥-Drag; Binärdaten statt JSON für große Graphen.
 
 **Offen beim Prüfen**: Alle Funktionen aus §18 und §19 sind nur über Tests und das Mock geprüft, nicht in der echten App.

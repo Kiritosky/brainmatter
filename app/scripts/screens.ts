@@ -272,6 +272,19 @@ try {
   await sidebar.getByRole('button', { name: 'Tresor', exact: true }).waitFor({ state: 'detached' });
   await page.getByLabel('Schließen').first().click();
 
+  // An AI writes while you watch: a note names it, and the entry pulses.
+  await page.evaluate(() => (globalThis as unknown as { mockAiCapture(t: string, n: string): void }).mockAiCapture('Von der KI', 'Tresor'));
+  await page.getByRole('status').filter({ hasText: 'Claude Code' }).waitFor();
+  await page.locator('.pulse-ring').first().waitFor();
+  await page.waitForTimeout(450);
+  const pulses = await page.locator('.pulse-ring').count();
+  if (pulses !== 1) errors.push(`expected one entry to pulse, saw ${pulses}`);
+  await shot(page, '61-ai-activity');
+  await page.locator('.pulse-ring').first().waitFor({ state: 'detached', timeout: 6000 });
+  await page.getByRole('status').filter({ hasText: 'Claude Code' }).waitFor({ state: 'detached', timeout: 9000 });
+  await page.evaluate(() => (globalThis as unknown as { mockAiForget(t: string): void }).mockAiForget('Von der KI'));
+  await page.waitForTimeout(300);
+
   // Managing projects: rename, move by menu and by dragging, delete.
   const row = (name: string) => sidebar.getByRole('listitem').filter({ hasText: name }).last();
   const order = () => sidebar.getByRole('listitem').locator('span.truncate').allInnerTexts();

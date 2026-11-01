@@ -111,9 +111,18 @@
         {suggested}
         {until}
         hidden={ws.hiddenNodes}
+        pulsing={ws.pulsing}
         colorFor={(n) => ws.colorFor(n)}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />
+
+      {#if ws.aiActivity && ws.main === 'graph'}
+        <div class="glass-pill pointer-events-none absolute top-3 left-1/2 z-10 !h-8 max-w-[70%] -translate-x-1/2 gap-2 !px-3 text-xs" role="status" transition:pop={{ duration: 180, y: -6 }}>
+          <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-ai"></span>
+          <span class="shrink-0 font-medium text-ai">{ws.aiActivityName}</span>
+          <span class="truncate text-muted">{ws.aiActivity.summary}</span>
+        </div>
+      {/if}
 
       {#if ws.graph && ws.graph.nodes.length > 0}
         <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2">

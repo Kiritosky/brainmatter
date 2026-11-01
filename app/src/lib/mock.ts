@@ -238,6 +238,26 @@ function createNode(input: Args, reviewed = true): Node {
   return n;
 }
 
+/** For the walkthrough: what the app sees while an AI writes. `mockAiForget`
+ * takes it back, so the steps after it find the data they expect. */
+(globalThis as { mockAiCapture?: (title: string, near: string) => void }).mockAiCapture = (title, near) => {
+  const node = createNode({ title, body: 'Von einer KI.', kind: 'note' }, false);
+  node.created_by = 'actor-Claude Code';
+  const other = [...nodes.values()].find((n) => n.title === near);
+  if (other) addEdge(node.id, other.id);
+  notify(
+    { type: 'node_upserted', id: node.id },
+    { type: 'change_set_committed', id: id(), actor: 'actor-Claude Code', summary: `„${title}“ erstellt` },
+  );
+};
+(globalThis as { mockAiForget?: (title: string) => void }).mockAiForget = (title) => {
+  const node = [...nodes.values()].find((n) => n.title === title);
+  if (!node) return;
+  for (const e of [...edges.values()]) if (e.src === node.id || e.dst === node.id) edges.delete(e.id);
+  nodes.delete(node.id);
+  notify({ type: 'node_deleted', id: node.id });
+};
+
 function createProject(name: string, parent: string | null = null, color: string | null = null): Project {
   const p: Project = { id: id(), parent_id: parent, name, description: '', color, icon: null, sort: projects.size, created_at: now(), created_by: USER, deleted_at: null };
   projects.set(p.id, p);
@@ -493,7 +513,10 @@ const handlers: Record<string, (a: Args) => unknown> = {
     }
     return [...counts].map(([tag, count]) => ({ tag, count })).sort((x, y) => y.count - x.count);
   },
-  actors: () => [{ id: USER, kind: 'user', name: userName, color: null, created_at: 0 }],
+  actors: () => [
+    { id: USER, kind: 'user', name: userName, color: null, created_at: 0 },
+    { id: 'actor-Claude Code', kind: 'ai', name: 'Claude Code', color: null, created_at: 0 },
+  ],
   rename_project: (a) => {
     const p = projects.get(a.id);
     if (!p) fail('not_found', 'Projekt nicht gefunden');
@@ -625,7 +648,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     nodes.delete(n.id);
     notify({ type: 'node_deleted', id: n.id });
   },
-  app_version: () => '0.5.0',
+  app_version: () => '0.5.1',
   // Only when asked, so screenshots do not all show an update.
   check_update: () => (updateChecks++ > 0 ? { version: '0.5.0', notes: '### Neu\n- **Etwas Schönes:** Ein Beispiel für Update-Notizen.' } : null),
   install_update: () => undefined,
