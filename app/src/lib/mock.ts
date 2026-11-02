@@ -43,6 +43,20 @@ const members = new Set<string>(); // `${project}|${node}`
 const layouts = new Map<string, { x: number; y: number; pinned: boolean }>(); // `${view}|${node}`
 const changeSets: ChangeSetInfo[] = [];
 const touched = new Map<string, string[]>(); // change set → node ids
+const imported = new Map<string, string[]>(); // change set → projects an import made
+
+function importSummary(changeSet: string | null) {
+  return {
+    folder: 'Obsidian',
+    entries: 3,
+    projects: 2,
+    links: 0,
+    existing: 1,
+    skipped: [{ path: 'Anhänge/Protokoll.md', reason: 'too_large' }],
+    skipped_count: 1,
+    change_set: changeSet,
+  };
+}
 const clients: AiClient[] = [];
 
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
@@ -709,6 +723,23 @@ const handlers: Record<string, (a: Args) => unknown> = {
     if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
     return { folder: '/Users/alex/Dokumente/Brainmatter-Export-2026-11-01', entries: 16, attachments: 2, failed_attachments: [] };
   },
+  import_preview: () => importSummary(null),
+  import_markdown: () => {
+    const top = createProject('Obsidian');
+    const reading = createProject('Lesen', top.id);
+    const made = [
+      createNode({ title: 'Atomare Notizen', body: 'Klein genug, um sie zu verlinken.', tags: ['methode'], projects: [top.id] }),
+      createNode({ title: 'Zettelkasten', body: 'Eine Idee pro Zettel, verbunden mit [[Atomare Notizen]].', kind: 'concept', tags: ['methode'], projects: [top.id] }),
+      createNode({ title: 'Wie man Bücher liest', body: 'Notizen beim Lesen, siehe [[Zettelkasten]].', kind: 'source', projects: [reading.id] }),
+    ];
+    record('„Obsidian“ importiert', made.map((n) => n.id));
+    imported.set(changeSets[0].id, [top.id, reading.id]);
+    notify(
+      ...[top, reading].map((p) => ({ type: 'project_upserted' as const, id: p.id })),
+      ...made.map((n) => ({ type: 'node_upserted' as const, id: n.id })),
+    );
+    return importSummary(changeSets[0].id);
+  },
   restore_backup: (a) => {
     if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
     state = 'locked';
@@ -820,6 +851,18 @@ const handlers: Record<string, (a: Args) => unknown> = {
     const cs = changeSets.find((c) => c.id === a.changeSet);
     if (!cs) fail('not_found', 'Änderung nicht gefunden');
     cs.reverted_by = 'reverted';
+    // An import is the one change the walkthrough takes back, so only it is undone here.
+    for (const pid of imported.get(cs.id) ?? []) {
+      projects.get(pid)!.deleted_at = now();
+      notify({ type: 'project_deleted', id: pid });
+    }
+    if (imported.has(cs.id)) {
+      for (const nid of touched.get(cs.id) ?? []) {
+        live(nid).deleted_at = now();
+        for (const e of edges.values()) if (e.src === nid || e.dst === nid) e.deleted_at ??= now();
+        notify({ type: 'node_deleted', id: nid });
+      }
+    }
     record('Änderung rückgängig gemacht');
     notify({ type: 'change_set_committed', id: cs.id, actor: USER, summary: cs.summary });
   },

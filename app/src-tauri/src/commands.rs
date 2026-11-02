@@ -10,7 +10,7 @@ use bm_core::{
 };
 use bm_mcp::{Client, ClientRegistry, RegistryError, Scope};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::{
@@ -698,6 +698,48 @@ pub async fn export_markdown(
         let path = folder.into_path().map_err(ApiError::internal)?;
         let (engine, _) = session.engine()?;
         Ok(Some(engine.export_markdown(&path)?))
+    })
+    .await
+}
+
+/// The folder the user chose to import from. Only that one can be imported, whatever
+/// the web view asks for.
+#[derive(Default)]
+pub struct ImportFolder(std::sync::Mutex<Option<std::path::PathBuf>>);
+
+/// Asks for a folder of Markdown notes and says what importing it would bring in.
+/// Returns nothing if the user cancels.
+#[tauri::command]
+pub async fn import_preview(
+    app: tauri::AppHandle,
+    session: S<'_>,
+) -> ApiResult<Option<bm_core::engine::ImportSummary>> {
+    let session = session.inner().clone();
+    blocking(move || {
+        session.engine()?;
+        let Some(folder) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
+        let path = folder.into_path().map_err(ApiError::internal)?;
+        let (engine, _) = session.engine()?;
+        let summary = engine.import_preview(&path)?;
+        *app.state::<ImportFolder>().0.lock().map_err(ApiError::internal)? = Some(path);
+        Ok(Some(summary))
+    })
+    .await
+}
+
+/// Imports the folder of the last preview, in one change set.
+#[tauri::command]
+pub async fn import_markdown(
+    app: tauri::AppHandle,
+    session: S<'_>,
+) -> ApiResult<bm_core::engine::ImportSummary> {
+    let session = session.inner().clone();
+    blocking(move || {
+        let picked = app.state::<ImportFolder>().0.lock().map_err(ApiError::internal)?.take();
+        let path =
+            picked.ok_or_else(|| ApiError::new("invalid", "Bitte zuerst einen Ordner wählen."))?;
+        let (engine, ctx) = session.engine()?;
+        Ok(engine.import_markdown(&ctx, &path)?)
     })
     .await
 }

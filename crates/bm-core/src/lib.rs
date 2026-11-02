@@ -10,6 +10,7 @@ pub mod engine;
 pub mod error;
 pub mod events;
 pub mod ids;
+pub mod import;
 pub mod model;
 pub mod semantic;
 pub mod store;

@@ -268,6 +268,23 @@ export interface ExportSummary {
   failed_attachments: string[];
 }
 
+export type ImportSkipReason = 'too_large' | 'not_text' | 'too_many' | 'same_title' | 'long_title';
+
+/** What importing a folder brings, or brought, in. */
+export interface ImportSummary {
+  folder: string;
+  entries: number;
+  projects: number;
+  links: number;
+  /** Left out since the vault has an entry of that title. */
+  existing: number;
+  /** The first files left out for another reason. */
+  skipped: { path: string; reason: ImportSkipReason }[];
+  skipped_count: number;
+  /** Undoes the import. */
+  change_set: Id | null;
+}
+
 export interface BackupStatus {
   running: boolean;
   error: string | null;
@@ -402,6 +419,10 @@ export const api = {
   backupStatus: () => call<BackupStatus>('backup_status'),
   backupNow: () => call<BackupInfo>('backup_now'),
   exportMarkdown: (password: string) => call<ExportSummary | null>('export_markdown', { password }),
+  /** Asks for a folder; nothing back if the user cancels. */
+  importPreview: () => call<ImportSummary | null>('import_preview'),
+  /** Imports the folder of the last preview. */
+  importMarkdown: () => call<ImportSummary>('import_markdown'),
   restoreBackup: (name: string, password: string) =>call<void>('restore_backup', { name, password }),
 
   // AI clients

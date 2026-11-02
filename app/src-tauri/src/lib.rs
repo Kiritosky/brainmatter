@@ -230,6 +230,7 @@ pub fn run() {
             app.manage(registry.clone());
             app.manage(mcp_status.clone());
             app.manage(CaptureState::default());
+            app.manage(commands::ImportFolder::default());
             apply_settings(app.handle(), &session.settings());
 
             let hub: Arc<dyn Hub> = Arc::new(SessionHub(session.clone()));
@@ -335,6 +336,8 @@ pub fn run() {
             commands::backup_now,
             commands::restore_backup,
             commands::export_markdown,
+            commands::import_preview,
+            commands::import_markdown,
             commands::add_attachment,
             commands::attachment_data,
             commands::delete_attachment,

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { Archive, CircleCheck, FileDown, History, RefreshCw, TriangleAlert } from '@lucide/svelte';
-  import { api, errorMessage, type BackupStatus, type ExportSummary, type Settings } from '#lib/api.ts';
+  import { Archive, CircleCheck, FileDown, FolderInput, History, LoaderCircle, RefreshCw, TriangleAlert, Undo2 } from '@lucide/svelte';
+  import { api, errorMessage, type BackupStatus, type ExportSummary, type ImportSkipReason, type ImportSummary, type Settings } from '#lib/api.ts';
   import { formatSize } from '#lib/attachments.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import { pop } from '#lib/ui/motion.ts';
@@ -63,6 +63,62 @@
       busy = false;
     }
   }
+
+  /** The folder chosen, before or after its import. */
+  let preview = $state<ImportSummary | null>(null);
+  let imported = $state<ImportSummary | null>(null);
+  let importing = $state(false);
+  let undone = $state(false);
+  let importError = $state<string | null>(null);
+
+  async function importStep(fn: () => Promise<void>) {
+    busy = true;
+    importError = null;
+    try {
+      await fn();
+    } catch (err) {
+      importError = errorMessage(err);
+    } finally {
+      busy = false;
+      importing = false;
+    }
+  }
+
+  const chooseFolder = () =>
+    importStep(async () => {
+      const summary = await api.importPreview();
+      // Nothing back means the folder dialog was cancelled.
+      if (summary) [preview, imported, undone] = [summary, null, false];
+    });
+
+  const runImport = () =>
+    importStep(async () => {
+      importing = true;
+      imported = await api.importMarkdown();
+      preview = null;
+    });
+
+  const undoImport = () =>
+    importStep(async () => {
+      await api.revert(imported!.change_set!);
+      undone = true;
+    });
+
+  const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n.toLocaleString('de-DE')} ${many}`);
+  function coming(p: ImportSummary) {
+    const parts = [count(p.entries, 'neuer Eintrag', 'neue Einträge')];
+    if (p.projects) parts.push(count(p.projects, 'neues Projekt', 'neue Projekte'));
+    if (p.links) parts.push(count(p.links, 'Verbindung aus dem Export', 'Verbindungen aus dem Export'));
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} und ${parts.at(-1)}` : parts[0];
+    return `Aus „${p.folder}“ ${p.entries === 1 && parts.length === 1 ? 'kommt' : 'kommen'} ${list}.`;
+  }
+  const REASONS: Record<ImportSkipReason, string> = {
+    too_large: 'zu groß',
+    not_text: 'kein lesbarer Text',
+    too_many: 'mehr als 50.000 Dateien',
+    same_title: 'Titel doppelt im Ordner',
+    long_title: 'Titel zu lang',
+  };
 
   const when = (ms: number) =>
     new Date(ms).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -158,6 +214,66 @@
       <div class="selectable mt-1 break-all text-faint">{exported.folder}</div>
       {#if exported.failed_attachments.length}
         <div class="mt-1 text-warn">Nicht lesbar: {exported.failed_attachments.join(', ')}</div>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<h3 class="section-title mt-7">Importieren</h3>
+<div class="card">
+  <div class="row">
+    <FolderInput size={15} class="shrink-0 text-faint" />
+    <div class="min-w-0 flex-1">
+      <div>Markdown importieren</div>
+      <div class="text-xs text-faint">Ein Ordner aus Obsidian, Logseq oder einem Export von Brainmatter. Ordner werden Projekte, Front Matter wird zu Tags und Art, Links zwischen den Dateien zu Verbindungen.</div>
+    </div>
+    <button class="btn-ghost !h-7 shrink-0 text-xs" aria-label="Ordner zum Importieren wählen" disabled={busy} onclick={chooseFolder}>Ordner wählen</button>
+  </div>
+  {#if importError}
+    <div class="border-t border-line-soft px-4 py-3 text-xs text-danger" role="alert" in:pop={{ duration: 160, y: -3 }}>{importError}</div>
+  {/if}
+  {#if preview}
+    <div class="border-t border-line-soft px-4 py-3 text-xs" in:pop={{ duration: 160, y: -3 }}>
+      {#if preview.entries}
+        <p class="leading-relaxed">{coming(preview)}</p>
+      {:else}
+        <p class="leading-relaxed">In „{preview.folder}“ ist nichts Neues.</p>
+      {/if}
+      {#if preview.existing}
+        <p class="mt-1 text-faint">{count(preview.existing, 'Eintrag gibt', 'Einträge gibt')} es schon. {preview.existing === 1 ? 'Er bleibt' : 'Sie bleiben'}, wie {preview.existing === 1 ? 'er ist' : 'sie sind'}.</p>
+      {/if}
+      {#if preview.skipped_count}
+        <details class="mt-1 text-warn">
+          <summary class="cursor-default">{count(preview.skipped_count, 'Datei bleibt', 'Dateien bleiben')} draußen</summary>
+          <ul class="selectable mt-1 space-y-0.5 text-faint">
+            {#each preview.skipped as file (file.path)}
+              <li class="break-all">{file.path} <span class="text-muted">· {REASONS[file.reason]}</span></li>
+            {/each}
+            {#if preview.skipped_count > preview.skipped.length}
+              <li>und {(preview.skipped_count - preview.skipped.length).toLocaleString('de-DE')} weitere</li>
+            {/if}
+          </ul>
+        </details>
+      {/if}
+      <div class="mt-3 flex justify-end gap-2">
+        <button class="btn-ghost !h-7 text-xs" disabled={busy} onclick={() => (preview = null)}>Abbrechen</button>
+        {#if preview.entries}
+          <button class="btn-primary !h-7 text-xs" disabled={busy} onclick={runImport}>
+            {#if importing}<LoaderCircle size={13} class="animate-spin" /> Importiere …{:else}Importieren{/if}
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+  {#if imported}
+    <div class="flex items-center gap-2 border-t border-line-soft px-4 py-3 text-xs" in:pop={{ duration: 160, y: -3 }}>
+      {#if undone}
+        <span class="flex-1 text-muted">Import von „{imported.folder}“ rückgängig gemacht.</span>
+      {:else}
+        <span class="flex flex-1 items-center gap-1.5 text-ok"><CircleCheck size={13} /> {count(imported.entries, 'Eintrag', 'Einträge')} aus „{imported.folder}“ importiert</span>
+        {#if imported.change_set}
+          <button class="btn-ghost !h-7 shrink-0 text-xs" disabled={busy} onclick={undoImport}><Undo2 size={13} /> Rückgängig</button>
+        {/if}
       {/if}
     </div>
   {/if}

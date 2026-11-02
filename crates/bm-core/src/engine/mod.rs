@@ -13,6 +13,7 @@ mod export;
 mod file_links;
 mod graph;
 mod history;
+mod import;
 mod nodes;
 mod projects;
 mod refs;
@@ -22,6 +23,7 @@ mod semantic;
 mod writer;
 
 pub use export::ExportSummary;
+pub use import::ImportSummary;
 pub use rows::clean_tags;
 
 use std::{

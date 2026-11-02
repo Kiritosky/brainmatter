@@ -725,6 +725,19 @@ try {
   await page.waitForTimeout(250);
   await shot(page, '31-backups');
 
+  // A folder from another tool comes in, and goes again with one undo.
+  await page.getByRole('button', { name: 'Ordner zum Importieren wählen' }).click();
+  await page.getByText('Aus „Obsidian“ kommen').waitFor();
+  await page.getByText('Datei bleibt draußen').click();
+  await page.waitForTimeout(300);
+  await shot(page, '83-import-preview');
+  await page.getByRole('button', { name: 'Importieren', exact: true }).click();
+  await page.getByText('3 Einträge aus „Obsidian“ importiert').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '84-import-done');
+  await page.getByRole('button', { name: 'Rückgängig' }).last().click();
+  await page.getByText('Import von „Obsidian“ rückgängig gemacht').waitFor();
+
   await page.getByRole('button', { name: 'Suche nach Sinn' }).click();
   await page.getByRole('button', { name: 'Laden', exact: true }).waitFor();
   await page.waitForTimeout(300);

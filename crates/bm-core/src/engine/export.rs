@@ -19,7 +19,7 @@ use crate::{
     time::now_ms,
 };
 
-const NO_PROJECT: &str = "Ohne Projekt";
+pub(super) const NO_PROJECT: &str = "Ohne Projekt";
 const DOCS: &str = "_Doku";
 const TEMPLATES: &str = "_Vorlagen";
 const ATTACHMENTS: &str = "_Anhänge";
