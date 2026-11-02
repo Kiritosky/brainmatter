@@ -51,3 +51,5 @@ coverage/
 
 # Built by scripts/build-release.sh
 app/src-tauri/binaries/
+
+plan.md
