@@ -151,8 +151,12 @@
 
   try {
     const field = await until(() => document.querySelector('input[type="password"]'), 30000, 'the lock screen');
+    const [nav] = performance.getEntriesByType('navigation');
     await report('lock_screen', {
       timeOrigin: performance.timeOrigin,
+      // Where the time before the first script goes: the page, then what it loads.
+      page: nav && { responseEnd: Math.round(nav.responseEnd), interactive: Math.round(nav.domInteractive), loaded: Math.round(nav.domContentLoadedEventEnd) },
+
       dpr: devicePixelRatio,
       width: innerWidth,
       height: innerHeight,

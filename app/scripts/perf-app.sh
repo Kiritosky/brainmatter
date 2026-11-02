@@ -33,12 +33,14 @@ before=$(pgrep -f com.apple.WebKit.WebContent | tr '\n' ' ' || true)
 : >"$out"
 echo "{\"name\":\"launch\",\"at\":$(perl -MTime::HiRes=time -e 'printf "%d", time()*1000')}" >>"$out"
 
+# PERF_BIN measures another build, such as a release one with debug assertions (which
+# the script needs): CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true bun run tauri build --no-bundle
 # PERF_DPR=2 measures the load of a Retina display on one that is not.
 script="$out.js"
 { echo "window.__bmPerfDpr = ${PERF_DPR:-0};"; cat "$root/app/scripts/perf-app.js"; } >"$script"
 
 BM_PERF_SCRIPT="$script" BM_PERF_VAULT="$vault" BM_PERF_OUT="$out" \
-  RUST_LOG=info "$root/target/debug/brainmatter" >"$out.log" 2>&1 &
+  RUST_LOG=info "${PERF_BIN:-$root/target/debug/brainmatter}" >"$out.log" 2>&1 &
 bin_pid=$!
 trap 'kill "$bin_pid" 2>/dev/null || true' EXIT
 
