@@ -688,3 +688,36 @@ Echte App (`app/scripts/perf-app.sh`), optimierter Build mit Debug-Assertions un
 **Bekannte Kosten bei 50k**: Zeitregler und Fenstergröße lösen ein volles Refresh aus, rund 500 ms je Schritt. Jede Änderung lädt den Snapshot von 45 MB neu, adaptiv gedrosselt. Binärdaten sind nicht gebaut, JSON reicht bisher.
 
 **Nicht gemessen**: echtes Retina. Der Lauf mit simuliertem dpr 2 kam nur bis zum Leerlauf (60 fps, p95 18 ms), das Retina-Display war nicht verfügbar. MCP-Roundtrip direkt bei 50k: aus Phase 0 stammen p95 0,5 ms für den Transport, die Suche kommt dazu. RAM im Leerlauf bei kleinem Tresor seit den Graph-Änderungen: ein früherer Lauf mit 3.000 Einträgen lag bei App 293 MB und Web-Prozess 408 MB. Ein Lauf hatte beim Verschieben einen Hänger von 2452 ms, während das Fenster verdeckt war.
+
+## 21. Messung nach 1.0 (2026-11-02)
+
+Gleicher Aufbau wie §20, dazu ein Lauf auf dem Retina-Display (2056×1290 Punkte bei dpr 2). Speicher jetzt als Footprint, wie ihn die Aktivitätsanzeige zeigt: Die residente Größe aus §20 zählte geteilte Seiten und schon freigegebenen Speicher mit und lag etwa doppelt so hoch.
+
+| Metrik | Ziel (§9) | 1.0 (§20) | Jetzt | |
+|---|---|---|---|---|
+| Graph: Zoomen, Verschieben, Überfahren | 60 fps | 60 fps, p95 18 ms | 60 fps, p95 18 ms; Retina: Zoomen 59,4 fps, p95 19 ms | erreicht |
+| Start bis Lock-Screen | < 300 ms | 490–1876 ms | Release-Build 650–750 ms, Debug-Build 670–730 ms | verfehlt |
+| Entsperren bis erstes Bild | < 1,5 s | 1,9–2,1 s | 1,36–1,45 s, Links bei rund 2 s | erreicht |
+| Änderung sichtbar | | Neuladen 45 MB JSON, Bearbeiten bis 3,9 s | Bearbeiten 0,24–0,27 s, neuer Eintrag 0,29–0,33 s, Löschen 0,93–0,97 s | |
+| Zeitregler je Schritt | | rund 500 ms | p50 247 ms, p95 310 ms | |
+| Hybrid-Suche p95 | < 25 ms | 79 ms | 55 ms, wie in der App: Wortsuche und Anfragevektor parallel | verfehlt |
+| RAM | < 200 MB im Leerlauf | App 430 MB, Web 1,4–1,6 GB (resident) | 3.000 Einträge: App 184–190 MB, Web 230–370 MB. 50k: App 125–220 MB, Web 1,0–1,9 GB | App erreicht |
+| Einbetten pro Eintrag | 5–20 ms | rund 25 ms | 18 ms, 54,8 Einträge/s, 50k in 15 min | erreicht |
+
+**Was es gebracht hat**:
+- Binärer Graph (`bm_core::wire`, 16,3 MB statt 44,8 MB JSON, IPC 330–360 ms).
+- Arbeitsfläche lädt erst nach dem Lock-Screen.
+- Große Ansichten zeichnen erst die Einträge, die Links zwei Frames später; wieder geöffnete Ansichten zeigen gespeicherte Kreise sofort.
+- Ab 5.000 Einträgen lädt eine Änderung nur die betroffenen Einträge (`graph_part`), Rang und Cluster bleiben bis zum nächsten vollen Laden.
+- Im Fenster:
+  - kein zweiter Sync durch neu geladene, gleiche Projekte;
+  - Rahmen großer Ansichten bleibt, solange alles hineinpasst;
+  - nach einem Layout werden nur bewegte Einträge gesetzt;
+  - Zeitregler und Filter aktualisieren nur, was sich ändert;
+  - Links gehen als ein übergebenes `Uint32Array` an den Layout-Worker.
+- Hybrid-Suche läuft parallel zum Anfragevektor.
+- Skalarprodukt mit 16 Bahnen.
+
+**Messfehler gefunden**: Das Messskript maximierte das Fenster beim Laden der Seite. Die Zoom-Animation von macOS blockiert den Hauptthread, der die Dateien der Seite ausliefert: 400 ms, die ein echter Start nie hatte. Ohne Animation braucht die Seite bis zum Lock-Screen 50–160 ms. Der Rest des Starts (Release): Prozess bis `build` rund 110 ms, Fenster und WebView rund 210 ms, Setup 15 ms, WebContent-Prozess bis Navigation 200–270 ms. Das Ziel von 300 ms ist mit Tauri und WKWebView so nicht zu erreichen.
+
+**Weiter offen**: Fenstergröße ändern geht bei 50k durch alles (rund 500 ms). Sigma verarbeitet bei jedem neuen Link alle Einträge und Links neu; das ist der größte Teil einer Änderung bei 50k. Die Wortsuche im schweren Korpus (55 ms) ist FTS5-Ranking über Tausende Treffer. Speicher beim Indizieren nicht als Footprint gemessen.

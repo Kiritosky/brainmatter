@@ -143,26 +143,26 @@ Entries are treated as untrusted when shown: Markdown is sanitized, and AI clien
 
 ## Performance
 
-Measured on one Mac with an M2 Max, in the real app, against an invented vault of 50,000 entries and 147,677 links, on a display of 1920×966 at 1x. Some early targets were missed, and the table says which.
+Measured on one Mac with an M2 Max, in the real app, against an invented vault of 50,000 entries and 147,677 links, on a display of 1920×966 at 1x and on a Retina display. Some early targets were missed, and the table says which.
 
 | | Target | Measured | |
 |---|---|---|---|
-| Zooming, panning, hovering in the full graph | 60 fps | 59–60 fps, 95% of frames within 18 ms | Met |
+| Zooming, panning, hovering in the full graph | 60 fps | 59–60 fps, 95% of frames within 18–19 ms, on a Retina display as well | Met |
 | Search by words, p95 | | 7.5 ms, with filters 7.8 ms, worst case 37 ms | |
-| Search by meaning, p95 | 25 ms | 79 ms, of which 10 ms for the query vector | Missed |
+| Search by meaning, p95 | 25 ms | 55 ms, the word search within it; the query vector (10 ms) is made meanwhile | Missed |
 | MCP call, p95 | 15 ms | 0.5 ms for the transport, plus the work itself; not repeated at 50,000 | |
-| Launch to lock screen | 300 ms | 0.5–1.9 s, slowest right after a build | Missed |
-| Unlock to first drawn graph | 1.5 s | 1.9–2.1 s | Missed |
-| Memory | 200 MB idle | 430 MB for the app and 1.4–1.6 GB for its web view | Missed |
-| Indexing for search by meaning | 5–20 ms per entry | about 25 ms per entry, 21 minutes for 50,000, in the background | Missed |
+| Launch to lock screen | 300 ms | 0.65–0.75 s in a release build, of which about 0.55 s for the window and its web view to start | Missed |
+| Unlock to first drawn graph | 1.5 s | 1.36–1.45 s; the links follow at about 2 s | Met |
+| A change, such as one by an AI, on screen | | 0.25–0.3 s for an edit or a new entry, 1 s for a deletion | |
+| Time slider, per step | | 250 ms, p95 310 ms | |
+| Memory, as Activity Monitor counts it | 200 MB idle | With 3,000 entries: 190 MB for the app, 230–370 MB for its web view. With 50,000: 125–220 MB and 1.0–1.9 GB | Met for the app |
+| Indexing for search by meaning | 5–20 ms per entry | 18 ms per entry, 15 minutes for 50,000, in the background | Met |
 
-The first layout of 50,000 entries takes about 70 seconds in the background. Opening the same view again takes about 130 ms.
+The first layout of 50,000 entries takes about 7 seconds. Opened again, a view shows its saved places at once.
 
-Search by meaning was measured with a benchmark, not in the window. Its test words are prefixes shared by many entries, which makes it a hard case: the word search within it accounts for about 50 ms. While indexing, the app itself uses up to 2.2 GB.
+Search by meaning was measured with a benchmark, not in the window. Its test words are prefixes shared by many entries, which makes it a hard case for the word search, which FTS5 has to rank across thousands of matches.
 
-**Not measured:** a real Retina display, where the graph has four times the pixels. Idle memory with a small vault has not been measured since the graph changes for 1.0; an earlier run with 3,000 entries used 293 MB for the app and 408 MB for its web view.
-
-**Still slow at 50,000:** moving the time slider or resizing the window takes about 500 ms per step, and each change reloads a graph of 45 MB as JSON, which takes about 450 ms. Binary transfer has not been built.
+**Still slow at 50,000:** resizing the window goes through every entry and link, about 500 ms. Memory while indexing has not been measured as Activity Monitor counts it.
 
 To repeat the measurements, see `app/scripts/perf-app.sh`, and `bm-core`'s `bench_engine` and `bm-embed`'s `bench_search` examples.
 
