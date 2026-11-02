@@ -116,7 +116,7 @@ pub(crate) fn update(w: &mut Writer<'_>, id: &NodeId, patch: NodePatch) -> Resul
     if after.body != before.body {
         sync_outgoing_wikilinks(w, &after)?;
     }
-    if !after.title.eq_ignore_ascii_case(&before.title) {
+    if !crate::wikilinks::same_title(&after.title, &before.title) {
         backfill_incoming_wikilinks(w, &after)?;
     }
     Ok(after)
@@ -447,7 +447,7 @@ fn backfill_incoming_wikilinks(w: &mut Writer<'_>, node: &Node) -> Result<()> {
          WHERE r.target = ?1 AND r.src != ?2 AND n.deleted_at IS NULL",
     )?;
     let sources: Vec<NodeId> = stmt
-        .query_map(params![node.title.to_lowercase(), node.id], |r| r.get(0))?
+        .query_map(params![crate::wikilinks::fold(&node.title), node.id], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     drop(stmt);
 

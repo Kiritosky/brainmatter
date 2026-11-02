@@ -19,6 +19,7 @@ const MIGRATIONS: &[(&str, Option<DataStep>)] = &[
     (V7, None),
     (V8, None),
     (V9, None),
+    (V10, None),
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
@@ -296,6 +297,12 @@ CREATE TABLE file_links (
     deleted_at      INTEGER
 );
 CREATE INDEX file_links_node_idx ON file_links(node_id);
+"#;
+
+// Titles compared by Unicode case, which `NOCASE` does not do: `bm_fold` is
+// registered on every connection (`store::register_functions`).
+const V10: &str = r#"
+CREATE INDEX nodes_title_fold_idx ON nodes(bm_fold(title)) WHERE deleted_at IS NULL;
 "#;
 
 // Entries the user wants at hand. View state, so not part of the undo history.

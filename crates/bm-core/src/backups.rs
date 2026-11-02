@@ -96,6 +96,7 @@ pub fn verify(path: &Path, key: &DbKey) -> Result<()> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = Connection::open_with_flags(path, flags)?;
     key.apply(&conn)?;
+    crate::store::register_functions(&conn)?;
     let check: String = conn
         .query_row("PRAGMA quick_check", [], |r| r.get(0))
         .map_err(|e| CoreError::Invalid(format!("backup cannot be read: {e}")))?;

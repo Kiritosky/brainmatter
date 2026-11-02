@@ -44,7 +44,7 @@ fn encrypted_roundtrip_and_fts() {
 
     {
         let db = Db::open(&path, &key(1)).unwrap();
-        assert_eq!(db.schema_version().unwrap(), 9);
+        assert_eq!(db.schema_version().unwrap(), 10);
         seed(&db);
 
         assert_eq!(fts(&db, "tokio"), ["n1"]);
@@ -53,6 +53,18 @@ fn encrypted_roundtrip_and_fts() {
         assert_eq!(fts(&db, "neben*"), ["n1"], "prefix query");
         assert_eq!(fts(&db, "tags:rust"), ["n1"], "tag indexed via trigger");
         assert_eq!(fts(&db, "async"), ["n1"], "title indexed");
+
+        // Looking up a title by Unicode case uses its index, not a scan.
+        let plan: String = db
+            .conn()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM nodes
+                 WHERE bm_fold(title) = ?1 AND deleted_at IS NULL",
+                ["über"],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(plan.contains("nodes_title_fold_idx"), "{plan}");
 
         db.conn().execute("UPDATE nodes SET deleted_at = 1 WHERE id = 'n1'", []).unwrap();
         assert!(fts(&db, "tokio").is_empty(), "soft-deleted nodes leave the index");

@@ -65,13 +65,15 @@ pub(crate) fn brief_from_row(r: &Row<'_>) -> rusqlite::Result<NodeBrief> {
     Ok(NodeBrief { id: r.get(0)?, title: r.get(1)?, kind: r.get(2)? })
 }
 
-/// Live nodes with exactly this title (ASCII case-insensitive), oldest first.
+/// Live nodes with this title, ignoring case also beyond ASCII, oldest first.
 pub(crate) fn nodes_titled(conn: &Connection, title: &str) -> Result<Vec<NodeBrief>> {
     let mut stmt = conn.prepare_cached(
         "SELECT id, title, kind FROM nodes
-         WHERE title = ?1 COLLATE NOCASE AND deleted_at IS NULL ORDER BY created_at",
+         WHERE bm_fold(title) = ?1 AND deleted_at IS NULL ORDER BY created_at",
     )?;
-    let rows = stmt.query_map([title.trim()], brief_from_row)?.collect::<rusqlite::Result<_>>()?;
+    let rows = stmt
+        .query_map([crate::wikilinks::fold(title)], brief_from_row)?
+        .collect::<rusqlite::Result<_>>()?;
     Ok(rows)
 }
 

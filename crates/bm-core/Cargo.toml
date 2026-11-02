@@ -6,7 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-rusqlite = { version = "0.41", features = ["bundled-sqlcipher"] }
+rusqlite = { version = "0.41", features = ["bundled-sqlcipher", "functions"] }
 thiserror.workspace = true
 tracing.workspace = true
 serde.workspace = true

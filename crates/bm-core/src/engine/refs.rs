@@ -69,11 +69,12 @@ pub(crate) fn resolve_project(conn: &Connection, reference: &str) -> Result<Proj
     }
     let mut stmt = conn.prepare_cached(
         "SELECT id FROM projects WHERE deleted_at IS NULL
-         AND (name = ?1 COLLATE NOCASE OR (length(?2) >= 6 AND id LIKE '%' || ?2))",
+         AND (bm_fold(name) = ?1 OR (length(?2) >= 6 AND id LIKE '%' || ?2))",
     )?;
     let short = r.trim_start_matches('#').to_lowercase();
-    let mut ids: Vec<ProjectId> =
-        stmt.query_map([r, short.as_str()], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
+    let mut ids: Vec<ProjectId> = stmt
+        .query_map([crate::wikilinks::fold(r), short], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
     match ids.len() {
         1 => Ok(ids.remove(0)),
         0 => Err(CoreError::not_found("project", r)),

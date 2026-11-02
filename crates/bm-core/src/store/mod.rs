@@ -4,7 +4,7 @@ mod schema;
 
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags, ffi};
+use rusqlite::{Connection, OpenFlags, ffi, functions::FunctionFlags};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Debug, thiserror::Error)]
@@ -54,6 +54,20 @@ pub struct Db {
     conn: Connection,
 }
 
+/// Functions the schema relies on, such as the index on folded titles. Every
+/// connection to a vault needs them, also one that only checks a backup.
+pub fn register_functions(conn: &Connection) -> Result<(), StoreError> {
+    conn.create_scalar_function(
+        "bm_fold",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
+        |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|t| crate::wikilinks::fold(&t))),
+    )?;
+    Ok(())
+}
+
 impl Db {
     /// Opens (or creates) the encrypted database at `path` and migrates it to
     /// the latest schema.
@@ -86,6 +100,7 @@ impl Db {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
 
+        register_functions(&conn)?;
         let mut db = Self { conn };
         schema::migrate(&mut db.conn)?;
         Ok(db)

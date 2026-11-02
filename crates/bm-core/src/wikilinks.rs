@@ -1,5 +1,17 @@
 //! `[[Wikilink]]` extraction from Markdown bodies.
 
+/// How titles and names compare: trimmed and lowercased by Unicode, so `[[über]]`
+/// finds „Über“. SQLite's `NOCASE` folds ASCII only; queries use `bm_fold` instead,
+/// which is this function.
+pub fn fold(text: &str) -> String {
+    text.trim().to_lowercase()
+}
+
+/// Whether two titles or names count as the same.
+pub fn same_title(a: &str, b: &str) -> bool {
+    fold(a) == fold(b)
+}
+
 /// Distinct link targets in order of first appearance. Supports
 /// `[[Title|alias]]` and `[[Title#heading]]`; ignores fenced code blocks and
 /// inline code spans.
@@ -37,7 +49,7 @@ fn scan_line(line: &str, out: &mut Vec<String>) {
             let target = inner.split(['|', '#']).next().unwrap_or("").trim();
             if !target.is_empty()
                 && !target.contains('[')
-                && !out.iter().any(|t| t.eq_ignore_ascii_case(target))
+                && !out.iter().any(|t| same_title(t, target))
             {
                 out.push(target.to_string());
             }

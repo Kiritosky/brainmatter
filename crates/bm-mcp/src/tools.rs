@@ -735,7 +735,7 @@ pub struct WriteDocArgs {
 pub(crate) fn write_doc(cx: &ToolCx, a: WriteDocArgs) -> Out {
     let project = cx.project(&a.project)?;
     let tree = cx.engine.doc_tree(&project)?;
-    let same = |title: &str, wanted: &str| title.eq_ignore_ascii_case(wanted.trim());
+    let same = bm_core::wikilinks::same_title;
     if let Some(page) = tree.iter().find(|p| same(&p.node.title, &a.title)) {
         let (tags_add, tags_remove) = match a.tags {
             Some(tags) => {
@@ -932,7 +932,7 @@ pub struct SaveTemplateArgs {
 
 pub(crate) fn save_template(cx: &ToolCx, a: SaveTemplateArgs) -> Out {
     let all = cx.engine.templates(None)?;
-    let existing = all.iter().find(|t| t.node.title.eq_ignore_ascii_case(a.title.trim()));
+    let existing = all.iter().find(|t| bm_core::wikilinks::same_title(&t.node.title, &a.title));
     if let Some(t) = existing {
         // Scoped clients may not rewrite what also applies outside their projects.
         if cx.scope.is_some() && (t.projects.is_empty() || !sees_template(cx, t)) {

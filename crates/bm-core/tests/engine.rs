@@ -230,6 +230,28 @@ fn wikilinks_maintain_mention_edges() {
 }
 
 #[test]
+fn titles_and_names_ignore_case_beyond_ascii() {
+    let f = setup();
+    // Linked before the entry exists, in another case: the backfill must find it.
+    let early = f.engine.create_node(&f.user, note("Vorher", "Siehe [[über uns]].")).unwrap();
+    let about = f.engine.create_node(&f.user, note("Über uns", "")).unwrap();
+    let incoming = f.engine.node_detail(&about.id).unwrap().incoming;
+    assert_eq!(incoming.len(), 1);
+    assert_eq!(incoming[0].other.id, early.id);
+
+    // Linked after, in yet another case.
+    let later = f.engine.create_node(&f.user, note("Nachher", "Und [[ÜBER UNS]].")).unwrap();
+    assert_eq!(f.engine.node_detail(&later.id).unwrap().outgoing[0].other.id, about.id);
+    assert_eq!(f.engine.resolve_node(" über UNS ").unwrap(), about.id);
+
+    let project = f
+        .engine
+        .create_project(&f.user, NewProject { name: "Ärger".into(), ..Default::default() })
+        .unwrap();
+    assert_eq!(f.engine.resolve_project("ärger").unwrap(), project.id);
+}
+
+#[test]
 fn links_are_idempotent_and_unlink_tolerates_direction() {
     let f = setup();
     let a = f.engine.create_node(&f.user, note("A", "")).unwrap();
