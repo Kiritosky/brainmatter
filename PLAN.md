@@ -596,9 +596,9 @@ Das Token steht damit im Klartext in der Client-Konfiguration; es gilt aber nur 
 |---|---|---|
 | Duplikate (Eintrag zu Eintrag) | 0,927–0,974 | ab 0,925 |
 | Verwandt | 0,861–0,920 (unverwandt 0,823–0,882) | ab 0,88 |
-| Suche (Anfrage zu Eintrag) | richtig 0,80–0,91, falsch bis 0,83 | ab 0,80 und höchstens 0,02 unter dem besten Treffer |
+| Suche (Anfrage zu Eintrag) | nach Abzug des Mittelwerts aller Vektoren, siehe unten | ab 0,18 und höchstens 0,06 unter dem besten Treffer |
 
-Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur mit fester Schwelle 0,78 wären es 47 falsche. Die erste Schwelle 0,77 war nicht für Anfragen gemessen und zeigte im Test mit echtem Modell fast alles als „ähnlich“.
+**Suche seit 1.0**: Rohe Werte liegen bei diesem Modell eng beieinander, und lange gemittelte Dokumente landen nah an fast jeder Anfrage. Darum wird der Mittelwert aller Vektoren abgezogen (`bm-embed --example query_gate`). Falsche Treffer auf 12 Suchen ohne Antwort, bei 22, 41 und 55 Einträgen: vorher 31, 86 und 86, jetzt 5, 7 und 18. Gefunden wie vorher 11 von 12, 12 von 15 und 11 von 15. Die Stichprobe ist klein. Unter der nötigen Mindestzahl an Einträgen gelten weiter die rohen Schwellen.
 
 **Messwerte** (M-Serie, 50k Einträge, 99k Kanten, 301 MB):
 - Graph-Snapshot mit PageRank und Clustern: 193 ms (vorher 478 ms). Der Gewinn kommt vom Covering-Index und größerem Reader-Cache. Analytics kosten nur etwa 45 ms, darum gibt es keinen Cache dafür.
@@ -609,9 +609,9 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 
 **Offen**:
 - Noch nicht in der echten App geprüft: Oberfläche mit echtem Modell, Download mit Fortschritt über die Tauri-Events. Der Download selbst lief bisher nur über `calibrate`.
-- Die Schwellen beruhen auf 30 Paaren und 10 Anfragen. Mit echten Daten nachmessen.
+- Die Schwellen beruhen auf kleinen Stichproben. Mit echten Daten nachmessen.
 - Der Download lässt sich nicht abbrechen (`hf-hub` bietet das nicht an).
-- Der Speicherbedarf des Indexers bei 50k Einträgen ist nicht gemessen, ebenso die Dauer der Erstindizierung.
+- Speicherbedarf und Dauer der Erstindizierung bei 50k: siehe §20.
 
 ## 18. Stand Phase 5: Feinschliff (2026-10-31)
 
@@ -633,7 +633,7 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 **Offen**:
 - Nur im Mock oder ohne Oberfläche geprüft: Anhänge (Upload, PDF, Sichern-Dialog), Backups, Quick Capture samt Fokus-Rückgabe, Theme mit Vibrancy.
 - Quick Capture speichert ohne Projekt. Liegt die Tastenkombination schon bei einer anderen App, steht das nur im Log.
-- Retina-Messung des Graphen, Kaltstart, Erstindizierung bei 50k.
+- Retina-Messung des Graphen. Kaltstart und Erstindizierung bei 50k: siehe §20.
 - Auto-Update und Release-Pipeline sind gebaut, aber noch nie gelaufen: Der Updater kann Releases erst lesen, wenn das Repo öffentlich ist, und `release.yml` läuft erst beim ersten Tag. Beides zusammen beim ersten Release prüfen, inklusive eines echten Updates von einer Version auf die nächste. Der Update-Schlüssel liegt in `~/.tauri/brainmatter-updater.key` und muss als Secret `TAURI_SIGNING_PRIVATE_KEY` im Repo stehen.
 
 ## 19. Stand: Erweiterungen nach dem Hauptplan (2026-11-01)
@@ -649,15 +649,42 @@ Die Suchschwelle behält 9 von 10 richtigen und 7 von 90 falschen Treffern. Nur 
 - Datei-Links entstehen über die Dateiauswahl, weil die Web-Ansicht beim Ziehen keinen Pfad bekommt. Ziehen erzeugt weiter einen Anhang. `[Text](file:///…)` in Markdown und Quick Look fehlen.
 - Kein eigener Scope `files:read`: Die Freigabe pro Link und der Scope `read` reichen.
 - Keine semantische Suche auf Abschnittsebene: Doku-Seiten werden wie Einträge als Ganzes eingebettet.
-- Keine `notifications/prompts/list_changed`; Clients sehen neue Prompts beim nächsten Abruf. Keine Verwendungsstatistik für Vorlagen, kein `from_template` in `capture`.
-- MCP `resources` fehlen weiterhin.
+- Keine Verwendungsstatistik für Vorlagen, kein `from_template` in `capture`.
 
 **Dazu seit 0.5.0**: Favoriten und Tags in der Sidebar, Projekte und Aktionen in ⌘K, Filter im Graph, lokaler Graph, Projekte ausblenden (nur Ansicht, liegt im `localStorage`, gilt nicht für KIs), Tags für Doku-Seiten. Seit 0.5.1 zeigt der Graph Schreibzugriffe von KIs live an und lässt die betroffenen Einträge pulsieren; Lesezugriffe erzeugen keine Ereignisse und bleiben unsichtbar. Die Token-Kosten der MCP-Schnittstelle misst `crates/bm-mcp/tests/token_cost.rs` und begrenzt sie mit Budgets.
 
-**Seit 0.6.0**: Der Graph gruppiert nach Projekten (`app/src/lib/grouped-layout.ts`, im Worker). ForceAtlas2 läuft je Projekt nur über dessen interne Links und nicht mehr live; die Kreise werden darum herum gepackt, Links zwischen Projekten beeinflussen nur die Nähe. Gemessen auf dem Entwicklungs-Mac: 5.000 Einträge rund 7 s, 50.000 rund 60 s beim ersten Anordnen, ein neuer Eintrag bei 50.000 rund 2,4 s. Das Rendern bei 50.000 mit Kreisen ist nicht neu gemessen.
+**Seit 0.6.0**: Der Graph gruppiert nach Projekten (`app/src/lib/grouped-layout.ts`, im Worker). ForceAtlas2 läuft je Projekt nur über dessen interne Links und nicht mehr live; die Kreise werden darum herum gepackt, Links zwischen Projekten beeinflussen nur die Nähe. Gemessen auf dem Entwicklungs-Mac: 5.000 Einträge rund 7 s, 50.000 rund 60 s beim ersten Anordnen, ein neuer Eintrag bei 50.000 rund 2,4 s. Neuere Werte in §20.
 
 **Seit 0.7.0**: Eingebaute MCP-Prompts in `crates/bm-mcp/src/prompts.rs`, auch im gesperrten Zustand verfügbar; eine geprüfte Vorlage gleichen Namens ersetzt sie. Kein zweiter Tresor für KI-Wissen: Es liegt im Hauptspeicher, was keinem Projekt zuzuordnen ist im Projekt `AI Memory`, das sich wie jedes andere ausblenden lässt. Persönliche Darstellung in `app/src/lib/prefs.svelte.ts`, je Mac im `localStorage`. Das Ausweichen beim Überfahren läuft nur über Styles und schreibt keine Positionen; über 3.000 Einträgen entfällt es.
 
-**Noch aus dem Plan offen**: gespeicherte Ansichten; Verbinden per ⌥-Drag; Binärdaten statt JSON für große Graphen.
+**Noch aus dem Plan offen**: Binärdaten statt JSON für große Graphen. Gespeicherte Ansichten und Verbinden per ⌥-Drag sind seit 1.0 da, ebenso MCP `resources` und `notifications/prompts/list_changed`. Wann der Task, der auf Änderungen an Prompts wartet, nach dem Trennen eines Clients endet, ist nicht getestet.
 
-**Offen beim Prüfen**: Alle Funktionen aus §18 und §19 sind nur über Tests und das Mock geprüft, nicht in der echten App.
+**Offen beim Prüfen**: Die Funktionen aus §18 und §19 sind vor allem über Tests und das Mock geprüft. In der echten App bestätigt sind Updates (vom Nutzer) und der Graph samt Messungen in §20.
+
+## 20. Messung für 1.0 (2026-11-02)
+
+Echte App (`app/scripts/perf-app.sh`), optimierter Build mit Debug-Assertions und Produktions-Frontend, M2 Max, Hauptdisplay 1920×966 bei dpr 1, erfundener Tresor mit 50.000 Einträgen und 147.677 Links, Systemlast 4–6.
+
+| Metrik | Ziel (§9) | Vorher | Jetzt | |
+|---|---|---|---|---|
+| Graph: Zoomen | 60 fps | 16 bis 1,2 fps, p95 438–1010 ms | 58,8–60,2 fps, p95 18 ms | erreicht |
+| Graph: Verschieben, Überfahren | 60 fps | Hänger bis 5 s | 60 fps, p95 18 ms | erreicht |
+| Graph: Eintrag ziehen | | 2 fps | p95 17 ms (Chromium, Mock mit 50k) | |
+| Graph in Ruhe | | | 60 fps, keine Zeichenaufrufe ohne Eingabe | |
+| Start bis Lock-Screen | < 300 ms | | 490–1876 ms, am langsamsten direkt nach dem Bauen | verfehlt |
+| Entsperren bis erstes Bild | < 1,5 s | | 1,9–2,1 s, davon `unlock_password` 250–480 ms | verfehlt |
+| Alles fertig | | 9,7–27 s | rund 4,1 s (vor dem Layout-Fix gemessen) | |
+| Wortsuche p95 | | 12,3 ms, mit Filtern 12,6 ms, schlimmster Fall 60 ms | 7,5 ms, mit Filtern 7,8 ms, schlimmster Fall 37 ms | |
+| Hybrid-Suche p95 | < 25 ms | 106 ms | 79 ms, davon 10 ms Anfragevektor | verfehlt |
+| RAM | < 200 MB im Leerlauf | Web-Prozess 2,3–2,6 GB | App rund 430 MB, Web-Prozess 1,4–1,6 GB | verfehlt |
+| Einbetten pro Eintrag | 5–20 ms | | rund 25 ms, rund 40 Einträge/s, 50k in rund 21 min | knapp verfehlt |
+
+**Weitere Werte**: `graph`-IPC 380–490 ms für 44,8 MB JSON. Erstes Layout bei 50k 71,8 s im Hintergrund (bei gleichzeitigem Indizieren), erneutes Öffnen 126 ms, ein neuer Eintrag 1479 ms. Während des Indizierens braucht die App bis zu 2,2 GB. Bei schlafenden Displays sinkt das Indizieren auf rund 17 Einträge/s, und das Fenster liefert keine Frames, sodass die App dann nichts messen kann. Graph-Snapshot 214 ms, `node_detail` p95 76 µs, Update p95 1,8 ms, Einfügen rund 3000/s, Datenbank 301 MB (`bench_engine`, 464 MB mit Vektoren).
+
+**Hybrid-Suche**: `bm-embed --example bench_search`, ohne Fenster, 100 Suchen aus zwei Präfixen. Der Korpus aus `seed_vault` besteht aus wenigen Silben, die Präfixe passen also auf viele Einträge. Davon fallen rund 50 ms auf die Wortsuche, rund 12 ms auf den Vektorvergleich. Das ist ein schwerer Fall; ein realistischer Korpus ist für die Hybrid-Suche nicht gemessen.
+
+**Dabei gefundener Fehler**: Die Wortsuche suchte jeden Treffer per zweitem `MATCH` erneut im Index und wiederholte so je Treffer die ganze Präfix-Erweiterung, rund 16 ms pro Treffer. Mit dem Standardlimit 20 waren das 342 ms, ab Limit 50 wählte SQLite einen anderen Plan und blieb bei 75 ms. Jetzt liefert FTS5 die Treffer sortiert selbst, `CROSS JOIN` hält die Reihenfolge fest: 50 ms im schweren Fall.
+
+**Bekannte Kosten bei 50k**: Zeitregler und Fenstergröße lösen ein volles Refresh aus, rund 500 ms je Schritt. Jede Änderung lädt den Snapshot von 45 MB neu, adaptiv gedrosselt. Binärdaten sind nicht gebaut, JSON reicht bisher.
+
+**Nicht gemessen**: echtes Retina. Der Lauf mit simuliertem dpr 2 kam nur bis zum Leerlauf (60 fps, p95 18 ms), das Retina-Display war nicht verfügbar. MCP-Roundtrip direkt bei 50k: aus Phase 0 stammen p95 0,5 ms für den Transport, die Suche kommt dazu. RAM im Leerlauf bei kleinem Tresor seit den Graph-Änderungen: ein früherer Lauf mit 3.000 Einträgen lag bei App 293 MB und Web-Prozess 408 MB. Ein Lauf hatte beim Verschieben einen Hänger von 2452 ms, während das Fenster verdeckt war.

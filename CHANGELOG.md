@@ -2,6 +2,35 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl.
 
+## 1.0.0 · 2026-11-02
+
+Schreiben, Vorlagen und der Einstieg sind neu gemacht, der Graph bleibt mit 50.000 Einträgen flüssig, und die App wirkt ruhiger.
+
+### Neu
+- **Doku direkt auf der Seite schreiben:** Tippe `/` für Überschriften, Listen, Tabellen und alle anderen Formate, auch wenn du die Markdown-Zeichen nicht kennst. ⌘B und ⌘I formatieren die Auswahl.
+- **Einführung:** Beim ersten Start zeigt dir ein kurzer Rundgang die wichtigsten Stellen. In ⌘K lässt er sich jederzeit neu starten.
+- **Hilfe in den Einstellungen:** Was die App kann, und welche MCP-Werkzeuge und Befehle eine KI nutzen kann.
+- **Vorlagen in drei Schritten:** Eine neue Vorlage entsteht jetzt in einem geführten Ablauf, und aus einer Vorlage wird mit einem Klick ein Eintrag.
+- **Suchen beim Zuweisen:** Überall, wo du ein Projekt wählst, kannst du es jetzt suchen und direkt neu anlegen, auch in Quick Capture mit ⌘P.
+- **Export:** Alle Einträge und Seiten als Markdown-Dateien, in Ordnern nach Projekt.
+- **Gespeicherte Ansichten:** Filter und Einfärbung unter einem Namen sichern und mit einem Klick wieder aufrufen.
+- **Schneller im Graph:** Mit ⌥ von einem Eintrag zum anderen ziehen verbindet sie, ein Doppelklick öffnet das Projekt darunter, Esc geht eine Ebene zurück.
+- **Für KI-Modelle:** Projekte und Doku-Seiten sind als MCP-Ressourcen lesbar, und ein verbundenes Modell erfährt es, wenn sich seine Vorlagen ändern.
+
+### Verbessert
+- **Großer Graph:** Bei 50.000 Einträgen und rund 150.000 Verbindungen laufen Zoomen, Verschieben und Überfahren jetzt flüssig. Vorher stand die App bei jeder dieser Gesten teils mehrere Sekunden.
+- **Schnellerer Start:** Der Graph ist nach dem Entsperren bei dieser Größe deutlich schneller zu sehen und braucht danach weniger Nacharbeit.
+- **Suche nach Sinn:** Findet deutlich weniger falsche Treffer, wenn es zu deiner Anfrage nichts Passendes gibt.
+- **Schnellere Suche:** Besonders kurze Suchwörter, die zu vielen Einträgen passen, sind in großen Tresoren bis zu siebenmal schneller.
+- **Ruhigere Optik:** Viele Kleinigkeiten überarbeitet, von Schatten und Icons bis zur Auswahlfarbe.
+
+### Behoben
+- Beim Schreiben in der Doku konnte der Cursor springen und gerade Getipptes verloren gehen.
+- Eine volle Seitenleiste schob in kleinen Fenstern den Fußbereich und die Graph-Werkzeuge aus dem Bild.
+- Einträge rückten bei jedem Öffnen einer Ansicht ein Stück. Ihre Plätze bleiben jetzt erhalten.
+- Quick Capture zeigte nach dem Entsperren keine Projekte.
+- Ist das Tastenkürzel für Quick Capture von einer anderen App belegt, sagen die Einstellungen das jetzt.
+
 ## 0.7.0 · 2026-11-01
 
 Du kannst Modellen jetzt Befehle für Brainmatter geben, und die App lässt sich stärker an dich anpassen.
