@@ -16,17 +16,23 @@ vault=$1
 out=$2
 limit=${3:-1800}
 
+# What Activity Monitor shows, in MB. The resident size counts pages shared with other
+# processes and memory already freed, and comes out at about twice as much.
+footprint_mb() {
+  footprint -p "$1" 2>/dev/null | perl -ne 'if (/Footprint: ([\d.]+) ([KMG])B/) { printf "%d", $1 * {K => 1 / 1024, M => 1, G => 1024}->{$2}; exit }' || true
+}
+
 memory() {
   # Everything the web view does happens in processes of its own.
   web=0
   for pid in $(pgrep -f com.apple.WebKit.WebContent || true); do
     case " $before " in *" $pid "*) ;; *)
-      kb=$(ps -o rss= -p "$pid" 2>/dev/null || echo 0)
-      web=$((web + kb))
+      mb=$(footprint_mb "$pid")
+      web=$((web + ${mb:-0}))
     ;; esac
   done
-  app=$(ps -o rss= -p "$bin_pid" 2>/dev/null || echo 0)
-  echo "{\"name\":\"memory\",\"appMb\":$((app / 1024)),\"webMb\":$((web / 1024)),\"at\":$(perl -MTime::HiRes=time -e 'printf "%d", time()*1000')}" >>"$out"
+  app=$(footprint_mb "$bin_pid")
+  echo "{\"name\":\"memory\",\"appMb\":${app:-0},\"webMb\":$web,\"at\":$(perl -MTime::HiRes=time -e 'printf "%d", time()*1000')}" >>"$out"
 }
 
 before=$(pgrep -f com.apple.WebKit.WebContent | tr '\n' ' ' || true)

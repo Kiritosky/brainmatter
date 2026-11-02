@@ -249,6 +249,23 @@
     const hover = (i) => canvas.dispatchEvent(new MouseEvent('mousemove', at(0.1 + sweep(i) * 0.8, 0.3 + ((i % 200) / 200) * 0.4)));
     await report('hover', await frames(6000, hover));
 
+    // The time slider, step by step back: each step hides what came after it.
+    document.querySelector('button[aria-label="Zeitregler"]')?.click();
+    const slider = await until(() => document.querySelector('[role="slider"]'), 5000, 'the time slider');
+    await sleep(500);
+    const steps = [];
+    for (let i = 0; i < 20; i++) {
+      const started = performance.now();
+      slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      await frame();
+      await frame();
+      steps.push(performance.now() - started);
+    }
+    steps.sort((a, b) => a - b);
+    await report('time_slider', { steps: steps.length, p50: round(quantile(steps, 0.5)), p95: round(quantile(steps, 0.95)), max: round(steps.at(-1)) });
+    document.querySelector('button[aria-label="Zeitregler schließen"]')?.click();
+    await sleep(1000);
+
     // One change, as an AI makes them: how long until it shows, and how long the window
     // stood still meanwhile.
     const syncs = () => performance.getEntriesByName('bm:sync-end').length;

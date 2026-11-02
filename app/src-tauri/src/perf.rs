@@ -38,9 +38,11 @@ pub fn attach<R: Runtime>(app: &AppHandle<R>) {
             .or_else(|| window.current_monitor().ok().flatten());
         // The most there is to draw. Not `maximize`: its animation holds up the main
         // thread, and with it everything the page loads, for 400 ms.
-        if let Some(area) = monitor.map(|m| *m.work_area()) {
+        if let Some(monitor) = monitor {
+            let area = *monitor.work_area();
             let _ = window.set_position(area.position);
-            let _ = window.set_size(area.size);
+            // In points: on the display it is on now, physical pixels would be counted twice.
+            let _ = window.set_size(area.size.to_logical::<f64>(monitor.scale_factor()));
         }
     }
     app.listen("bm-perf", move |event| {
