@@ -15,9 +15,10 @@
     const command = String(url).split('/').pop();
     const started = performance.now();
     const response = await nativeFetch(url, ...rest);
-    const entry = (calls[command] ??= { count: 0, ms: 0 });
+    const entry = (calls[command] ??= { count: 0, ms: 0, from: Math.round(started) });
     entry.count++;
     entry.ms += Math.round(performance.now() - started);
+    entry.to = Math.round(performance.now());
     return response;
   };
 
@@ -164,11 +165,20 @@
     const unlocked = performance.now();
     field.form.requestSubmit();
 
-    const canvas = await until(() => document.querySelector('[data-tour="graph"] canvas:last-of-type'), 60000, 'the graph');
+    // Sigma listens on a layer above its canvas: events sent to the canvas would reach nothing.
+    const canvas = await until(() => document.querySelector('[data-tour="graph"] .sigma-mouse'), 60000, 'the graph');
     const sinceUnlock = () => Math.round(performance.now() - unlocked);
     await report('workspace', { ms: sinceUnlock() });
     await until(() => draws > 0, 120000, 'a first draw');
-    await report('first_draw', { ms: sinceUnlock(), shaderMs: Math.round(shaderMs) });
+    // When each step of loading happened, in ms after the password was sent.
+    const marks = () =>
+      Object.fromEntries(
+        performance
+          .getEntriesByType('mark')
+          .filter((m) => m.name.startsWith('bm:'))
+          .map((m) => [m.name.slice(3), Math.round(m.startTime - unlocked)]),
+      );
+    await report('first_draw', { ms: sinceUnlock(), shaderMs: Math.round(shaderMs), unlockedAt: Math.round(unlocked), marks: marks() });
 
     // Whatever else came up, such as what is new in this version.
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -193,16 +203,18 @@
       }
       previous = instances;
     }
-    await report('settled', { ms: sinceUnlock(), allDrawnAt: peakAt, instances: peak, longestFrameMs: Math.round(longest) });
+    await report('settled', { ms: sinceUnlock(), allDrawnAt: peakAt, instances: peak, longestFrameMs: Math.round(longest), marks: marks() });
 
     const started = performance.now();
     const snapshot = await invoke('graph', { project: null });
     const received = performance.now();
+    // Binary since 1.1 (crates/bm-core/src/wire.rs): counts are in the header.
+    const header = new Uint32Array(snapshot instanceof ArrayBuffer ? snapshot : snapshot.buffer, 0, 4);
     await report('graph_ipc', {
       ms: Math.round(received - started),
-      nodes: snapshot.nodes.length,
-      edges: snapshot.edges.length,
-      megabytes: round(JSON.stringify(snapshot).length / 1e6),
+      nodes: header[2],
+      edges: header[3],
+      megabytes: round(snapshot.byteLength / 1e6),
     });
 
     await report('idle', await frames(3000));

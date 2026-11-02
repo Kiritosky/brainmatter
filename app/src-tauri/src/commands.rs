@@ -196,10 +196,12 @@ pub fn remove_from_project(
     Ok(engine.remove_from_project(&ctx, &project, &nodes)?)
 }
 
+/// As binary (`bm_core::wire`), since JSON is ten times the size for a large graph.
 #[tauri::command(async)]
-pub fn graph(session: S<'_>, project: Option<ProjectId>) -> ApiResult<GraphSnapshot> {
+pub fn graph(session: S<'_>, project: Option<ProjectId>) -> ApiResult<tauri::ipc::Response> {
     let (engine, _) = session.engine()?;
-    Ok(engine.graph_snapshot(project.as_ref())?)
+    let snapshot = engine.graph_snapshot(project.as_ref())?;
+    Ok(tauri::ipc::Response::new(bm_core::wire::encode(&snapshot)))
 }
 
 #[tauri::command(async)]
@@ -217,8 +219,7 @@ pub fn node_detail(session: S<'_>, id: NodeId) -> ApiResult<NodeDetail> {
 #[tauri::command(async)]
 pub fn search(session: S<'_>, query: SearchQuery) -> ApiResult<Vec<SearchHit>> {
     let (engine, _) = session.engine()?;
-    let vector = session.query_vector(&query.text);
-    Ok(engine.search_hybrid(&query, vector.as_deref())?)
+    Ok(engine.search_hybrid_with(&query, || session.query_vector(&query.text))?)
 }
 
 #[tauri::command(async)]

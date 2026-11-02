@@ -206,7 +206,8 @@ impl Engine {
     pub fn favorites(&self) -> Result<Vec<NodeBrief>> {
         self.read(|c| {
             let mut stmt = c.prepare_cached(
-                "SELECT n.id, n.title, n.kind FROM favorites f JOIN nodes n ON n.id = f.node_id
+                // CROSS JOIN: otherwise SQLite walks all entries in title order to skip the sort.
+                "SELECT n.id, n.title, n.kind FROM favorites f CROSS JOIN nodes n ON n.id = f.node_id
                  WHERE n.deleted_at IS NULL ORDER BY n.title COLLATE NOCASE",
             )?;
             let rows = stmt.query_map([], rows::brief_from_row)?;
@@ -232,7 +233,8 @@ impl Engine {
     pub fn tag_counts(&self) -> Result<Vec<TagCount>> {
         self.read(|c| {
             let mut stmt = c.prepare_cached(
-                "SELECT t.tag, count(*) FROM node_tags t JOIN nodes n ON n.id = t.node_id
+                "SELECT t.tag, count(*) FROM node_tags t
+                 JOIN nodes n INDEXED BY nodes_graph_idx ON n.id = t.node_id
                  WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')
                  GROUP BY t.tag ORDER BY count(*) DESC, t.tag",
             )?;

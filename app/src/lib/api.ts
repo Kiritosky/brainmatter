@@ -2,6 +2,7 @@
 // Field names mirror the serde output of bm-core (snake_case).
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { decodeGraph } from './graph-wire.ts';
 
 export type Id = string;
 
@@ -419,7 +420,11 @@ export const api = {
   deleteProject: (id: Id, withEntries: boolean) => call<number>('delete_project', { id, withEntries }),
   addToProject: (project: Id, nodes: Id[]) => call<number>('add_to_project', { project, nodes }),
   removeFromProject: (project: Id, nodes: Id[]) => call<number>('remove_from_project', { project, nodes }),
-  graph: (project: Id | null) => call<GraphSnapshot>('graph', { project }),
+  // Binary from the app (see graph-wire.ts), plain objects from the mock.
+  graph: (project: Id | null) =>
+    call<ArrayBuffer | Uint8Array | GraphSnapshot>('graph', { project }).then((g) =>
+      g instanceof ArrayBuffer || g instanceof Uint8Array ? decodeGraph(g) : g,
+    ),
   saveLayout: (view: string, positions: { node: Id; x: number; y: number; pinned: boolean }[]) =>
     call<void>('save_layout', { view, positions }),
   nodeDetail: (id: Id) => call<NodeDetail>('node_detail', { id }),

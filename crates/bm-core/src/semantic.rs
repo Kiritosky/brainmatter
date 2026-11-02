@@ -100,8 +100,22 @@ pub(crate) struct VectorIndex {
     changes_since_centre: usize,
 }
 
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b).map(|(x, y)| x * y).sum()
+/// Sixteen running sums instead of one: floating-point addition is not associative,
+/// so a single sum must be added up in order and cannot use the vector unit. This
+/// makes a scan over 50,000 entries several times faster.
+pub(crate) fn dot(a: &[f32], b: &[f32]) -> f32 {
+    const LANES: usize = 16;
+    let len = a.len().min(b.len());
+    let (a_chunks, a_tail) = a[..len].as_chunks::<LANES>();
+    let (b_chunks, b_tail) = b[..len].as_chunks::<LANES>();
+    let tail: f32 = a_tail.iter().zip(b_tail).map(|(x, y)| x * y).sum();
+    let mut sums = [0.0f32; LANES];
+    for (x, y) in a_chunks.iter().zip(b_chunks) {
+        for i in 0..LANES {
+            sums[i] += x[i] * y[i];
+        }
+    }
+    sums.iter().sum::<f32>() + tail
 }
 
 impl VectorIndex {
@@ -232,12 +246,8 @@ impl VectorIndex {
         if self.dim == 0 || query.len() != self.dim || k == 0 {
             return Vec::new();
         }
-        let mut scored: Vec<(usize, f32)> = self
-            .data
-            .chunks_exact(self.dim)
-            .enumerate()
-            .map(|(i, v)| (i, v.iter().zip(query).map(|(a, b)| a * b).sum()))
-            .collect();
+        let mut scored: Vec<(usize, f32)> =
+            self.data.chunks_exact(self.dim).enumerate().map(|(i, v)| (i, dot(v, query))).collect();
         let k = k.min(scored.len());
         if k < scored.len() {
             scored.select_nth_unstable_by(k, |a, b| b.1.total_cmp(&a.1));

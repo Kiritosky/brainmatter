@@ -201,15 +201,34 @@ impl Engine {
         q: &SearchQuery,
         query_vector: Option<&[f32]>,
     ) -> Result<Vec<SearchHit>> {
-        let Some(vector) = query_vector.filter(|_| !q.text.trim().is_empty()) else {
-            return self.search(q);
-        };
-        self.read(|c| {
-            let limit = q.limit.clamp(1, 200);
-            let mut wide = q.clone();
-            wide.limit = (limit * 3).min(200);
-            let text_hits = search::search(c, &wide)?;
+        self.search_hybrid_with(q, || query_vector.map(<[f32]>::to_vec))
+    }
 
+    /// Like [`Self::search_hybrid`], but searches by words on another thread while
+    /// `query_vector` embeds the query, which takes about as long.
+    pub fn search_hybrid_with(
+        &self,
+        q: &SearchQuery,
+        query_vector: impl FnOnce() -> Option<Vec<f32>>,
+    ) -> Result<Vec<SearchHit>> {
+        if q.text.trim().is_empty() {
+            return self.search(q);
+        }
+        let limit = q.limit.clamp(1, 200);
+        let mut wide = q.clone();
+        wide.limit = (limit * 3).min(200);
+        let (text_hits, nearest) = std::thread::scope(|s| {
+            let words = s.spawn(|| self.read(|c| search::search(c, &wide)));
+            let nearest = query_vector().map(|v| self.nearest_for_search(&v, limit));
+            (words.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)), nearest)
+        });
+        let mut text_hits = text_hits?;
+        let Some((nearest, floor, margin)) = nearest else {
+            text_hits.truncate(q.limit.clamp(1, 200));
+            return Ok(text_hits);
+        };
+
+        self.read(|c| {
             let allowed = |id: &NodeId| -> Result<Option<Node>> {
                 let Ok(node) = rows::live_node(c, id) else { return Ok(None) };
                 if !q.kinds.is_empty() && !q.kinds.contains(&node.kind) {
@@ -243,18 +262,6 @@ impl Engine {
                     1.0 / (RRF_K + rank as f64 + 1.0);
                 hits.insert(hit.node.id.clone(), hit);
             }
-            if self.vectors.read().centre_is_stale() {
-                self.vectors.write().refresh_centre();
-            }
-            let (nearest, floor, margin) = {
-                let vectors = self.vectors.read();
-                let wanted = (limit * 8).max(100);
-                if vectors.can_centre() {
-                    (vectors.nearest_centred(vector, wanted), CENTRED_FLOOR, CENTRED_MARGIN)
-                } else {
-                    (vectors.nearest(vector, wanted), QUERY_FLOOR, QUERY_MARGIN)
-                }
-            };
             let mut rank = 0usize;
             let mut cut = floor;
             for (id, score) in nearest {
@@ -289,6 +296,21 @@ impl Engine {
             merged.truncate(limit);
             Ok(merged)
         })
+    }
+
+    /// Candidates for a search by meaning, with the score they must reach and how far
+    /// below the best one they may fall.
+    fn nearest_for_search(&self, vector: &[f32], limit: usize) -> (Vec<(NodeId, f32)>, f32, f32) {
+        if self.vectors.read().centre_is_stale() {
+            self.vectors.write().refresh_centre();
+        }
+        let vectors = self.vectors.read();
+        let wanted = (limit * 8).max(100);
+        if vectors.can_centre() {
+            (vectors.nearest_centred(vector, wanted), CENTRED_FLOOR, CENTRED_MARGIN)
+        } else {
+            (vectors.nearest(vector, wanted), QUERY_FLOOR, QUERY_MARGIN)
+        }
     }
 
     /// Entries similar in meaning to `id`, best first. Computed on demand: a

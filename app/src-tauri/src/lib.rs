@@ -263,7 +263,7 @@ pub fn run() {
             build_tray(app.handle())?;
             Ok(())
         })
-        .on_page_load(|webview, payload| perf::run_script(webview, payload))
+        .on_page_load(perf::run_script)
         .on_window_event(|window, event| {
             // Closing the window keeps Brainmatter running in the menu bar.
             if let WindowEvent::CloseRequested { api, .. } = event {

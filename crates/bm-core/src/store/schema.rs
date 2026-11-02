@@ -300,9 +300,12 @@ CREATE INDEX file_links_node_idx ON file_links(node_id);
 "#;
 
 // Titles compared by Unicode case, which `NOCASE` does not do: `bm_fold` is
-// registered on every connection (`store::register_functions`).
+// registered on every connection (`store::register_functions`). And lists that
+// otherwise go through all entries: templates and pages by kind, what is unreviewed.
 const V10: &str = r#"
 CREATE INDEX nodes_title_fold_idx ON nodes(bm_fold(title)) WHERE deleted_at IS NULL;
+CREATE INDEX nodes_kind_title_idx ON nodes(kind, title COLLATE NOCASE) WHERE deleted_at IS NULL;
+CREATE INDEX nodes_unreviewed_idx ON nodes(updated_at) WHERE deleted_at IS NULL AND reviewed = 0;
 "#;
 
 // Entries the user wants at hand. View state, so not part of the undo history.

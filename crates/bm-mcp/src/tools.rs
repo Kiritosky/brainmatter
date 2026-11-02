@@ -188,10 +188,14 @@ pub(crate) fn search(cx: &ToolCx, a: SearchArgs) -> Out {
 
     let mut hits = Vec::new();
     // A failing model must not break search: words still work.
-    let vector = cx.embedder.as_ref().and_then(|e| {
-        e.embed_query(&a.query).map_err(|err| tracing::warn!("query embedding failed: {err}")).ok()
-    });
-    for h in cx.engine.search_hybrid(&q, vector.as_deref())? {
+    let vector = || {
+        cx.embedder.as_ref().and_then(|e| {
+            e.embed_query(&a.query)
+                .map_err(|err| tracing::warn!("query embedding failed: {err}"))
+                .ok()
+        })
+    };
+    for h in cx.engine.search_hybrid_with(&q, vector)? {
         if cx.visible(&h.node.id)? {
             hits.push(h);
         }

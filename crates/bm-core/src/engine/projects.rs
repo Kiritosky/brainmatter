@@ -237,7 +237,8 @@ pub(crate) fn is_member(conn: &Connection, project: &ProjectId, node: &NodeId) -
 pub(crate) fn list(conn: &Connection) -> Result<Vec<ProjectSummary>> {
     let sql = format!(
         "SELECT {PROJECT_COLS},
-                (SELECT count(*) FROM project_members m JOIN nodes n ON n.id = m.node_id
+                (SELECT count(*) FROM project_members m
+                  JOIN nodes n INDEXED BY nodes_graph_idx ON n.id = m.node_id
                   WHERE m.project_id = projects.id AND n.deleted_at IS NULL
                     AND n.kind NOT IN ('template', 'doc'))
          FROM projects WHERE deleted_at IS NULL ORDER BY sort, name"

@@ -17,6 +17,7 @@ pub mod templates;
 pub mod time;
 pub mod vault;
 pub mod wikilinks;
+pub mod wire;
 
 pub use engine::{Engine, clean_tags};
 pub use error::{CoreError, Result};

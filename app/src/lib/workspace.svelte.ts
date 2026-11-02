@@ -345,7 +345,11 @@ class Workspace {
   }
 
   async loadGraph() {
-    this.graph = await api.graph(this.view);
+    // Marks show up in the measurements of app/scripts/perf-app.sh.
+    performance.mark('bm:graph-requested');
+    const graph = await api.graph(this.view);
+    performance.mark('bm:graph-received');
+    this.graph = graph;
   }
 
   async loadModel() {

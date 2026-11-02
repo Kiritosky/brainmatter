@@ -450,6 +450,7 @@
       dirty,
     };
     worker.postMessage({ run: ++layoutRun, input });
+    performance.mark('bm:layout-requested');
     pendingFresh = pendingFresh || fresh;
     pendingView = snap.view;
   }
@@ -458,7 +459,9 @@
 
   worker.onmessage = (e: MessageEvent<{ run: number; result: LayoutResult }>) => {
     if (e.data.run !== layoutRun) return;
+    performance.mark('bm:layout-received');
     applyLayout(e.data.result);
+    performance.mark('bm:layout-applied');
   };
   // Better in the wrong places than not there at all.
   worker.onerror = () => attach();
@@ -575,6 +578,7 @@
 
   /** Incremental sync so positions, camera and running layouts survive updates. */
   function sync(snap: GraphSnapshot) {
+    performance.mark('bm:sync-start');
     const viewChanged = snap.view !== currentView;
     if (viewChanged) {
       cancelAnimationFrame(moveFrame);
@@ -670,6 +674,7 @@
     if (bulk) attach();
     updateShownGroups();
     if (viewChanged) renderer?.getCamera().reset({ duration: 300 });
+    performance.mark('bm:sync-end');
   }
 
   /** Ghost edges carry no weight, so they never pull on the layout. */
