@@ -219,7 +219,7 @@
     </div>
 
     <div class="border-t border-line-soft p-2">
-      <div class="flex items-center pl-1.5" title="Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein.">
+      <div class="flex items-center pl-1.5" title="Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein. Speicherst du dort, ist die Seite einen Moment später auch hier.">
         <span class="section-title !mb-0 flex-1">Aus Dateien</span>
         <button class="icon-btn !h-6 !w-6" aria-label="Doku-Ordner einbinden" title="Doku-Ordner einbinden" onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={13} /></button>
         <button class="icon-btn !h-6 !w-6" aria-label="Markdown-Datei einbinden" title="Markdown-Datei einbinden" onclick={() => act(() => api.addDocSource(project, false))}><FilePlus size={13} /></button>

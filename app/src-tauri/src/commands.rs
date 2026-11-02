@@ -553,7 +553,10 @@ pub fn add_doc_source(
         .ok_or_else(|| ApiError::new("invalid", "Dieser Dateiname wird nicht unterstützt."))?;
     let bookmark = bm_macos::bookmarks::create(&path);
     let id = engine.add_doc_source(&ctx, &project, text, bookmark.as_deref())?;
-    Ok(Some(engine.sync_doc_source(&ctx, &id, &path)?))
+    let report = engine.sync_doc_source(&ctx, &id, &path)?;
+    drop(engine);
+    session.watch_docs();
+    Ok(Some(report))
 }
 
 /// Brings the project's mirrored pages up to date. Sources that cannot be reached
@@ -570,14 +573,7 @@ pub fn sync_doc_sources(session: S<'_>, project: ProjectId) -> ApiResult<DocSync
     let (engine, ctx) = session.engine()?;
     let mut status = DocSyncStatus { changed: 0, skipped: 0, unreachable: Vec::new() };
     for source in engine.doc_sources(&project)? {
-        let (path, bookmark) = engine.doc_source_location(&source.id)?;
-        let moved = bookmark.as_deref().and_then(bm_macos::bookmarks::resolve);
-        if let Some(now) = moved.as_ref().and_then(|p| p.to_str())
-            && now != path
-        {
-            engine.set_doc_source_path(&source.id, now)?;
-        }
-        let root = moved.unwrap_or_else(|| path.clone().into());
+        let root = crate::docs_watch::source_root(&engine, &source.id)?;
         match engine.sync_doc_source(&ctx, &source.id, &root) {
             Ok(report) => {
                 status.changed += report.added + report.updated + report.removed;
@@ -595,7 +591,10 @@ pub fn sync_doc_sources(session: S<'_>, project: ProjectId) -> ApiResult<DocSync
 #[tauri::command(async)]
 pub fn remove_doc_source(session: S<'_>, id: DocSourceId) -> ApiResult<()> {
     let (engine, ctx) = session.engine()?;
-    Ok(engine.remove_doc_source(&ctx, &id)?)
+    engine.remove_doc_source(&ctx, &id)?;
+    drop(engine);
+    session.watch_docs();
+    Ok(())
 }
 
 #[tauri::command(async)]

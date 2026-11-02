@@ -295,6 +295,11 @@ impl Engine {
         self.read(|c| docs::sources(c, project))
     }
 
+    /// The sources of all projects, as the app watches them while unlocked.
+    pub fn all_doc_sources(&self) -> Result<Vec<DocSource>> {
+        self.read(docs::all_sources)
+    }
+
     /// Starts mirroring a folder or Markdown file. Only for the user: it copies
     /// what is on the disk into a place AI clients can read.
     pub fn add_doc_source(
@@ -332,7 +337,10 @@ impl Engine {
         let scan = crate::docs::scan(root)?;
         let name = root.file_name().and_then(|n| n.to_str()).unwrap_or(&source.path);
         let summary = format!("Doku aus „{name}“ aktualisiert");
-        Ok(self.write(ctx, summary, |w| docs::sync(w, id, &scan))?.0)
+        // While someone writes in the folder, every save syncs; together they are one
+        // change.
+        let key = format!("docs:{id}");
+        Ok(self.write_coalesced(ctx, summary, Some(&key), |w| docs::sync(w, id, &scan))?.0)
     }
 
     pub fn doc_source_location(&self, id: &DocSourceId) -> Result<(String, Option<Vec<u8>>)> {

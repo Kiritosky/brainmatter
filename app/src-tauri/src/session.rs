@@ -27,7 +27,7 @@ use bm_core::{
     vault::{BACKUPS_DIR, BLOBS_DIR, KdfParams, RecoveryKey, SecretKey, SlotKind},
 };
 use bm_embed::{DOWNLOAD_BYTES, E5Embedder, ModelStore};
-use bm_macos::{biometrics, keychain, power::LockTrigger};
+use bm_macos::{biometrics, keychain, power::LockTrigger, watch::Watcher};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
@@ -120,7 +120,8 @@ enum State {
 }
 
 struct Unlocked {
-    /// First, so it stops before the engine goes away.
+    /// First, so they stop before the engine goes away.
+    docs_watch: Option<Watcher>,
     indexer: Option<Indexer>,
     vault: Vault,
     keys: VaultKeys,
@@ -407,6 +408,19 @@ impl Session {
     }
 
     // --------------------------------------------------------- activity ---
+
+    /// Watches the documentation sources again, after one was added or removed.
+    pub fn watch_docs(&self) {
+        let Ok((engine, ctx)) = self.engine() else { return };
+        let watcher = crate::docs_watch::start(&engine, ctx);
+        drop(engine);
+        let mut state = self.state.lock();
+        let State::Unlocked(u) = &mut *state else { return };
+        let old = std::mem::replace(&mut u.docs_watch, watcher);
+        drop(state);
+        // Waits for a sync in progress, which needs no lock of ours.
+        drop(old);
+    }
 
     /// Engine and acting context for one command; counts as user activity.
     pub fn engine(&self) -> ApiResult<(Arc<Engine>, Ctx)> {
@@ -863,12 +877,14 @@ impl Session {
                 }
             }
         });
+        let ctx = Ctx::new(user.id).with_tool("app");
         let unlocked = Unlocked {
+            docs_watch: crate::docs_watch::start(&engine, ctx.clone()),
             indexer: self.spawn_indexer(&engine),
             vault,
             keys,
             engine,
-            ctx: Ctx::new(user.id).with_tool("app"),
+            ctx,
             user_name: user.name,
             forwarder,
         };

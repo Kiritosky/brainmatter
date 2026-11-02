@@ -232,6 +232,17 @@ pub(crate) fn sources(conn: &Connection, project: &ProjectId) -> Result<Vec<DocS
     Ok(rows)
 }
 
+/// The sources of all live projects, for watching them.
+pub(crate) fn all_sources(conn: &Connection) -> Result<Vec<DocSource>> {
+    let sql = format!(
+        "{SOURCE_SELECT} AND s.project_id IN (SELECT id FROM projects WHERE deleted_at IS NULL)
+         ORDER BY s.created_at, s.id"
+    );
+    let mut stmt = conn.prepare_cached(&sql)?;
+    let rows = stmt.query_map([], source_from_row)?.collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
 pub(crate) fn source(conn: &Connection, id: &DocSourceId) -> Result<DocSource> {
     let sql = format!("{SOURCE_SELECT} AND s.id = ?1");
     conn.query_row(&sql, [id], source_from_row)

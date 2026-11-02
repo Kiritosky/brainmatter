@@ -2,6 +2,7 @@
 //! macOS integrations into Tauri.
 
 mod commands;
+mod docs_watch;
 pub mod error;
 pub mod integrations;
 mod perf;

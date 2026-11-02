@@ -147,6 +147,18 @@ fn page(path: String, parent: Option<String>, fallback: &str, body: String) -> S
     ScannedPage { path, parent, title, body, hash }
 }
 
+/// Whether a change at `path`, a folder or not, can change what [`scan`] reads from
+/// `root`: a Markdown file, or a folder that may hold some, outside what it skips.
+pub fn affects(root: &Path, path: &Path, is_dir: bool) -> bool {
+    if path == root {
+        return true;
+    }
+    let Ok(rest) = path.strip_prefix(root) else { return false };
+    let mut parts = rest.components().map(|c| c.as_os_str().to_string_lossy());
+    let skipped = parts.any(|p| p.starts_with('.') || SKIPPED_DIRS.contains(&p.as_ref()));
+    !skipped && (is_dir || is_markdown(path))
+}
+
 /// Reads a Markdown file, or a folder of them. A subfolder becomes a page with
 /// its README as text, and the files in it become subpages. Never follows
 /// symlinks, so a link inside the folder cannot pull in anything from outside.
@@ -235,6 +247,21 @@ fn scan_dir(dir: &Path, rel: &str, parent: Option<&str>, out: &mut Scan) -> std:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_changes_the_scan_would_see_count() {
+        let root = Path::new("/repo");
+        assert!(affects(root, Path::new("/repo/docs/Plan.md"), false));
+        assert!(affects(root, Path::new("/repo/docs"), true), "a folder moved or removed");
+        assert!(affects(root, root, true));
+        assert!(!affects(root, Path::new("/repo/src/main.rs"), false));
+        assert!(!affects(root, Path::new("/repo/target/doc/x.md"), false));
+        assert!(!affects(root, Path::new("/repo/.git/index"), false));
+        assert!(!affects(root, Path::new("/elsewhere/a.md"), false));
+        let file = Path::new("/repo/README.md");
+        assert!(affects(file, file, false));
+        assert!(!affects(file, Path::new("/repo/OTHER.md"), false));
+    }
 
     const PAGE: &str = "# Titel\nEinleitung\n\n## Installation\nSchritt 1\n\n### Mac\nbrew\n\n## Nutzung\nLos\n\n## Nutzung\nNochmal\n\n```sh\n# kein Abschnitt\n```\n";
 
