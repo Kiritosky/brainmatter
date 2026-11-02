@@ -7,6 +7,8 @@
 #
 # Copy the model into <dir>/models to measure indexing and search by meaning as well.
 # Opens a window: covering it stops the frames, so leave it visible while this runs.
+# BM_PERF_RETINA=1 puts it on a Retina display, if there is one. To measure for longer than
+# the vault stays unlocked, turn off locking in <dir>/settings.json first.
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -36,7 +38,7 @@ script="$out.js"
 { echo "window.__bmPerfDpr = ${PERF_DPR:-0};"; cat "$root/app/scripts/perf-app.js"; } >"$script"
 
 BM_PERF_SCRIPT="$script" BM_PERF_VAULT="$vault" BM_PERF_OUT="$out" \
-  RUST_LOG=warn "$root/target/debug/brainmatter" &
+  RUST_LOG=info "$root/target/debug/brainmatter" >"$out.log" 2>&1 &
 bin_pid=$!
 trap 'kill "$bin_pid" 2>/dev/null || true' EXIT
 

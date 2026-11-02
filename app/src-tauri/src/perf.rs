@@ -39,7 +39,15 @@ pub fn run_script<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<'_
         return;
     }
     let Some(script) = script().and_then(|p| std::fs::read_to_string(p).ok()) else { return };
+    let window = webview.window();
+    // On a Retina display, if asked to and there is one.
+    if std::env::var_os("BM_PERF_RETINA").is_some() {
+        let monitors = window.available_monitors().unwrap_or_default();
+        if let Some(monitor) = monitors.iter().find(|m| m.scale_factor() >= 2.0) {
+            let _ = window.set_position(*monitor.position());
+        }
+    }
     // The most there is to draw.
-    let _ = webview.window().maximize();
+    let _ = window.maximize();
     let _ = webview.eval(script);
 }

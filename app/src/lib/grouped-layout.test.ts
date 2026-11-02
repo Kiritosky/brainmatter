@@ -163,6 +163,28 @@ describe('groupedLayout', () => {
     expect(distance(position(again, 'a0'), position(again, 'b5'))).toBeCloseTo(distance(position(first, 'a0'), position(first, 'b5')), 5);
   });
 
+  test('opening a view again moves nothing, with nested projects too', () => {
+    const tree = [
+      { id: 'a', parent: null },
+      { id: 'a1', parent: 'a' },
+      { id: 'a2', parent: 'a' },
+      { id: 'a3', parent: 'a1' },
+      { id: 'b', parent: null },
+      { id: 'c', parent: null },
+    ];
+    const nodes = [...many('a', 8, 'a'), ...many('x', 12, 'a1'), ...many('y', 30, 'a2'), ...many('z', 5, 'a3'), ...many('b', 40, 'b'), ...many('c', 3, 'c')];
+    const base = input({ nodes, edges: [{ src: 'a0', dst: 'b0' }], projects: tree });
+    let result = groupedLayout(allDirty(base));
+    // Once to arrive at what it keeps, and from then on nothing may change.
+    result = groupedLayout(settled(base, result));
+    for (let round = 0; round < 3; round++) {
+      const next = groupedLayout(settled(base, result));
+      for (const p of next.positions) expect(distance(p, position(result, p.id))).toBeLessThan(1e-3);
+      for (const c of next.circles) expect(distance(c, circle(result, c.id))).toBeLessThan(1e-3);
+      result = next;
+    }
+  });
+
   test('a new entry leaves the other projects where they were', () => {
     const base = input({ nodes: [...many('a', 15, 'a'), ...many('b', 15, 'b')], projects });
     const first = groupedLayout(allDirty(base));

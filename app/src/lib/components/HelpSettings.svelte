@@ -51,6 +51,8 @@
     {/each}
   </div>
 
+  <p class="mt-2 text-xs leading-relaxed text-faint">Geprüfte Vorlagen erscheinen dort ebenfalls als Befehle. Projekte und Doku-Seiten sehen KIs außerdem als Ressourcen, die sie durchstöbern können, nur für die Projekte ihrer Verbindung.</p>
+
   {#each MCP_TOOLS as group (group.title)}
     <h3 class="section-title mt-5">{group.title}</h3>
     <div class="card">

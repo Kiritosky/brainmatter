@@ -302,6 +302,7 @@ function pack(items: Item[], links: Map<string, Map<string, number>>) {
     const middle = placed.length ? centroid(placed) : { x: 0, y: 0 };
     place(item, wantX, wantY, COMPACT_TRIES, (px, py) => Math.hypot(px - middle.x, py - middle.y) + 0.35 * Math.hypot(px - wantX, py - wantY));
   }
+  return origin;
 }
 
 /** A small circle around circles: walk towards whichever is furthest out. */
@@ -392,10 +393,12 @@ export function groupedLayout(input: LayoutInput): LayoutResult {
     }
     if (!items.length) return null;
 
-    if (items.length > 1) pack(items, linksBetween(items));
+    let origin: { x: number; y: number } | null = null;
+    if (items.length > 1) origin = pack(items, linksBetween(items));
     else {
       items[0].x = 0;
       items[0].y = 0;
+      origin = items[0].before;
     }
     const box = items.length > 1 ? enclose(items) : { x: 0, y: 0, r: items[0].r };
 
@@ -405,8 +408,9 @@ export function groupedLayout(input: LayoutInput): LayoutResult {
     const circlesOut = items.flatMap((item) =>
       item.circles.map((c) => ({ ...c, x: c.x + item.x - box.x, y: c.y + item.y - box.y })),
     );
-    const known = items.filter((i) => i.before).map((i) => i.before!);
-    const before = known.length ? centroid(known) : null;
+    // Where the middle of this circle was: the middle of what it holds would be somewhere
+    // else, and everything would move a little each time it is laid out.
+    const before = items.some((i) => i.before) && origin ? { x: origin.x + box.x, y: origin.y + box.y } : null;
 
     if (level === null) {
       return { key: 'top', r: box.r, nodes: nodesOut, circles: circlesOut, before, x: 0, y: 0 };

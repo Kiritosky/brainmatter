@@ -37,13 +37,26 @@
   }
 
   const report = (name, values = {}) => {
-    const line = JSON.stringify({ name, at: Date.now(), ...values, calls, ignored });
+    const line = JSON.stringify({ name, at: Date.now(), ...values, calls, ignored, stalled });
     calls = {};
     ignored = 0;
+    stalled = 0;
     return invoke('plugin:event|emit', { event: 'bm-perf', payload: line });
   };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const frame = () => new Promise((resolve) => window.requestAnimationFrame(resolve));
+  // A window that is covered gets no frames, and what it measures then means nothing: flagged in `stalled`.
+  let stalled = 0;
+  const frame = () =>
+    new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        stalled++;
+        resolve();
+      }, 1000);
+      window.requestAnimationFrame(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
 
   async function until(check, timeoutMs, what) {
     const end = performance.now() + timeoutMs;

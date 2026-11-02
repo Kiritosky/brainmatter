@@ -462,7 +462,12 @@ try {
   if (await page.getByRole('complementary', { name: 'Eintrag' }).count()) errors.push('writing a doc page opened the side panel');
   await docEditor.click();
   await page.keyboard.press('Meta+ArrowDown');
-  await page.keyboard.type('\n\n/tab');
+  await page.keyboard.type('\n\n/');
+  await page.locator('.cm-tooltip-autocomplete').getByText('Tabelle').waitFor();
+  await page.getByText('Rückgängig über die Aktivität').waitFor({ state: 'detached', timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(150);
+  await shot(page, '77a-docs-slash-menu');
+  await page.keyboard.type('tab');
   await page.locator('.cm-tooltip-autocomplete').getByText('Tabelle').waitFor();
   await page.waitForTimeout(150);
   await shot(page, '77-docs-slash');
