@@ -87,3 +87,51 @@ fn locked_vaults_are_not_backed_up() {
     s.lock();
     assert_eq!(s.backup_now().unwrap_err().code, "locked");
 }
+
+#[test]
+fn a_second_place_gets_every_backup_and_makes_the_vault_on_a_new_mac() {
+    let (_dir, s) = setup();
+    add(&s, "Wichtig");
+    let drive = tempfile::tempdir().unwrap();
+    let status = s.set_backup_copy(Some(drive.path().to_owned())).unwrap();
+    let copy = status.copy.unwrap();
+    assert!(copy.reachable);
+    assert!(copy.newest.is_some(), "the first backup is taken and copied at once");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    s.backup_now().unwrap();
+    let copy = s.backup_status().unwrap().copy.unwrap();
+    assert_eq!(copy.newest, Some(s.backup_status().unwrap().backups[0].at));
+    assert_eq!(copy.error, None);
+    // Saving other settings from the UI leaves the place alone.
+    let mut settings = s.settings();
+    settings.backup_copy = None;
+    assert!(s.update_settings(settings).unwrap().backup_copy.is_some());
+
+    let emit: Emit = Arc::new(|_, _| {});
+    let mac = tempfile::tempdir().unwrap();
+    let new = Session::new(mac.path().to_owned(), emit, KdfParams::insecure_fast());
+    let wrong = new.adopt_backup(drive.path(), "falsch-falsch").unwrap_err();
+    assert_eq!(wrong.code, "wrong_password");
+    assert!(!new.is_unlocked());
+    new.adopt_backup(drive.path(), PASSWORD).unwrap();
+    assert!(new.is_unlocked());
+    assert_eq!(titles(&new), ["Wichtig"]);
+    assert!(new.settings().backup_copy.is_some(), "copying goes on to the same place");
+    assert_eq!(new.adopt_backup(drive.path(), PASSWORD).unwrap_err().code, "vault_exists");
+}
+
+#[test]
+fn a_place_with_another_vault_is_not_taken() {
+    let (_a, first) = setup();
+    let (_b, second) = setup();
+    let drive = tempfile::tempdir().unwrap();
+    first.set_backup_copy(Some(drive.path().to_owned())).unwrap();
+    let refused = second.set_backup_copy(Some(drive.path().to_owned())).unwrap_err();
+    assert_eq!(refused.code, "other_vault");
+    assert!(second.backup_status().unwrap().copy.is_none());
+    let nothing = tempfile::tempdir().unwrap();
+    let emit: Emit = Arc::new(|_, _| {});
+    let mac = tempfile::tempdir().unwrap();
+    let new = Session::new(mac.path().to_owned(), emit, KdfParams::insecure_fast());
+    assert_eq!(new.adopt_backup(nothing.path(), PASSWORD).unwrap_err().code, "not_a_backup");
+}

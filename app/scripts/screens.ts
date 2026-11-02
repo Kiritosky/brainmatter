@@ -46,6 +46,22 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${nam
   await page.close();
 }
 
+// A new Mac: the vault comes from the copy of the backups on a drive.
+{
+  const page = await open('/?mock=fresh');
+  await page.getByText('Willkommen bei Brainmatter').waitFor();
+  await page.getByText('Aus einem Backup übernehmen').click();
+  await page.locator('input[type=password]').fill('falsch');
+  await page.getByRole('button', { name: 'Ordner wählen' }).click();
+  await page.getByText('Falsches Passwort').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '85-adopt-backup');
+  await page.locator('input[type=password]').fill('demo1234');
+  await page.getByRole('button', { name: 'Ordner wählen' }).click();
+  await page.getByText('Dein Graph ist noch leer').waitFor();
+  await page.close();
+}
+
 // Lock screen: the mock's Touch ID "cancels", so the password form stays.
 const page = await open('/');
 try {
@@ -724,6 +740,10 @@ try {
   await page.getByText('Falsches Passwort').waitFor();
   await page.waitForTimeout(250);
   await shot(page, '31-backups');
+  await page.getByRole('button', { name: 'Zweiten Ort für Backups wählen' }).click();
+  await page.getByText('/Volumes/Archiv').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '86-backup-copy');
 
   // A folder from another tool comes in, and goes again with one undo.
   await page.getByRole('button', { name: 'Ordner zum Importieren wählen' }).click();

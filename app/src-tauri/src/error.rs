@@ -1,7 +1,7 @@
 //! Errors as the UI sees them: a stable `code` to branch on, a German message
 //! to show, and candidates for ambiguous or unknown references.
 
-use bm_core::{CoreError, VaultError, model::NodeBrief};
+use bm_core::{CoreError, VaultError, mirror::MirrorError, model::NodeBrief};
 use bm_macos::keychain::KeychainError;
 use serde::Serialize;
 
@@ -67,6 +67,33 @@ impl From<VaultError> for ApiError {
                 Self::new("vault_exists", "Es gibt bereits einen Tresor.")
             }
             other => Self::internal(other),
+        }
+    }
+}
+
+impl From<MirrorError> for ApiError {
+    fn from(e: MirrorError) -> Self {
+        match e {
+            MirrorError::OtherVault => Self::new(
+                "other_vault",
+                "In diesem Ordner liegt das Backup eines anderen Tresors. Bitte einen anderen wählen.",
+            ),
+            MirrorError::SameFolder => Self::new(
+                "invalid",
+                "Das ist der Ordner des Tresors selbst. Bitte einen anderen Ort wählen.",
+            ),
+            MirrorError::Empty => {
+                Self::new("not_a_backup", "In diesem Ordner liegt noch kein Backup.")
+            }
+            MirrorError::Damaged => {
+                Self::new("corrupt", "Keines der Backups in diesem Ordner ist lesbar.")
+            }
+            MirrorError::VaultExists => Self::new("vault_exists", "Es gibt bereits einen Tresor."),
+            MirrorError::Vault(e) => e.into(),
+            MirrorError::Core(e) => e.into(),
+            MirrorError::Io(e) => {
+                Self::new("io", format!("In den Ordner lässt sich nicht schreiben: {e}"))
+            }
         }
     }
 }

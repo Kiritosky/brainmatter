@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { Archive, CircleCheck, FileDown, FolderInput, History, LoaderCircle, RefreshCw, TriangleAlert, Undo2 } from '@lucide/svelte';
+  import { Archive, CircleCheck, FileDown, FolderInput, HardDrive, History, LoaderCircle, RefreshCw, TriangleAlert, Undo2 } from '@lucide/svelte';
   import { api, errorMessage, type BackupStatus, type ExportSummary, type ImportSkipReason, type ImportSummary, type Settings } from '#lib/api.ts';
   import { formatSize } from '#lib/attachments.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
@@ -17,6 +17,25 @@
   let password = $state('');
 
   const load = async () => (status = await api.backupStatus());
+
+  let copyBusy = $state(false);
+  let copyError = $state<string | null>(null);
+  async function chooseCopy() {
+    copyBusy = true;
+    copyError = null;
+    try {
+      // Nothing back means the folder dialog was cancelled.
+      status = (await api.chooseBackupCopy()) ?? status;
+    } catch (err) {
+      copyError = errorMessage(err);
+    } finally {
+      copyBusy = false;
+    }
+  }
+  async function removeCopy() {
+    copyError = null;
+    status = await api.removeBackupCopy();
+  }
   onMount(load);
 
   async function run(fn: () => Promise<unknown>) {
@@ -125,7 +144,7 @@
 </script>
 
 <h2 class="mb-1 text-lg font-semibold">Backups</h2>
-<p class="mb-5 text-muted">Verschlüsselte Sicherungen deiner Einträge. Sie liegen neben dem Tresor und schützen vor Bedienfehlern und beschädigten Daten, nicht vor dem Verlust des Macs.</p>
+<p class="mb-5 text-muted">Verschlüsselte Sicherungen deiner Einträge. Sie liegen neben dem Tresor und schützen vor Bedienfehlern und beschädigten Daten. Gegen den Verlust des Macs hilft eine Kopie an einem zweiten Ort.</p>
 
 <div class="card">
   <div class="row">
@@ -134,6 +153,34 @@
       <div class="text-xs text-faint">Täglich, wenn sich etwas geändert hat. Bleiben: 7 Tage und 4 Wochen.</div>
     </div>
     <Toggle checked={settings.auto_backup} label="Automatisch sichern" onchange={(v) => onsave({ auto_backup: v })} />
+  </div>
+  <div class="row border-t border-line-soft">
+    <HardDrive size={15} class="shrink-0 text-faint" />
+    <div class="min-w-0 flex-1">
+      <div>Zweiter Ort</div>
+      {#if status?.copy}
+        {@const copy = status.copy}
+        <div class="selectable truncate text-xs text-faint" title={copy.folder}>{copy.folder}</div>
+        {#if copy.error}
+          <div class="mt-0.5 text-xs text-danger">{copy.error}</div>
+        {:else if !copy.reachable}
+          <div class="mt-0.5 text-xs text-warn">Nicht verbunden. Die Kopie wird nachgeholt, sobald der Ort wieder da ist.</div>
+        {:else if copy.newest}
+          <div class="mt-0.5 text-xs text-faint tabular-nums">Stand: {when(copy.newest)}</div>
+        {/if}
+      {:else}
+        <div class="text-xs text-faint">Jedes Backup auch auf ein externes Laufwerk oder in einen anderen Ordner, mit allem, was ein neuer Mac zum Wiederherstellen braucht.</div>
+      {/if}
+      {#if copyError}
+        <div class="mt-0.5 text-xs text-danger" role="alert" in:pop={{ duration: 160, y: -3 }}>{copyError}</div>
+      {/if}
+    </div>
+    {#if status?.copy}
+      <button class="btn-ghost !h-7 shrink-0 text-xs" disabled={copyBusy} onclick={removeCopy}>Entfernen</button>
+    {/if}
+    <button class="btn-ghost !h-7 shrink-0 text-xs" aria-label="Zweiten Ort für Backups wählen" disabled={copyBusy || status?.running} onclick={chooseCopy}>
+      {#if copyBusy}<LoaderCircle size={13} class="animate-spin" /> Kopiere …{:else}{status?.copy ? 'Ändern' : 'Ort wählen'}{/if}
+    </button>
   </div>
 </div>
 

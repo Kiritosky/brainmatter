@@ -23,8 +23,11 @@ pub use recovery::RecoveryKey;
 
 use crate::store::DbKey;
 
-const HEADER_FILE: &str = "vault.header";
-const DB_FILE: &str = "brainmatter.db";
+pub(crate) const HEADER_FILE: &str = "vault.header";
+pub(crate) const DB_FILE: &str = "brainmatter.db";
+/// Next to the database: its backups, and the encrypted attachment files.
+pub const BACKUPS_DIR: &str = "backups";
+pub const BLOBS_DIR: &str = "blobs";
 const FORMAT: u32 = 1;
 
 #[derive(Debug, thiserror::Error)]

@@ -248,6 +248,8 @@ export interface Settings {
   theme: 'system' | 'light' | 'dark';
   quick_capture: boolean;
   auto_update: boolean;
+  /** A second place for the backups; only `chooseBackupCopy` changes it. */
+  backup_copy: string | null;
 }
 
 export interface AvailableUpdate {
@@ -285,10 +287,19 @@ export interface ImportSummary {
   change_set: Id | null;
 }
 
+export interface CopyStatus {
+  folder: string;
+  /** A drive may be unplugged. */
+  reachable: boolean;
+  newest: number | null;
+  error: string | null;
+}
+
 export interface BackupStatus {
   running: boolean;
   error: string | null;
   backups: BackupInfo[];
+  copy: CopyStatus | null;
 }
 
 export interface Status {
@@ -398,6 +409,8 @@ export const api = {
   status: () => call<Status>('session_status'),
   createVault: (password: string, name: string) => call<string>('create_vault', { password, name }),
   unlockPassword: (password: string) => call<void>('unlock_password', { password }),
+  /** Asks for the folder; `false` if the user cancels. */
+  adoptBackup: (password: string) => call<boolean>('adopt_backup', { password }),
   unlockRecovery: (key: string) => call<void>('unlock_recovery', { key }),
   unlockTouchId: () => call<void>('unlock_touch_id'),
   enrollTouchId: () => call<void>('enroll_touch_id'),
@@ -418,6 +431,9 @@ export const api = {
   // backups
   backupStatus: () => call<BackupStatus>('backup_status'),
   backupNow: () => call<BackupInfo>('backup_now'),
+  /** Asks for the folder; nothing back if the user cancels. */
+  chooseBackupCopy: () => call<BackupStatus | null>('choose_backup_copy'),
+  removeBackupCopy: () => call<BackupStatus>('remove_backup_copy'),
   exportMarkdown: (password: string) => call<ExportSummary | null>('export_markdown', { password }),
   /** Asks for a folder; nothing back if the user cancels. */
   importPreview: () => call<ImportSummary | null>('import_preview'),

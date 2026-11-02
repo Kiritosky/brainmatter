@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { Fingerprint, ShieldCheck, Copy, Check } from '@lucide/svelte';
+  import { ArrowLeft, Fingerprint, HardDrive, ShieldCheck, Copy, Check } from '@lucide/svelte';
   import { api, errorMessage, type Status } from '#lib/api.ts';
   import Checkbox from '#lib/ui/Checkbox.svelte';
   import { pop } from '#lib/ui/motion.ts';
 
   let { status, ondone }: { status: Status; ondone: () => void } = $props();
 
-  let step = $state<'create' | 'recovery' | 'touchid'>('create');
-  const steps = $derived(status.biometry_available ? ['create', 'recovery', 'touchid'] : ['create', 'recovery']);
+  let step = $state<'create' | 'recovery' | 'touchid' | 'adopt'>('create');
+  const steps = $derived(
+    step === 'adopt' ? [] : status.biometry_available ? ['create', 'recovery', 'touchid'] : ['create', 'recovery'],
+  );
 
   let name = $state('');
   let password = $state('');
@@ -43,6 +45,29 @@
     } finally {
       busy = false;
     }
+  }
+
+  /** From the copy of the backups on a drive, as on a new Mac. */
+  async function adopt(e: SubmitEvent) {
+    e.preventDefault();
+    busy = true;
+    error = null;
+    try {
+      if (await api.adoptBackup(password)) {
+        password = '';
+        ondone();
+      }
+    } catch (err) {
+      error = errorMessage(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function goTo(next: typeof step) {
+    error = null;
+    password = confirm = '';
+    step = next;
   }
 
   async function copyKey() {
@@ -100,6 +125,27 @@
           <button class="btn-primary mt-1" disabled={busy || !name.trim() || password.length < 8}>
             {busy ? 'Tresor wird erstellt …' : 'Tresor erstellen'}
           </button>
+        </form>
+        <button class="mt-4 w-full text-center text-xs text-muted transition-colors hover:text-text" onclick={() => goTo('adopt')}>
+          Schon Brainmatter genutzt? Aus einem Backup übernehmen
+        </button>
+      {:else if step === 'adopt'}
+        <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent"><HardDrive size={22} /></div>
+        <h1 class="text-xl font-semibold tracking-tight">Aus einem Backup übernehmen</h1>
+        <p class="mt-1 mb-5 leading-relaxed text-muted">
+          Wähle den Ordner „Brainmatter-Backup“, etwa auf deinem externen Laufwerk. Das Master-Passwort von damals öffnet ihn, und das neueste Backup wird dein Tresor.
+        </p>
+        <form class="flex flex-col gap-3.5" onsubmit={adopt}>
+          <label class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-muted">Master-Passwort</span>
+            <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
+            <input class="field" type="password" bind:value={password} autocomplete="current-password" autofocus />
+          </label>
+          {#if error}<p class="text-danger" transition:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
+          <div class="mt-1 flex gap-2">
+            <button type="button" class="btn-ghost" aria-label="Zurück" onclick={() => goTo('create')}><ArrowLeft size={14} /></button>
+            <button class="btn-primary flex-1" disabled={busy || !password}>{busy ? 'Wird übernommen …' : 'Ordner wählen'}</button>
+          </div>
         </form>
       {:else if step === 'recovery'}
         <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-ok/15 text-ok"><ShieldCheck size={24} /></div>

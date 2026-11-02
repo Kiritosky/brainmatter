@@ -44,6 +44,12 @@ const layouts = new Map<string, { x: number; y: number; pinned: boolean }>(); //
 const changeSets: ChangeSetInfo[] = [];
 const touched = new Map<string, string[]>(); // change set → node ids
 const imported = new Map<string, string[]>(); // change set → projects an import made
+let copiedAt: number | null = null;
+
+function backupStatus() {
+  const copy = settings.backup_copy ? { folder: settings.backup_copy, reachable: true, newest: copiedAt, error: null } : null;
+  return { running: false, error: null, backups, copy };
+}
 
 function importSummary(changeSet: string | null) {
   return {
@@ -62,7 +68,7 @@ const clients: AiClient[] = [];
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
 let userName = 'Alex';
-let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true, auto_update: true };
+let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true, auto_update: true, backup_copy: null };
 const DAY = 86_400_000;
 const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
@@ -526,7 +532,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   lock: () => ((state = 'locked'), emit('bm:session', status())),
   get_settings: () => settings,
-  update_settings: (a) => (settings = { ...a.settings, auto_lock_minutes: Math.max(1, a.settings.auto_lock_minutes) }),
+  update_settings: (a) => (settings = { ...a.settings, backup_copy: settings.backup_copy, auto_lock_minutes: Math.max(1, a.settings.auto_lock_minutes) }),
   touch: () => undefined,
 
   projects: () => projectList(),
@@ -713,11 +719,28 @@ const handlers: Record<string, (a: Args) => unknown> = {
   install_update: () => undefined,
   hide_capture: () => undefined,
   show_main_window: () => undefined,
-  backup_status: () => ({ running: false, error: null, backups }),
+  backup_status: () => backupStatus(),
   backup_now: () => {
     const b = { name: `backup-${now()}.db`, at: now(), size: 2_450_000 };
     backups.unshift(b);
+    if (settings.backup_copy) copiedAt = b.at;
     return b;
+  },
+  choose_backup_copy: () => {
+    settings = { ...settings, backup_copy: '/Volumes/Archiv' };
+    copiedAt = backups[0]?.at ?? null;
+    return backupStatus();
+  },
+  remove_backup_copy: () => {
+    settings = { ...settings, backup_copy: null };
+    return backupStatus();
+  },
+  adopt_backup: (a) => {
+    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    settings = { ...settings, backup_copy: '/Volumes/Archiv' };
+    state = 'unlocked';
+    emit('bm:session', status());
+    return true;
   },
   export_markdown: (a) => {
     if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');

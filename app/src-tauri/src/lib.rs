@@ -275,6 +275,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::session_status,
             commands::create_vault,
+            commands::adopt_backup,
             commands::unlock_password,
             commands::unlock_recovery,
             commands::unlock_touch_id,
@@ -335,6 +336,8 @@ pub fn run() {
             commands::backup_status,
             commands::backup_now,
             commands::restore_backup,
+            commands::choose_backup_copy,
+            commands::remove_backup_copy,
             commands::export_markdown,
             commands::import_preview,
             commands::import_markdown,

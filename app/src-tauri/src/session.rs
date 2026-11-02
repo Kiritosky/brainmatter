@@ -19,10 +19,12 @@ use bm_core::{
     backups::{self, BackupInfo},
     blobs::BlobStore,
     engine::{Indexer, spawn_indexer},
+    mirror,
     model::{ActorKind, Ctx},
     semantic::Embedder,
+    store::DbKey,
     time::now_ms,
-    vault::{KdfParams, RecoveryKey, SecretKey, SlotKind},
+    vault::{BACKUPS_DIR, BLOBS_DIR, KdfParams, RecoveryKey, SecretKey, SlotKind},
 };
 use bm_embed::{DOWNLOAD_BYTES, E5Embedder, ModelStore};
 use bm_macos::{biometrics, keychain, power::LockTrigger};
@@ -49,6 +51,8 @@ const PROGRESS_INTERVAL_MS: i64 = 150;
 const BACKUP_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
 /// How long a restore waits for running commands to let go of the database.
 const RESTORE_WAIT: Duration = Duration::from_secs(5);
+/// How often to look whether the second place is back, such as a drive plugged in again.
+const COPY_CHECK_MS: i64 = 5 * 60 * 1000;
 
 /// Sends a named event with a JSON payload to the UI.
 pub type Emit = Arc<dyn Fn(&'static str, serde_json::Value) + Send + Sync>;
@@ -65,6 +69,9 @@ pub struct Settings {
     pub theme: Theme,
     pub quick_capture: bool,
     pub auto_update: bool,
+    /// A second place for the backups, as the user picked it. Only
+    /// [`Session::set_backup_copy`] changes it.
+    pub backup_copy: Option<String>,
 }
 
 impl Default for Settings {
@@ -77,6 +84,7 @@ impl Default for Settings {
             theme: Theme::System,
             quick_capture: true,
             auto_update: true,
+            backup_copy: None,
         }
     }
 }
@@ -146,6 +154,20 @@ pub struct BackupStatus {
     /// Why the last automatic backup failed.
     pub error: Option<String>,
     pub backups: Vec<BackupInfo>,
+    pub copy: Option<CopyStatus>,
+}
+
+/// The second place for the backups.
+#[derive(Debug, Clone, Serialize)]
+pub struct CopyStatus {
+    /// As the user picked it.
+    pub folder: String,
+    /// Whether it is there right now; a drive may be unplugged.
+    pub reachable: bool,
+    /// When the newest backup there was taken.
+    pub newest: Option<i64>,
+    /// Why the last copy failed.
+    pub error: Option<String>,
 }
 
 /// The optional embedding model, for the settings page.
@@ -177,6 +199,8 @@ pub struct Session {
     download: Mutex<Download>,
     backup_running: AtomicBool,
     backup_error: Mutex<Option<String>>,
+    copy_error: Mutex<Option<String>>,
+    copy_checked_at: AtomicI64,
     restoring: AtomicBool,
     capture_shortcut_blocked: AtomicBool,
 }
@@ -194,6 +218,8 @@ impl Session {
             download: Mutex::new(Download::Idle),
             backup_running: AtomicBool::new(false),
             backup_error: Mutex::new(None),
+            copy_error: Mutex::new(None),
+            copy_checked_at: AtomicI64::new(0),
             restoring: AtomicBool::new(false),
             capture_shortcut_blocked: AtomicBool::new(false),
             dir,
@@ -252,6 +278,36 @@ impl Session {
         engine.ensure_actor(ActorKind::User, name)?;
         self.install(vault, keys, Arc::new(engine))?;
         Ok(recovery.to_string())
+    }
+
+    /// Makes the vault from a copy of the backups in `folder`, as on a new Mac, and
+    /// unlocks it. Copying goes on to that place. Slow: blocking thread.
+    pub fn adopt_backup(&self, folder: &Path, password: &str) -> ApiResult<()> {
+        if !matches!(*self.state.lock(), State::NoVault) {
+            return Err(ApiError::new("vault_exists", "Es gibt bereits einen Tresor."));
+        }
+        let source = mirror::target_in(folder);
+        if !Vault::exists(&source) {
+            return Err(ApiError::new(
+                "not_a_backup",
+                "In diesem Ordner liegt kein Backup von Brainmatter.",
+            ));
+        }
+        let keys = Vault::load(&source)?.unlock_with_password(password)?;
+        mirror::adopt(&source, &keys.db_key(), &self.dir)?;
+        tracing::info!("vault made from a backup copy");
+        // There is a vault now, whatever happens next.
+        *self.state.lock() = State::Locked;
+        let mut vault = Vault::load(&self.dir)?;
+        // Touch ID belongs to the Mac it was set up on.
+        if vault.has_slot(SlotKind::Keychain) {
+            vault.remove_slot(SlotKind::Keychain)?;
+        }
+        let mut settings = self.settings.lock().clone();
+        settings.backup_copy = Some(folder.to_string_lossy().into_owned());
+        settings.save(&self.dir).map_err(ApiError::internal)?;
+        *self.settings.lock() = settings;
+        self.open(vault, keys)
     }
 
     /// Deliberately slow (Argon2id): call from a blocking thread.
@@ -416,38 +472,137 @@ impl Session {
     // ---------------------------------------------------------- backups ---
 
     fn backup_dir(&self) -> PathBuf {
-        self.dir.join("backups")
+        self.dir.join(BACKUPS_DIR)
     }
 
     pub fn backup_status(&self) -> ApiResult<BackupStatus> {
+        let copy = self.settings.lock().backup_copy.clone().map(|folder| {
+            let reachable = Path::new(&folder).is_dir();
+            let target = mirror::target_in(Path::new(&folder));
+            let newest = reachable
+                .then(|| mirror::list(&target).ok().and_then(|b| b.first().map(|b| b.at)))
+                .flatten();
+            CopyStatus { folder, reachable, newest, error: self.copy_error.lock().clone() }
+        });
         Ok(BackupStatus {
             running: self.backup_running.load(Ordering::SeqCst),
             error: self.backup_error.lock().clone(),
             backups: backups::list(&self.backup_dir())?,
+            copy,
         })
+    }
+
+    fn db_and_key(&self) -> ApiResult<(PathBuf, DbKey)> {
+        let state = self.state.lock();
+        let State::Unlocked(u) = &*state else { return Err(ApiError::locked()) };
+        Ok((u.vault.db_path(), u.keys.db_key()))
+    }
+
+    /// Brings the second place up to date, if there is one and it is there. Errors go
+    /// to the status: the backup at home stands either way.
+    fn update_copy(&self, key: &DbKey) -> ApiResult<()> {
+        let Some(folder) = self.settings.lock().backup_copy.clone() else { return Ok(()) };
+        let folder = PathBuf::from(folder);
+        self.copy_checked_at.store(now_ms(), Ordering::Relaxed);
+        if !folder.is_dir() {
+            return Ok(());
+        }
+        let result = mirror::update(&self.dir, key, &mirror::target_in(&folder))
+            .map(|copied| tracing::info!("backups copied, {} there", copied.len()))
+            .map_err(ApiError::from);
+        *self.copy_error.lock() = result.as_ref().err().map(|e| e.message.clone());
+        result
+    }
+
+    /// Picks the second place for the backups, or none, and copies there at once.
+    /// Slow on a large vault: blocking thread.
+    pub fn set_backup_copy(&self, folder: Option<PathBuf>) -> ApiResult<BackupStatus> {
+        let mut settings = self.settings.lock().clone();
+        settings.backup_copy = folder.map(|f| f.to_string_lossy().into_owned());
+        settings.save(&self.dir).map_err(ApiError::internal)?;
+        *self.settings.lock() = settings.clone();
+        *self.copy_error.lock() = None;
+        if settings.backup_copy.is_some() {
+            let (db, key) = self.db_and_key()?;
+            if self.backup_running.swap(true, Ordering::SeqCst) {
+                return Err(ApiError::new("busy", "Es läuft bereits ein Backup."));
+            }
+            // Something to copy, if there is no backup yet.
+            let first = match backups::list(&self.backup_dir()) {
+                Ok(list) if list.is_empty() => backups::create(&db, &key, &self.backup_dir())
+                    .map(|_| ())
+                    .map_err(ApiError::from),
+                _ => Ok(()),
+            };
+            let result = first.and_then(|()| self.update_copy(&key));
+            self.backup_running.store(false, Ordering::SeqCst);
+            if let Err(e) = result {
+                // A place that cannot take the copy is no second place.
+                let mut settings = self.settings.lock().clone();
+                settings.backup_copy = None;
+                let _ = settings.save(&self.dir);
+                *self.settings.lock() = settings;
+                *self.copy_error.lock() = None;
+                return Err(e);
+            }
+        }
+        self.backup_status()
     }
 
     /// Slow for large vaults: call from a blocking thread. Only one at a time.
     pub fn backup_now(&self) -> ApiResult<BackupInfo> {
-        let (db, key) = {
-            let state = self.state.lock();
-            let State::Unlocked(u) = &*state else { return Err(ApiError::locked()) };
-            (u.vault.db_path(), u.keys.db_key())
-        };
+        let (db, key) = self.db_and_key()?;
         if self.backup_running.swap(true, Ordering::SeqCst) {
             return Err(ApiError::new("busy", "Es läuft bereits ein Backup."));
         }
         let result = backups::create(&db, &key, &self.backup_dir());
-        self.backup_running.store(false, Ordering::SeqCst);
         *self.backup_error.lock() = result.as_ref().err().map(ToString::to_string);
+        if result.is_ok() {
+            let _ = self.update_copy(&key);
+        }
+        self.backup_running.store(false, Ordering::SeqCst);
         Ok(result?)
+    }
+
+    /// Copies backups the second place lacks, once it is back.
+    fn catch_up_copy(self: &Arc<Self>) {
+        let Some(folder) = self.settings.lock().backup_copy.clone() else { return };
+        if now_ms() - self.copy_checked_at.load(Ordering::Relaxed) < COPY_CHECK_MS {
+            return;
+        }
+        self.copy_checked_at.store(now_ms(), Ordering::Relaxed);
+        let folder = PathBuf::from(folder);
+        let home = backups::list(&self.backup_dir()).ok().and_then(|b| b.first().map(|b| b.at));
+        let there = folder
+            .is_dir()
+            .then(|| mirror::list(&mirror::target_in(&folder)).ok())
+            .flatten()
+            .map(|b| b.first().map(|b| b.at));
+        let behind = match (home, there) {
+            (Some(home), Some(there)) => there.is_none_or(|t| t < home),
+            _ => false,
+        };
+        let Ok((_, key)) = self.db_and_key() else { return };
+        if behind && !self.backup_running.swap(true, Ordering::SeqCst) {
+            let session = self.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = session.update_copy(&key) {
+                    tracing::warn!("copying backups failed: {}", e.message);
+                }
+                session.backup_running.store(false, Ordering::SeqCst);
+            });
+        }
     }
 
     /// Called periodically: starts a backup in the background if there are
     /// changes the newest backup does not have and it is a day old. Unchanged
     /// days add nothing, and would push older states out of the retention.
     pub fn maybe_backup(self: &Arc<Self>) {
-        if !self.settings.lock().auto_backup || self.backup_running.load(Ordering::SeqCst) {
+        if self.backup_running.load(Ordering::SeqCst) {
+            return;
+        }
+        self.catch_up_copy();
+        if !self.settings.lock().auto_backup {
             return;
         }
         let Some(engine) = self.open_engine() else { return };
@@ -632,6 +787,7 @@ impl Session {
 
     pub fn update_settings(&self, mut settings: Settings) -> ApiResult<Settings> {
         settings.auto_lock_minutes = settings.auto_lock_minutes.clamp(1, 24 * 60);
+        settings.backup_copy = self.settings.lock().backup_copy.clone();
         settings.save(&self.dir).map_err(ApiError::internal)?;
         *self.settings.lock() = settings.clone();
         self.last_activity.store(now_ms(), Ordering::Relaxed);
@@ -744,7 +900,7 @@ impl Session {
 }
 
 fn open_engine(dir: &Path, vault: &Vault, keys: &VaultKeys) -> ApiResult<Engine> {
-    let blobs = BlobStore::new(dir.join("blobs"), &keys.blob_key());
+    let blobs = BlobStore::new(dir.join(BLOBS_DIR), &keys.blob_key());
     Ok(Engine::open(&vault.db_path(), &keys.db_key(), READERS)?.with_blobs(blobs))
 }
 

@@ -138,7 +138,7 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn remove_sidecars(path: &Path) {
+pub(crate) fn remove_sidecars(path: &Path) {
     for suffix in ["-wal", "-shm"] {
         let _ = fs::remove_file(with_suffix(path, suffix));
     }
@@ -169,7 +169,7 @@ fn to_keep(times: &[i64]) -> Vec<i64> {
     keep
 }
 
-fn prune(dir: &Path) -> Result<()> {
+pub(crate) fn prune(dir: &Path) -> Result<()> {
     let backups = list(dir)?;
     let keep = to_keep(&backups.iter().map(|b| b.at).collect::<Vec<_>>());
     for b in backups.iter().filter(|b| !keep.contains(&b.at)) {

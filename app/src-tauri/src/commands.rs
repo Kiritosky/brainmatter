@@ -42,6 +42,24 @@ pub async fn create_vault(session: S<'_>, password: String, name: String) -> Api
     blocking(move || session.create(&password, &name)).await
 }
 
+/// Makes the vault from a copy of the backups, as on a new Mac. Asks for the folder;
+/// returns `false` if the user cancels.
+#[tauri::command]
+pub async fn adopt_backup(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    password: String,
+) -> ApiResult<bool> {
+    let session = session.inner().clone();
+    blocking(move || {
+        let Some(folder) = app.dialog().file().blocking_pick_folder() else { return Ok(false) };
+        let path = folder.into_path().map_err(ApiError::internal)?;
+        session.adopt_backup(&path, &password)?;
+        Ok(true)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn unlock_password(session: S<'_>, password: String) -> ApiResult<()> {
     let session = session.inner().clone();
@@ -675,6 +693,30 @@ pub fn backup_status(session: S<'_>) -> ApiResult<BackupStatus> {
 pub async fn backup_now(session: S<'_>) -> ApiResult<BackupInfo> {
     let session = session.inner().clone();
     blocking(move || session.backup_now()).await
+}
+
+/// Asks for a second place for the backups, such as an external drive, and copies
+/// there at once. Returns nothing if the user cancels.
+#[tauri::command]
+pub async fn choose_backup_copy(
+    app: tauri::AppHandle,
+    session: S<'_>,
+) -> ApiResult<Option<BackupStatus>> {
+    let session = session.inner().clone();
+    blocking(move || {
+        require_unlocked(&session)?;
+        let Some(folder) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
+        let path = folder.into_path().map_err(ApiError::internal)?;
+        Ok(Some(session.set_backup_copy(Some(path))?))
+    })
+    .await
+}
+
+/// Stops copying to the second place; what is there stays.
+#[tauri::command(async)]
+pub fn remove_backup_copy(session: S<'_>) -> ApiResult<BackupStatus> {
+    require_unlocked(&session)?;
+    session.set_backup_copy(None)
 }
 
 #[tauri::command]
