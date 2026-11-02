@@ -63,13 +63,34 @@
   function detach() {
     if (detached || !renderer) return;
     detached = true;
+    cancelAnimationFrame(linksFrame);
     renderer.setGraph(NOTHING);
   }
+
+  /**
+   * Above this many links, a view that fills up shows its entries first and the links a
+   * frame later: Sigma takes about as long for 150,000 links as for everything else.
+   */
+  const LINKS_LATER = 20_000;
+  let linksFrame = 0;
 
   function attach() {
     if (!detached || !renderer) return;
     detached = false;
-    renderer.setGraph(graph);
+    if (graph.size <= LINKS_LATER) {
+      renderer.setGraph(graph);
+      return;
+    }
+    renderer.setGraph(graph.emptyCopy());
+    performance.mark('bm:entries-attached');
+    // Two frames: the first one draws the entries.
+    linksFrame = requestAnimationFrame(() => {
+      linksFrame = requestAnimationFrame(() => {
+        if (detached || !renderer) return;
+        renderer.setGraph(graph);
+        performance.mark('bm:links-attached');
+      });
+    });
   }
 
   /** Coalesces what the settings and filters change in one go: each refresh goes through everything. */
@@ -287,6 +308,15 @@
 
   /** Saved positions from before grouping would mix the projects, so each view starts over once. */
   const GROUPED_KEY = 'bm.groupedViews';
+  /** The circles of a view from last time, so it can show before its layout is confirmed. */
+  const circlesKey = (view: string) => `bm.circles.${view}`;
+  function savedCircles(view: string): Circle[] | null {
+    try {
+      return JSON.parse(localStorage.getItem(circlesKey(view)) ?? 'null');
+    } catch {
+      return null;
+    }
+  }
   /** Beyond this many, moving entries smoothly costs more than it shows. */
   const MAX_ANIMATED = 3000;
   const MOVE_MS = 480;
@@ -477,6 +507,7 @@
     const fresh = pendingFresh;
     pendingFresh = false;
     circles = [...next].sort((a, b) => a.depth - b.depth);
+    localStorage.setItem(circlesKey(pendingView), JSON.stringify(circles));
     cancelAnimationFrame(moveFrame);
 
     const target = new Map(positions.map((p) => [p.id, p]));
@@ -669,6 +700,16 @@
       requestLayout(snap, [...dirty], unplaced.length === graph.order);
     }
     structure = shape;
+
+    // Opened again, a large view has its places saved and its circles from last time: it
+    // shows now, and the layout running meanwhile only confirms them.
+    const saved = viewChanged && detached && grouped && !unplaced.length ? savedCircles(snap.view) : null;
+    if (saved) {
+      circles = saved;
+      placed = new Map(snap.nodes.map((n) => [n.id, { x: n.x ?? 0, y: n.y ?? 0 }]));
+      fitToCircles();
+      attach();
+    }
 
     syncGhosts();
     if (bulk) attach();
@@ -887,6 +928,7 @@
     cancelAnimationFrame(moveFrame);
     cancelAnimationFrame(hoverFrame);
     cancelAnimationFrame(refreshFrame);
+    cancelAnimationFrame(linksFrame);
     worker.terminate();
     renderer?.kill();
   });
