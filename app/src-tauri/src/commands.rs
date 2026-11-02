@@ -204,6 +204,18 @@ pub fn graph(session: S<'_>, project: Option<ProjectId>) -> ApiResult<tauri::ipc
     Ok(tauri::ipc::Response::new(bm_core::wire::encode(&snapshot)))
 }
 
+/// What changed of a view since it was loaded, in the same form as [`graph`].
+#[tauri::command(async)]
+pub fn graph_part(
+    session: S<'_>,
+    project: Option<ProjectId>,
+    ids: Vec<NodeId>,
+) -> ApiResult<tauri::ipc::Response> {
+    let (engine, _) = session.engine()?;
+    let part = engine.graph_part(project.as_ref(), &ids)?;
+    Ok(tauri::ipc::Response::new(bm_core::wire::encode(&part)))
+}
+
 #[tauri::command(async)]
 pub fn save_layout(session: S<'_>, view: String, positions: Vec<LayoutPosition>) -> ApiResult<()> {
     let (engine, _) = session.engine()?;

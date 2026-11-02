@@ -245,6 +245,38 @@
     const hover = (i) => canvas.dispatchEvent(new MouseEvent('mousemove', at(0.1 + sweep(i) * 0.8, 0.3 + ((i % 200) / 200) * 0.4)));
     await report('hover', await frames(6000, hover));
 
+    // One change, as an AI makes them: how long until it shows, and how long the window
+    // stood still meanwhile.
+    const syncs = () => performance.getEntriesByName('bm:sync-end').length;
+    async function change(name, make) {
+      const before = syncs();
+      const started = performance.now();
+      await make();
+      const done = await until(() => syncs() > before && performance.now(), 30000, `${name} to show`);
+      let longest = 0;
+      let last = performance.now();
+      const end = last + 3000;
+      while (last < end) {
+        await frame();
+        const now = performance.now();
+        longest = Math.max(longest, now - last);
+        last = now;
+      }
+      // In order, each one: a step may run more than once.
+      const marks = performance
+        .getEntriesByType('mark')
+        .filter((m) => m.name.startsWith('bm:') && m.startTime >= started)
+        .map((m) => `${m.name.slice(3)} ${Math.round(m.startTime - started)}`);
+      await report(name, { shownMs: Math.round(done - started), longestFrameMs: Math.round(longest), marks });
+    }
+    const [hit] = await invoke('search', { query: { text: 'daten', project: null, include_subprojects: true, kinds: [], tags: [], limit: 1 } });
+    let made;
+    await change('change_add', async () => {
+      made = await invoke('create_node', { input: { title: 'Messung', body: hit ? `[[${hit.node.title}]]` : '' } });
+    });
+    await change('change_edit', () => invoke('update_node', { id: made.id, patch: { title: 'Messung, geändert' } }));
+    await change('change_delete', () => invoke('delete_node', { id: made.id }));
+
     let status = await invoke('model_status');
     if (status.state === 'ready') {
       const indexing = performance.now();

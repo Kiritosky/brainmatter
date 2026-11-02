@@ -30,9 +30,9 @@ const snapshot: GraphSnapshot = {
 };
 
 describe('graph wire', () => {
-  test('reads back what was written, without links that lead outside', () => {
-    const back = decodeGraph(encodeGraph(snapshot));
-    expect(back).toEqual({ ...snapshot, edges: [snapshot.edges[0]] });
+  test('reads back what was written, also links to entries not among the nodes', () => {
+    // A part of a graph holds the links of a few entries to all the others.
+    expect(decodeGraph(encodeGraph(snapshot))).toEqual(snapshot);
   });
 
   test('matches the layout the Rust side writes', () => {
@@ -48,14 +48,14 @@ describe('graph wire', () => {
     const bytes = encodeGraph(same);
     const header = new Uint32Array(bytes, 0, 8);
     expect(header[0]).toBe(MAGIC);
-    expect([header[2], header[3], header[4], header[5]]).toEqual([2, 1, 11, new TextEncoder().encode('allabÜber 😀notenotemeperelated_tomanual').length]);
+    expect([header[2], header[3], header[4], header[5]]).toEqual([2, 2, 13, new TextEncoder().encode('allabÜber 😀notenotemepexrelated_tomanualgone').length]);
     // The emoji takes two UTF-16 units, so the fourth string ends at 3 + 1 + 1 + 7.
     expect(new Uint32Array(bytes, 32, 4)[3]).toBe(12);
     expect(bytes.byteLength % 8).toBe(0);
     // The Rust test checks the same.
     let hash = 0;
     for (const b of new Uint8Array(bytes)) hash = (hash * 31 + b) >>> 0;
-    expect([bytes.byteLength, hash]).toEqual([304, 533_818_328]);
+    expect([bytes.byteLength, hash]).toEqual([312, 613_224_090]);
   });
 
   test('an empty view, and data that is not aligned', () => {

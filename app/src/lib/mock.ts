@@ -321,7 +321,13 @@ function stressGraph(): GraphSnapshot {
 }
 
 function graph(project: string | null): GraphSnapshot {
-  if (STRESS) return stressGraph();
+  if (!STRESS) return ownGraph(project);
+  // With what is made meanwhile, so that changes to a large graph can be measured.
+  const [many, own] = [stressGraph(), ownGraph(null)];
+  return { view: 'all', nodes: [...many.nodes, ...own.nodes], edges: [...many.edges, ...own.edges] };
+}
+
+function ownGraph(project: string | null): GraphSnapshot {
   const view = project ?? 'all';
   const scope = project ? subtree(project) : null;
   const ns = [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'template' && n.kind !== 'doc' && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
@@ -527,6 +533,13 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return a.nodes.length;
   },
   graph: (a) => graph(a.project ?? null),
+  graph_part: (a) => {
+    const whole = graph(a.project ?? null);
+    const ids = new Set<string>(a.ids);
+    const nodes = whole.nodes.filter((n) => ids.has(n.id)).map((n) => ({ ...n, rank: 0, cluster: 0 }));
+    const shown = new Set(nodes.map((n) => n.id));
+    return { view: whole.view, nodes, edges: whole.edges.filter((e) => shown.has(e.src) || shown.has(e.dst)) };
+  },
   save_layout: (a) => {
     for (const p of a.positions) layouts.set(`${a.view}|${p.node}`, p);
   },

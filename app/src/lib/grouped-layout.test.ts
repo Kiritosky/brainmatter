@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { assignGroups, groupedLayout, NO_PROJECT, type Circle, type LayoutInput, type LayoutNode, type LayoutResult } from './grouped-layout.ts';
+import { assignGroups, fromRequest, groupedLayout, NO_PROJECT, type Circle, type LayoutInput, type LayoutNode, type LayoutResult } from './grouped-layout.ts';
 
 const node = (id: string, ...projects: string[]): LayoutNode => ({ id, projects, x: null, y: null, pinned: false });
 const many = (prefix: string, count: number, ...projects: string[]) =>
@@ -246,4 +246,17 @@ describe('scale', () => {
     // About 7 s on a Mac; CI runners are slower, and this only guards against quadratic work.
     expect(elapsed).toBeLessThan(40_000);
   }, 60_000);
+});
+
+describe('fromRequest', () => {
+  test('turns positions back into the links between entries', () => {
+    const node = (id: string) => ({ id, projects: [], x: 0, y: 0, pinned: false });
+    const links = new Uint32Array([0, 1, 1, 2, 2, 0, 9, 9]).subarray(0, 6);
+    const input = fromRequest({ nodes: [node('a'), node('b'), node('c')], links, projects: [], root: null, dirty: [] });
+    expect(input.edges).toEqual([
+      { src: 'a', dst: 'b' },
+      { src: 'b', dst: 'c' },
+      { src: 'c', dst: 'a' },
+    ]);
+  });
 });

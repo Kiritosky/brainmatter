@@ -4,7 +4,7 @@
   import Sigma, { DEFAULT_STYLES } from 'sigma';
   import { Maximize, Minus, Plus } from '@lucide/svelte';
   import { api, createdAt, type GraphNode, type GraphSnapshot, type Id } from '#lib/api.ts';
-  import { assignGroups, NO_PROJECT, type Circle, type LayoutInput, type LayoutResult } from '#lib/grouped-layout.ts';
+  import { assignGroups, NO_PROJECT, type Circle, type LayoutRequest, type LayoutResult } from '#lib/grouped-layout.ts';
   import LayoutWorker from '#lib/grouped-layout.worker.ts?worker';
   import { keepInside, pushAround, type Point } from '#lib/hover-push.ts';
   import { motionAllowed, prefs } from '#lib/prefs.svelte.ts';
@@ -63,6 +63,7 @@
   function detach() {
     if (detached || !renderer) return;
     detached = true;
+    linksLater = false;
     cancelAnimationFrame(linksFrame);
     renderer.setGraph(NOTHING);
   }
@@ -73,33 +74,61 @@
    */
   const LINKS_LATER = 20_000;
   let linksFrame = 0;
+  /** A view already on screen keeps its links while it changes. */
+  let drawnView: string | null = null;
 
   function attach() {
     if (!detached || !renderer) return;
     detached = false;
-    if (graph.size <= LINKS_LATER) {
+    const first = drawnView !== currentView;
+    drawnView = currentView;
+    if (!first || graph.size <= LINKS_LATER) {
       renderer.setGraph(graph);
       return;
     }
     renderer.setGraph(graph.emptyCopy());
+    linksLater = true;
     performance.mark('bm:entries-attached');
     // Two frames: the first one draws the entries.
     linksFrame = requestAnimationFrame(() => {
       linksFrame = requestAnimationFrame(() => {
         if (detached || !renderer) return;
         renderer.setGraph(graph);
+        linksLater = false;
         performance.mark('bm:links-attached');
       });
     });
   }
+  /** Sigma has the entries but not yet the links. */
+  let linksLater = false;
 
-  /** Coalesces what the settings and filters change in one go: each refresh goes through everything. */
+  /**
+   * Coalesces what the settings and filters change in one go. Without `items`, everything
+   * is looked at again; with them, only those, which for the time slider in a large view
+   * is a fraction of the time.
+   */
   let refreshFrame = 0;
-  function refreshSoon() {
+  let refreshAll = false;
+  const refreshNodes = new Set<string>();
+  const refreshEdges = new Set<string>();
+  function refreshSoon(items?: { nodes: Iterable<string>; edges: Iterable<string> }) {
+    if (items) {
+      for (const n of items.nodes) refreshNodes.add(n);
+      for (const e of items.edges) refreshEdges.add(e);
+    } else refreshAll = true;
     if (refreshFrame) return;
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = 0;
-      renderer?.refresh();
+      const all = refreshAll || linksLater;
+      const nodes = [...refreshNodes].filter((n) => graph.hasNode(n));
+      const edges = [...refreshEdges].filter((e) => graph.hasEdge(e));
+      refreshAll = false;
+      refreshNodes.clear();
+      refreshEdges.clear();
+      // Detached, Sigma looks at none of them, and takes in all of them once attached.
+      if (!renderer || detached) return;
+      if (all) renderer.refresh();
+      else if (nodes.length || edges.length) renderer.refresh({ partialGraph: { nodes, edges } });
     });
   }
 
@@ -415,16 +444,31 @@
     return box;
   }
 
+  /** How much room a large view's frame leaves to grow, and how far it may shrink before it is fitted again. */
+  const FRAME_SLACK = 0.06;
+  const KEEP_FRAME = 0.8;
+
   /** A fixed frame, so that entries moved for a moment never rescale the whole picture. */
   function fitToCircles() {
     if (!renderer) return;
     const box = boxAround(circles.filter((c) => c.parent === null), [...placed.values()]);
     const flat = !(box.x[1] > box.x[0]) && !(box.y[1] > box.y[0]);
-    const next = flat ? null : box;
-    if (JSON.stringify(next) === JSON.stringify(renderer.getCustomBBox())) return;
+    const current = renderer.getCustomBBox();
+    let next = flat ? null : box;
+    if (next && current && graph.order > MAX_ANIMATED) {
+      // Rescaling goes through every entry: a large view keeps its frame while what it
+      // shows fits inside and fills most of it, and leaves some room when it does change.
+      const size = (b: typeof box) => Math.max(b.x[1] - b.x[0], b.y[1] - b.y[0]);
+      const inside = next.x[0] >= current.x[0] && next.x[1] <= current.x[1] && next.y[0] >= current.y[0] && next.y[1] <= current.y[1];
+      if (inside && size(next) >= size(current) * KEEP_FRAME) return;
+      const pad = (size(next) * FRAME_SLACK) / 2;
+      next = { x: [next.x[0] - pad, next.x[1] + pad], y: [next.y[0] - pad, next.y[1] + pad] };
+    }
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
     renderer.setCustomBBox(next);
-    // Only a refresh rescales; `frameShown` converts coordinates right after this.
-    if (!detached) renderer.refresh();
+    // Only the entries' places change: links are drawn from them, and nothing needs to be
+    // looked at again. `frameShown` converts coordinates right after this.
+    if (!detached) renderer.refresh({ partialGraph: { nodes: [] } });
   }
 
   /** The outermost circles still drawn, which need not be top-level ones. */
@@ -467,19 +511,31 @@
   const shownKey = () => shownTops().map((c) => c.id).sort().join();
 
   function requestLayout(snap: GraphSnapshot, dirty: string[], fresh: boolean) {
-    const input: LayoutInput = {
-      nodes: snap.nodes
-        .filter((n) => graph.hasNode(n.id))
-        .map((n) => {
-          const a = graph.getNodeAttributes(n.id);
-          return { id: n.id, projects: n.projects, x: a.x, y: a.y, pinned: !fresh && !!a.fixed };
-        }),
-      edges: snap.edges.map((e) => ({ src: e.src, dst: e.dst })),
+    const nodes = snap.nodes
+      .filter((n) => graph.hasNode(n.id))
+      .map((n) => {
+        const a = graph.getNodeAttributes(n.id);
+        return { id: n.id, projects: n.projects, x: a.x, y: a.y, pinned: !fresh && !!a.fixed };
+      });
+    // Links as positions in `nodes`, handed over rather than copied: as objects, 150,000 of
+    // them cost the window a long pause to copy and to clear away again.
+    const position = new Map(nodes.map((n, i) => [n.id, i]));
+    const links = new Uint32Array(snap.edges.length * 2);
+    let count = 0;
+    for (const e of snap.edges) {
+      const [a, b] = [position.get(e.src), position.get(e.dst)];
+      if (a === undefined || b === undefined) continue;
+      links[count++] = a;
+      links[count++] = b;
+    }
+    const input: LayoutRequest = {
+      nodes,
+      links: links.subarray(0, count),
       projects: projects.map((p) => ({ id: p.id, parent: p.parent })),
       root: snap.view === 'all' ? null : snap.view,
       dirty,
     };
-    worker.postMessage({ run: ++layoutRun, input });
+    worker.postMessage({ run: ++layoutRun, input }, [links.buffer]);
     performance.mark('bm:layout-requested');
     pendingFresh = pendingFresh || fresh;
     pendingView = snap.view;
@@ -513,22 +569,33 @@
     const target = new Map(positions.map((p) => [p.id, p]));
     placed = target;
     dropLifts();
-    // Usually nothing, since opening a view lays it out to find its circles.
-    let moved = false;
+    // Usually none, since opening a view lays it out to find its circles, and after a
+    // change only the few entries it touched.
+    const changed: string[] = [];
     graph.forEachNode((id, a) => {
       const p = target.get(id);
-      if (p && (Math.abs(p.x - a.x) > 1e-3 || Math.abs(p.y - a.y) > 1e-3)) moved = true;
+      if (p && (Math.abs(p.x - a.x) > 1e-3 || Math.abs(p.y - a.y) > 1e-3)) changed.push(id);
     });
+    const moved = changed.length > 0;
     const finish = () => {
       markGrouped(pendingView);
       if (moved) saveLayout();
       updateShownGroups();
     };
-    const place = () =>
-      graph.updateEachNodeAttributes((id, a) => {
-        const p = target.get(id);
-        return p ? { ...a, x: p.x, y: p.y } : a;
-      });
+    // Sigma looks at each entry given to it again: in a large view, only those that moved.
+    const place = () => {
+      if (changed.length > MAX_ANIMATED) {
+        graph.updateEachNodeAttributes((id, a) => {
+          const p = target.get(id);
+          return p ? { ...a, x: p.x, y: p.y } : a;
+        });
+        return;
+      }
+      for (const id of changed) {
+        const p = target.get(id)!;
+        graph.mergeNodeAttributes(id, { x: p.x, y: p.y });
+      }
+    };
     if (moved && detached) place();
     fitToCircles();
     const filled = detached;
@@ -627,14 +694,14 @@
     }
 
     const wanted = new Set(snap.nodes.map((n) => n.id));
-    // Sigma goes through everything for each entry or link that disappears.
-    const ghosts = graph.reduceEdges((count, e) => count + (e.startsWith(GHOST) ? 1 : 0), 0);
-    const bulk =
-      !viewChanged && graph.order > MAX_ANIMATED && (snap.nodes.length !== graph.order || snap.edges.length !== graph.size - ghosts);
+    const wantedEdges = new Set(snap.edges.map((e) => e.id));
+    const goneNodes = graph.filterNodes((n) => !wanted.has(n));
+    const goneEdges = graph.filterEdges((e) => !wantedEdges.has(e) && !e.startsWith(GHOST));
+    // Sigma goes through everything again for each entry or link that disappears, while it
+    // takes in new ones one by one.
+    const bulk = !viewChanged && graph.order > MAX_ANIMATED && goneNodes.length + goneEdges.length > 1;
     if (bulk) detach();
-    graph.forEachNode((n) => {
-      if (!wanted.has(n)) graph.dropNode(n);
-    });
+    for (const n of goneNodes) graph.dropNode(n);
 
     const unplaced: string[] = [];
     for (const n of snap.nodes) {
@@ -664,10 +731,7 @@
       }
     }
 
-    const wantedEdges = new Set(snap.edges.map((e) => e.id));
-    graph.forEachEdge((e) => {
-      if (!wantedEdges.has(e) && !e.startsWith(GHOST)) graph.dropEdge(e);
-    });
+    for (const e of goneEdges) if (graph.hasEdge(e)) graph.dropEdge(e);
     for (const e of snap.edges) {
       if (!graph.hasEdge(e.id) && graph.hasNode(e.src) && graph.hasNode(e.dst)) {
         graph.addEdgeWithKey(e.id, e.src, e.dst, { relation: e.relation, origin: e.origin, born: createdAt(e.id), src: e.src, dst: e.dst });
@@ -719,20 +783,24 @@
   }
 
   /** Ghost edges carry no weight, so they never pull on the layout. */
+  /** Only those that change: in a large view, Sigma goes through everything for each one removed. */
+  let ghostKeys = new Set<string>();
   function syncGhosts() {
-    graph.forEachEdge((e) => {
-      if (e.startsWith(GHOST)) {
-        graph.dropEdge(e);
-        litEdges.delete(e);
-      }
-    });
+    const want = new Map<string, string>();
     if (selected && graph.hasNode(selected)) {
       for (const id of suggested) {
-        if (graph.hasNode(id) && id !== selected) {
-          graph.addEdgeWithKey(`${GHOST}${id}`, selected, id, { ghost: true, weight: 0 });
-        }
+        if (graph.hasNode(id) && id !== selected) want.set(`${GHOST}${selected}>${id}`, id);
       }
     }
+    for (const key of ghostKeys) {
+      if (want.has(key)) continue;
+      if (graph.hasEdge(key)) graph.dropEdge(key);
+      litEdges.delete(key);
+    }
+    for (const [key, id] of want) {
+      if (!graph.hasEdge(key)) graph.addEdgeWithKey(key, selected!, id, { ghost: true, weight: 0 });
+    }
+    ghostKeys = new Set(want.keys());
     applyHighlight();
   }
 
@@ -933,8 +1001,13 @@
     renderer?.kill();
   });
 
+  // Projects are loaded again with every change, nearly always the same: going through a
+  // large view for nothing takes longer than the change itself.
+  const projectTree = $derived(projects.map((p) => `${p.id}<${p.parent}`).join());
   $effect(() => {
-    if (renderer && snapshot) sync(snapshot);
+    void projectTree;
+    void colorFor;
+    if (renderer && snapshot) untrack(() => sync(snapshot));
   });
 
   $effect(() => {
@@ -946,23 +1019,33 @@
   $effect(() => {
     const next = until ?? Infinity;
     if (next === visibleUntil) return;
+    // Only what came or went between the two times.
+    const [from, to] = next < visibleUntil ? [next, visibleUntil] : [visibleUntil, next];
+    const between = (_: string, a: { born?: unknown }) => (a.born as number) > from && (a.born as number) <= to;
     visibleUntil = next;
-    untrack(updateShownGroups);
-    refreshSoon();
+    untrack(() => {
+      updateShownGroups();
+      refreshSoon({ nodes: graph.filterNodes(between), edges: graph.filterEdges(between) });
+    });
   });
 
   $effect(() => {
     // A new set comes with every snapshot, nearly always with the same in it.
     const next = hidden;
     if (next.size === filteredOut.size && [...next].every((id) => filteredOut.has(id))) return;
+    const before = filteredOut;
     filteredOut = next;
     untrack(() => {
       updateShownGroups();
       const key = shownKey();
       if (key !== framed && circles.length) frameShown();
       framed = key;
+      // Only the entries shown or hidden now, and their links.
+      const nodes = [...before].filter((id) => !next.has(id)).concat([...next].filter((id) => !before.has(id)));
+      const edges = new Set<string>();
+      for (const id of nodes) if (graph.hasNode(id)) graph.forEachEdge(id, (e) => edges.add(e));
+      refreshSoon({ nodes, edges });
     });
-    refreshSoon();
   });
 
   // After the sync above, so entries it just added have a place.

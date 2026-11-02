@@ -290,6 +290,7 @@ pub fn run() {
             commands::add_to_project,
             commands::remove_from_project,
             commands::graph,
+            commands::graph_part,
             commands::save_layout,
             commands::node_detail,
             commands::search,

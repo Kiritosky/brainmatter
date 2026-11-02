@@ -755,6 +755,11 @@ impl Engine {
         self.read(|c| graph::snapshot(c, project))
     }
 
+    /// Of `ids`, what is in the view now and their links within it: see [`graph::part`].
+    pub fn graph_part(&self, project: Option<&ProjectId>, ids: &[NodeId]) -> Result<GraphSnapshot> {
+        self.read(|c| graph::part(c, project, ids))
+    }
+
     /// Persists node positions for a view (`"all"` or a project id).
     pub fn save_layout(&self, view: &str, positions: &[LayoutPosition]) -> Result<()> {
         let mut conn = self.writer.lock();

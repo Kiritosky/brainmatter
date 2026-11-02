@@ -373,6 +373,9 @@ export function errorMessage(e: unknown): string {
 
 const call = <T>(cmd: string, args?: Record<string, unknown>) => invoke<T>(cmd, args);
 
+type GraphData = ArrayBuffer | Uint8Array | GraphSnapshot;
+const readGraph = (g: GraphData) => (g instanceof ArrayBuffer || g instanceof Uint8Array ? decodeGraph(g) : g);
+
 export const api = {
   // session
   status: () => call<Status>('session_status'),
@@ -421,10 +424,9 @@ export const api = {
   addToProject: (project: Id, nodes: Id[]) => call<number>('add_to_project', { project, nodes }),
   removeFromProject: (project: Id, nodes: Id[]) => call<number>('remove_from_project', { project, nodes }),
   // Binary from the app (see graph-wire.ts), plain objects from the mock.
-  graph: (project: Id | null) =>
-    call<ArrayBuffer | Uint8Array | GraphSnapshot>('graph', { project }).then((g) =>
-      g instanceof ArrayBuffer || g instanceof Uint8Array ? decodeGraph(g) : g,
-    ),
+  graph: (project: Id | null) => call<GraphData>('graph', { project }).then(readGraph),
+  /** Of `ids`, what is in the view now and their links within it (see graph-part.ts). */
+  graphPart: (project: Id | null, ids: Id[]) => call<GraphData>('graph_part', { project, ids }).then(readGraph),
   saveLayout: (view: string, positions: { node: Id; x: number; y: number; pinned: boolean }[]) =>
     call<void>('save_layout', { view, positions }),
   nodeDetail: (id: Id) => call<NodeDetail>('node_detail', { id }),

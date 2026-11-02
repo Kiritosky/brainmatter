@@ -134,6 +134,123 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
     Ok(GraphSnapshot { view, nodes, edges })
 }
 
+/// What changed of a view, so that a large one need not be loaded again for one entry.
+///
+/// Holds those of `ids` that are still in the view and every live link of theirs to an
+/// entry in the view. Whatever of `ids` is missing has left it. Rank and cluster depend
+/// on the whole view: they are 0 here, and the app keeps what it had.
+pub(crate) fn part(
+    conn: &Connection,
+    project: Option<&ProjectId>,
+    ids: &[NodeId],
+) -> Result<GraphSnapshot> {
+    let view = project.map_or(ALL_VIEW.to_string(), |p| p.as_str().to_string());
+    let scope: Option<HashSet<ProjectId>> =
+        project.map(|p| projects::subtree(conn, p)).transpose()?.map(|v| v.into_iter().collect());
+
+    let mut node_stmt = conn.prepare_cached(
+        "SELECT n.id, n.title, n.kind, n.reviewed, n.updated_at, n.created_by,
+                lp.x, lp.y, coalesce(lp.pinned, 0)
+         FROM nodes n LEFT JOIN layout_positions lp ON lp.view_id = ?1 AND lp.node_id = n.id
+         WHERE n.id = ?2 AND n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')",
+    )?;
+    let mut member_stmt = conn.prepare_cached(
+        "SELECT m.project_id FROM project_members m JOIN projects p ON p.id = m.project_id
+         WHERE m.node_id = ?1 AND p.deleted_at IS NULL",
+    )?;
+    let mut tag_stmt =
+        conn.prepare_cached("SELECT tag FROM node_tags WHERE node_id = ?1 ORDER BY tag")?;
+    // The entry as the view shows it, or None if it is not in the view.
+    let mut load = |id: &NodeId| -> Result<Option<GraphNode>> {
+        let mut rows = node_stmt.query(params![view, id])?;
+        let Some(r) = rows.next()? else { return Ok(None) };
+        let mut node = GraphNode {
+            id: r.get(0)?,
+            title: r.get(1)?,
+            kind: r.get(2)?,
+            reviewed: r.get::<_, i64>(3)? != 0,
+            updated_at: r.get(4)?,
+            created_by: r.get(5)?,
+            projects: Vec::new(),
+            tags: Vec::new(),
+            degree: 0,
+            rank: 0.0,
+            cluster: 0,
+            x: r.get(6)?,
+            y: r.get(7)?,
+            pinned: r.get::<_, i64>(8)? != 0,
+        };
+        drop(rows);
+        node.projects =
+            member_stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        if scope.as_ref().is_some_and(|s| !node.projects.iter().any(|p| s.contains(p))) {
+            return Ok(None);
+        }
+        node.tags = tag_stmt.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(Some(node))
+    };
+
+    let mut nodes = Vec::new();
+    let mut in_view: HashMap<NodeId, bool> = HashMap::new();
+    for id in ids {
+        if in_view.contains_key(id) {
+            continue;
+        }
+        let node = load(id)?;
+        in_view.insert(id.clone(), node.is_some());
+        nodes.extend(node);
+    }
+
+    let mut edge_stmt = conn.prepare_cached(
+        "SELECT id, src, dst, relation, origin FROM edges
+         WHERE deleted_at IS NULL AND (src = ?1 OR dst = ?1)",
+    )?;
+    let mut edges = Vec::new();
+    let mut seen = HashSet::new();
+    let touched: Vec<NodeId> = nodes.iter().map(|n| n.id.clone()).collect();
+    for id in &touched {
+        let found: Vec<GraphEdge> = edge_stmt
+            .query_map([id], |r| {
+                Ok(GraphEdge {
+                    id: r.get(0)?,
+                    src: r.get(1)?,
+                    dst: r.get(2)?,
+                    relation: r.get(3)?,
+                    origin: EdgeOrigin::parse(text(r, 4)?),
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        for edge in found {
+            if seen.contains(&edge.id) {
+                continue;
+            }
+            let other = if &edge.src == id { &edge.dst } else { &edge.src };
+            let shown = match in_view.get(other) {
+                Some(shown) => *shown,
+                None => {
+                    let shown = load(other)?.is_some();
+                    in_view.insert(other.clone(), shown);
+                    shown
+                }
+            };
+            if shown {
+                seen.insert(edge.id.clone());
+                edges.push(edge);
+            }
+        }
+    }
+    let mut degrees: HashMap<&NodeId, i64> = HashMap::new();
+    for e in &edges {
+        *degrees.entry(&e.src).or_default() += 1;
+        *degrees.entry(&e.dst).or_default() += 1;
+    }
+    let degrees: HashMap<NodeId, i64> = degrees.into_iter().map(|(k, v)| (k.clone(), v)).collect();
+    for node in &mut nodes {
+        node.degree = degrees.get(&node.id).copied().unwrap_or(0);
+    }
+    Ok(GraphSnapshot { view, nodes, edges })
+}
+
 /// Layout is view state, not knowledge: stored without change sets.
 pub(crate) fn save_layout(
     conn: &Connection,

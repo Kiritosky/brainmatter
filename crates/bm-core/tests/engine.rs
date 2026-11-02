@@ -1,4 +1,9 @@
-use bm_core::{CoreError, Engine, Event, Vault, model::*, vault::KdfParams};
+use bm_core::{
+    CoreError, Engine, Event, Vault,
+    ids::{NodeId, ProjectId},
+    model::*,
+    vault::KdfParams,
+};
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -523,6 +528,72 @@ fn graph_snapshot_scopes_to_project_and_keeps_layout() {
         f.engine.graph_snapshot(None).unwrap().nodes.iter().find(|n| n.id == a.id).unwrap().x,
         None
     );
+}
+
+#[test]
+fn graph_part_holds_what_the_snapshot_says_of_those_entries() {
+    let f = setup();
+    let p = f
+        .engine
+        .create_project(&f.user, NewProject { name: "P".into(), ..Default::default() })
+        .unwrap();
+    let sub = f
+        .engine
+        .create_project(
+            &f.user,
+            NewProject { name: "Sub".into(), parent: Some(p.id.clone()), ..Default::default() },
+        )
+        .unwrap();
+    let a = f
+        .engine
+        .create_node(
+            &f.user,
+            NewNode { projects: vec![p.id.clone()], tags: vec!["t".into()], ..note("A", "") },
+        )
+        .unwrap();
+    let b = f
+        .engine
+        .create_node(&f.user, NewNode { projects: vec![sub.id.clone()], ..note("B", "[[A]]") })
+        .unwrap();
+    let c = f.engine.create_node(&f.user, note("C", "[[A]]")).unwrap();
+    let scoped_view = p.id.as_str().to_string();
+    f.engine
+        .save_layout(
+            &scoped_view,
+            &[LayoutPosition { node: a.id.clone(), x: 3.0, y: 4.0, pinned: true }],
+        )
+        .unwrap();
+
+    type Seen = (String, Vec<ProjectId>, Vec<String>, i64, Option<f64>, bool);
+    let seen = |s: &GraphSnapshot, id: &NodeId| -> Option<Seen> {
+        s.nodes
+            .iter()
+            .find(|n| &n.id == id)
+            .map(|n| (n.title.clone(), n.projects.clone(), n.tags.clone(), n.degree, n.x, n.pinned))
+    };
+    let edge_ids = |s: &GraphSnapshot| {
+        let mut ids: Vec<_> = s.edges.iter().map(|e| e.id.clone()).collect();
+        ids.sort();
+        ids
+    };
+
+    for view in [None, Some(&p.id)] {
+        let whole = f.engine.graph_snapshot(view).unwrap();
+        let part = f.engine.graph_part(view, &[a.id.clone(), c.id.clone(), a.id.clone()]).unwrap();
+        assert_eq!(part.view, whole.view);
+        for id in [&a.id, &c.id] {
+            assert_eq!(seen(&part, id), seen(&whole, id), "{id:?} in {:?}", whole.view);
+        }
+        assert_eq!(edge_ids(&part), edge_ids(&whole), "every link touches A");
+        assert!(seen(&part, &b.id).is_none(), "only what was asked for");
+    }
+
+    // Gone from the view: missing from the part, and so are its links.
+    f.engine.delete_node(&f.user, &c.id).unwrap();
+    let part = f.engine.graph_part(None, std::slice::from_ref(&c.id)).unwrap();
+    assert!(part.nodes.is_empty() && part.edges.is_empty());
+    let part = f.engine.graph_part(None, std::slice::from_ref(&a.id)).unwrap();
+    assert_eq!((part.edges.len(), part.nodes[0].degree), (1, 1));
 }
 
 #[test]

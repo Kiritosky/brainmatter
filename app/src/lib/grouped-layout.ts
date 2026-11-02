@@ -38,6 +38,18 @@ export interface LayoutInput {
   dirty: string[];
 }
 
+/** What the window sends to the worker: links as pairs of positions in `nodes`. */
+export type LayoutRequest = Omit<LayoutInput, 'edges'> & { links: Uint32Array };
+
+export function fromRequest({ links, ...rest }: LayoutRequest): LayoutInput {
+  const edges: LayoutInput['edges'] = [];
+  for (let i = 0; i + 1 < links.length; i += 2) {
+    const [a, b] = [rest.nodes[links[i]], rest.nodes[links[i + 1]]];
+    if (a && b) edges.push({ src: a.id, dst: b.id });
+  }
+  return { ...rest, edges };
+}
+
 export interface Circle {
   id: string;
   parent: string | null;

@@ -92,8 +92,8 @@ export function decodeGraph(data: ArrayBuffer | Uint8Array): GraphSnapshot {
   for (let i = 0; i < edgeCount; i++) {
     edges[i] = {
       id: strings[edgeIds[i]],
-      src: nodes[sources[i]].id,
-      dst: nodes[targets[i]].id,
+      src: strings[sources[i]],
+      dst: strings[targets[i]],
       relation: strings[relations[i]],
       origin: strings[origins[i]] as GraphEdge['origin'],
     };
@@ -115,19 +115,29 @@ export function encodeGraph(snapshot: GraphSnapshot): ArrayBuffer {
     return i;
   };
   const { nodes, edges } = snapshot;
-  const position = new Map(nodes.map((n, i) => [n.id, i]));
   const view = add(snapshot.view);
   // Ids and titles are nearly all different: no lookup, like the Rust side.
   const ids = nodes.map((n) => push(n.id));
+  // A link's ends are mostly nodes, whose ids are there already.
+  const endIds = new Map(nodes.map((n, i) => [n.id, ids[i]]));
+  const endOf = (id: string) => {
+    let i = endIds.get(id);
+    if (i === undefined) {
+      i = push(id);
+      endIds.set(id, i);
+    }
+    return i;
+  };
   const titles = nodes.map((n) => push(n.title));
   const kinds = nodes.map((n) => add(n.kind));
   const authors = nodes.map((n) => add(n.created_by));
   const projects = nodes.flatMap((n) => n.projects.map(add));
   const tags = nodes.flatMap((n) => n.tags.map(add));
-  const kept = edges.filter((e) => position.has(e.src) && position.has(e.dst));
-  const edgeIds = kept.map((e) => push(e.id));
-  const relations = kept.map((e) => add(e.relation));
-  const origins = kept.map((e) => add(e.origin));
+  const edgeIds = edges.map((e) => push(e.id));
+  const relations = edges.map((e) => add(e.relation));
+  const origins = edges.map((e) => add(e.origin));
+  const sources = edges.map((e) => endOf(e.src));
+  const targets = edges.map((e) => endOf(e.dst));
   const text = new TextEncoder().encode(list.join(''));
 
   const parts: ArrayBuffer[] = [];
@@ -142,7 +152,7 @@ export function encodeGraph(snapshot: GraphSnapshot): ArrayBuffer {
   let end = 0;
   const ends = (lengths: number[]) => lengths.map((l) => (end += l));
 
-  u32([MAGIC, VERSION, nodes.length, kept.length, list.length, text.length, view, 0]);
+  u32([MAGIC, VERSION, nodes.length, edges.length, list.length, text.length, view, 0]);
   u32(ends(list.map((s) => s.length)));
   padded(text);
   f64(nodes.map((n) => n.x ?? NaN));
@@ -165,8 +175,8 @@ export function encodeGraph(snapshot: GraphSnapshot): ArrayBuffer {
   u32(edgeIds);
   u32(relations);
   u32(origins);
-  u32(kept.map((e) => position.get(e.src)!));
-  u32(kept.map((e) => position.get(e.dst)!));
+  u32(sources);
+  u32(targets);
 
   const out = new Uint8Array(parts.reduce((sum, p) => sum + p.byteLength, 0));
   let at = 0;

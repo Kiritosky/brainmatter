@@ -21,6 +21,7 @@ import {
 } from './api';
 import { isNewer, releasesSince, type Release } from './changelog';
 import { prefs } from './prefs.svelte.ts';
+import { mergePart } from './graph-part.ts';
 
 const PROJECT_PALETTE = [
   '#7c9cff', '#5fd3a5', '#ff8a7a', '#f5c451', '#c38bff',
@@ -57,6 +58,13 @@ const PULSE_MS = 2600;
 const SEEN_VERSION_KEY = 'bm.seenVersion';
 /** Embedding runs in small batches; suggestions need not follow each one. */
 const INDEX_REFRESH_MS = 1500;
+/**
+ * From this size on, a change loads only the entries it touched. Below it, loading the
+ * whole view is quick, and its sizes and colours stay exact.
+ */
+const PART_MIN_ENTRIES = 5000;
+/** More changed than this, and the whole view is quicker. */
+const PART_MAX_CHANGED = 2000;
 
 export type PaletteMode = 'open' | 'link';
 export type ColorMode = 'project' | 'kind' | 'theme';
@@ -299,13 +307,21 @@ class Workspace {
   private pulseTimer: ReturnType<typeof setTimeout> | undefined;
   /** Entries changed by the change set whose commit event is still to come. */
   private touched = new Set<Id>();
+  /** Entries whose place in the graph changed since it was loaded, or all of them. */
+  private graphTouched = new Set<Id>();
+  private graphStale = false;
   /** Waiting for the refresh that puts them into the graph. */
   private toPulse = new Set<Id>();
   private unlisten: (() => void)[] = [];
 
   async start() {
     this.unlisten.push(await onDomainEvent((e) => this.onEvent(e)));
-    this.unlisten.push(await onResync(() => this.scheduleRefresh()));
+    this.unlisten.push(
+      await onResync(() => {
+        this.graphStale = true;
+        this.scheduleRefresh();
+      }),
+    );
     this.unlisten.push(await onUpdateAvailable((u) => (this.update = u)));
     this.unlisten.push(
       await onModel((m) => {
@@ -344,12 +360,57 @@ class Workspace {
     this.projects = await api.projects();
   }
 
+  /** Whole graphs asked for, and how many of them are still on their way. */
+  private graphLoads = 0;
+  private graphsLoading = 0;
+  /** Parts one after the other, each on top of the one before. */
+  private parts: Promise<void> = Promise.resolve();
+
   async loadGraph() {
+    const load = ++this.graphLoads;
+    this.graphsLoading++;
     // Marks show up in the measurements of app/scripts/perf-app.sh.
     performance.mark('bm:graph-requested');
-    const graph = await api.graph(this.view);
-    performance.mark('bm:graph-received');
-    this.graph = graph;
+    try {
+      const graph = await api.graph(this.view);
+      performance.mark('bm:graph-received');
+      // One asked for later knows more, and may be of another view.
+      if (load === this.graphLoads) this.graph = graph;
+    } finally {
+      this.graphsLoading--;
+    }
+  }
+
+  /** Only what changed of a large view, which takes a fraction of loading it all. */
+  private loadGraphPart(ids: Set<Id>) {
+    const run = this.parts.then(async () => {
+      const loads = this.graphLoads;
+      const part = await api.graphPart(this.view, [...ids]);
+      performance.mark('bm:part-received');
+      // A whole graph asked for meanwhile has all of this, and is maybe of another view.
+      if (loads !== this.graphLoads || !this.graph || this.graph.view !== part.view) return;
+      this.graph = mergePart(this.graph, part, ids);
+    });
+    this.parts = run.catch(() => {});
+    return run;
+  }
+
+  /** Whatever the events since the last time ask for. */
+  private refreshGraph() {
+    const ids = this.graphTouched;
+    const whole = this.graphStale;
+    this.graphTouched = new Set();
+    this.graphStale = false;
+    const graph = this.graph;
+    const partly =
+      !whole &&
+      !this.graphsLoading &&
+      graph !== null &&
+      graph.view === (this.view ?? 'all') &&
+      graph.nodes.length >= PART_MIN_ENTRIES &&
+      ids.size <= PART_MAX_CHANGED;
+    if (!partly) return this.loadGraph();
+    return ids.size ? this.loadGraphPart(ids) : Promise.resolve();
   }
 
   async loadModel() {
@@ -453,6 +514,11 @@ class Workspace {
   private onEvent(e: DomainEvent) {
     if (e.type !== 'index_updated') {
       if (e.type === 'node_upserted') this.touched.add(e.id);
+      if (e.type === 'node_upserted' || e.type === 'node_deleted') this.graphTouched.add(e.id);
+      if (e.type === 'edge_upserted' || e.type === 'edge_deleted') this.graphTouched.add(e.src).add(e.dst);
+      if (e.type === 'membership_changed') this.graphTouched.add(e.node);
+      // A project moved or gone changes what is in a view, and where.
+      if (e.type === 'project_upserted' || e.type === 'project_deleted') this.graphStale = true;
       if (e.type === 'change_set_committed') this.noteChange(e.actor, e.summary);
       this.scheduleRefresh();
       return;
@@ -466,12 +532,15 @@ class Workspace {
   /** Coalesces bursts of events (e.g. an AI capturing 50 entries). Project
    * node counts change with almost every event, so everything reloads. */
   private refreshMs = 0;
+  private refreshedAt = -Infinity;
 
   private scheduleRefresh() {
     clearTimeout(this.refreshTimer);
     // A large vault takes a while to reload, and must not spend all its time on that
-    // while an AI keeps writing.
-    const pause = Math.min(5000, 120 + this.refreshMs * 4);
+    // while an AI keeps writing: reloads keep a distance that grows with what they take.
+    // A change long after the last one shows at once.
+    const spacing = Math.min(5000, 120 + this.refreshMs * 4);
+    const pause = Math.max(120, spacing - (performance.now() - this.refreshedAt));
     this.refreshTimer = setTimeout(async () => {
       const started = performance.now();
       // A change set's events arrive in one burst. Whatever is left over never got its
@@ -479,13 +548,14 @@ class Workspace {
       this.touched = new Set();
       await Promise.all([
         this.loadProjects(),
-        this.loadGraph(),
+        this.refreshGraph(),
         this.loadUnreviewed(),
         this.loadFilterData(),
         this.refreshDetail(),
         this.refreshSuggestions(),
       ]);
       this.refreshMs = performance.now() - started;
+      this.refreshedAt = performance.now();
       this.startPulse();
       this.revision++;
     }, pause);

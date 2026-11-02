@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { ChevronRight, Clock, Network } from '@lucide/svelte';
-  import { api, createdAt, errorMessage, type Id, type Status } from '#lib/api.ts';
+  import { api, createdAt, errorMessage, type GraphNode, type Id, type Status } from '#lib/api.ts';
   import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
   import { prefs } from '#lib/prefs.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
@@ -37,6 +37,12 @@
   ];
 
   const suggested = $derived(ws.suggestions.map((s) => s.node.id));
+  // A new function only when the colours change: the graph goes through every entry for it.
+  const colorKey = $derived(`${ws.colorMode}|${ws.view}|${[...ws.projectColor].join()}`);
+  const colorFor = $derived.by(() => {
+    void colorKey;
+    return (n: GraphNode) => ws.colorFor(n);
+  });
   const NOTHING_PULSING = new Set<Id>();
   const graphProjects = $derived(
     ws.projects.map(({ project }) => ({
@@ -155,7 +161,7 @@
         projects={graphProjects}
         onopenproject={(id) => ws.setView(id)}
         onlink={linkEntries}
-        colorFor={(n) => ws.colorFor(n)}
+        {colorFor}
         onselect={(id) => ws.select(id)}
         onopen={(id) => ws.select(id)} />
 

@@ -99,17 +99,23 @@ fn main() {
             let start = Instant::now();
             let vector = embedder.embed_query(&text).expect("query");
             let embedded = start.elapsed();
-            let found = engine.search_hybrid(&query, Some(&vector)).expect("search");
+            engine.search_hybrid(&query, Some(&vector)).expect("search");
             let all = start.elapsed();
-            hits += found.len();
             embedding.push(embedded.as_secs_f64() * 1e3);
             searching.push((all - embedded).as_secs_f64() * 1e3);
-            together.push(all.as_secs_f64() * 1e3);
+
+            // As the app does it: the words are looked up while the query vector is made.
+            let start = Instant::now();
+            let found = engine
+                .search_hybrid_with(&query, || embedder.embed_query(&text).ok())
+                .expect("search");
+            together.push(start.elapsed().as_secs_f64() * 1e3);
+            hits += found.len();
         }
     }
     println!("{} searches, {} hits on average", together.len(), hits / together.len());
     report("query vector", &mut embedding);
     report("words alone", &mut words);
     report("search", &mut searching);
-    report("together", &mut together);
+    report("as in the app", &mut together);
 }
