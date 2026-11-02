@@ -86,6 +86,32 @@ fn create_update_delete_node() {
 }
 
 #[test]
+fn search_limit_counts_only_what_passes_the_filters() {
+    let f = setup();
+    let inside = f
+        .engine
+        .create_project(&f.user, NewProject { name: "Innen".into(), ..Default::default() })
+        .unwrap();
+    for i in 0..40 {
+        let projects = if i % 2 == 0 { vec![inside.id.clone()] } else { vec![] };
+        // The more often the word appears, the better the entry ranks.
+        let body = "gemeinsam ".repeat(1 + i % 5);
+        f.engine
+            .create_node(&f.user, NewNode { projects, ..note(&format!("Eintrag {i}"), &body) })
+            .unwrap();
+    }
+
+    let query =
+        SearchQuery { limit: 5, project: Some(inside.id.clone()), ..SearchQuery::new("gemein") };
+    let hits = f.engine.search(&query).unwrap();
+    assert_eq!(hits.len(), 5);
+    assert!(hits.windows(2).all(|w| w[0].score >= w[1].score), "best first");
+    assert!(hits.iter().all(|h| h.snippet.contains("**gemeinsam**")));
+    let members: Vec<_> = (0..40).step_by(2).map(|i| format!("Eintrag {i}")).collect();
+    assert!(hits.iter().all(|h| members.contains(&h.node.title)), "only from the project");
+}
+
+#[test]
 fn search_ranks_and_filters() {
     let f = setup();
     let work = f

@@ -77,16 +77,17 @@ pub(crate) fn search(conn: &Connection, q: &SearchQuery) -> Result<Vec<SearchHit
     let mut params: Vec<Value> = Vec::new();
 
     let expr = selective_expression(conn, &q.text)?;
-    // Phase 1 ranks and filters on cheap columns only; phase 2 computes
-    // snippets for the final page instead of for every match.
+    // FTS5 ranks all matches itself and then hands them out in order, so filters stop at
+    // the limit and snippets are made only for what is returned. CROSS JOIN keeps it that
+    // way: looking up each hit in the index again, as a second MATCH does, repeats the
+    // whole prefix expansion per hit, 16 ms each at 50,000 entries.
     let mut sql = match &expr {
         Some(expr) => {
             params.push(Value::Text(expr.clone()));
             String::from(
-                "WITH top AS (
-                   SELECT f.rowid AS seq, f.rank AS rank FROM nodes_fts f
-                   JOIN nodes n ON n.seq = f.rowid
-                   WHERE nodes_fts MATCH ?1 AND n.deleted_at IS NULL",
+                "SELECT n.id, n.title, n.kind, snippet(nodes_fts, 1, '**', '**', '…', 16), -f.rank
+                 FROM nodes_fts f CROSS JOIN nodes n ON n.seq = f.rowid
+                 WHERE nodes_fts MATCH ?1 AND n.deleted_at IS NULL",
             )
         }
         // No search terms: most recently changed entries matching the filters.
@@ -130,14 +131,7 @@ pub(crate) fn search(conn: &Connection, q: &SearchQuery) -> Result<Vec<SearchHit
     params.push(Value::Integer(limit));
     let limit_param = params.len();
     if expr.is_some() {
-        sql.push_str(&format!(
-            " ORDER BY f.rank LIMIT ?{limit_param})
-             SELECT n.id, n.title, n.kind, snippet(nodes_fts, 1, '**', '**', '…', 16), -top.rank
-             FROM top
-             JOIN nodes_fts ON nodes_fts.rowid = top.seq AND nodes_fts MATCH ?1
-             JOIN nodes n ON n.seq = top.seq
-             ORDER BY top.rank"
-        ));
+        sql.push_str(&format!(" ORDER BY f.rank LIMIT ?{limit_param}"));
     } else {
         sql.push_str(&format!(" ORDER BY n.updated_at DESC LIMIT ?{limit_param}"));
     }
