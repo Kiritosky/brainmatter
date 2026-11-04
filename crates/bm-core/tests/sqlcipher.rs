@@ -1,4 +1,4 @@
-//! Spike 1: SQLCipher encrypts everything (incl. FTS5 and WAL), rejects wrong
+//! SQLCipher encrypts everything (incl. FTS5 and WAL), rejects wrong
 //! keys, and full-text search behaves well for German text.
 
 use bm_core::{Db, DbKey, StoreError};
