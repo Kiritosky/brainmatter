@@ -5,7 +5,7 @@
 //! binary's cdhash, so a rebuilt or updated app cannot read items written by an
 //! older build. Instead of prompting, reads then fail with
 //! [`KeychainError::NotAccessible`]; the caller falls back to the password and
-//! re-enrolls under a fresh account name (PLAN.md §5).
+//! re-enrolls under a fresh account name.
 
 use security_framework::{
     os::macos::keychain::SecKeychain,

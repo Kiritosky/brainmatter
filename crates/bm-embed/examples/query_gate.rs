@@ -32,22 +32,23 @@ const NOTES: &[&str] = &[
     "Steuererklärung\nBelege für Fahrtkosten und Arbeitszimmer sammeln.",
 ];
 
-/// A search and the titles that count as right. Sections of PLAN.md, renamed to a
-/// made-up product, stand in for the long documents of another project.
+/// A search and the titles that count as right. Sections of the README and the
+/// changelog, renamed to a made-up product, stand in for the long documents of
+/// another project.
 const FINDABLE: &[(&str, &[&str])] = &[
     ("Brot selber backen", &["Sauerteig", "Roggenbrot backen"]),
     ("async runtime", &["Tokio"]),
-    ("Passwort sicher speichern", &["Argon2id", "Keychain", "5. Sicherheit"]),
+    ("Passwort sicher speichern", &["Argon2id", "Keychain", "Security"]),
     ("für den Wettkampf trainieren", &["Marathon-Plan"]),
     ("was kann ich von der Steuer absetzen", &["Arbeitszimmer", "Steuererklärung"]),
-    ("Datenbank verschlüsseln", &["SQLCipher", "5. Sicherheit"]),
-    ("Graph zeichnen", &["Sigma.js", "ForceAtlas2", "6. Graph-Engine, Suche, Intelligenz"]),
+    ("Datenbank verschlüsseln", &["SQLCipher", "Security"]),
+    ("Graph zeichnen", &["Sigma.js", "ForceAtlas2"]),
     ("Besprechung über Geld", &["Meeting mit Anna"]),
-    ("how do AI tools talk to servers", &["MCP", "7. MCP-Schnittstelle (Herzstück)"]),
+    ("how do AI tools talk to servers", &["MCP", "Connect your AI tools"]),
     ("Fingerabdruck entsperren", &["Touch ID"]),
-    ("welche Risiken gibt es", &["12. Risiken"]),
-    ("wie schnell muss die App starten", &["9. Performance-Ziele"]),
-    ("Aufbau der Datenbank Tabellen", &["4. Datenmodell"]),
+    ("welche Risiken gibt es", &["Security"]),
+    ("wie schnell muss die App starten", &["Performance"]),
+    ("wie installiere ich die App", &["Install"]),
     ("Fahrtkosten", &["Steuererklärung"]),
     ("Italien Reise", &["Urlaub Italien"]),
 ];
@@ -97,7 +98,8 @@ fn main() {
     store.download(|_| {}).expect("model");
     let e = E5Embedder::new(store);
 
-    let plan = include_str!("../../../PLAN.md").replace("Brainmatter", "Solvane");
+    let readme = include_str!("../../../README.md").replace("Brainmatter", "Solvane");
+    let changelog = include_str!("../../../CHANGELOG.md").replace("Brainmatter", "Solvane");
     let mut titles = Vec::new();
     let mut pooled = Vec::new();
     let mut chunked: Vec<Vec<Vec<f32>>> = Vec::new();
@@ -111,12 +113,8 @@ fn main() {
         let (title, body) = note.split_once('\n').unwrap();
         add(title, body);
     }
-    for section in plan.split("\n## ").skip(1) {
-        let (title, body) = section.split_once('\n').unwrap();
-        add(title.trim(), body);
-    }
-    for text in [include_str!("../../../README.md"), include_str!("../../../CHANGELOG.md")] {
-        for section in text.replace("Brainmatter", "Solvane").split("\n## ").skip(1) {
+    for text in [&readme, &changelog] {
+        for section in text.split("\n## ").skip(1) {
             let (title, body) = section.split_once('\n').unwrap();
             add(title.trim(), body);
         }
@@ -127,10 +125,10 @@ fn main() {
     // How a rule holds up with the size and make-up of the vault.
     let notes: Vec<usize> = (0..NOTES.len()).collect();
     let everything: Vec<usize> = (0..titles.len()).collect();
-    let plan_only = NOTES.len() + plan.split("\n## ").skip(1).count();
-    let without_extra: Vec<usize> = (0..plan_only).collect();
+    let readme_only = NOTES.len() + readme.split("\n## ").skip(1).count();
+    let with_readme: Vec<usize> = (0..readme_only).collect();
     for (name, corpus) in
-        [("notes only", &notes), ("notes + PLAN", &without_extra), ("everything", &everything)]
+        [("notes only", &notes), ("notes + README", &with_readme), ("everything", &everything)]
     {
         println!("\n=== {name}: {} entries", corpus.len());
         let dim = pooled[0].len();

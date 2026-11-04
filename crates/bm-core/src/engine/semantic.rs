@@ -25,7 +25,7 @@ use crate::{
 
 /// Passage-to-passage similarity from which two entries probably say the same
 /// thing, and from which they are worth suggesting as a link. Measured with
-/// `bm-embed --example calibrate`; see PLAN.md §17. multilingual-e5 scores sit
+/// `bm-embed --example calibrate`. multilingual-e5 scores sit
 /// high and close together, so these are hints, never automatic actions.
 pub const DUPLICATE_SCORE: f32 = 0.925;
 pub const SUGGEST_SCORE: f32 = 0.88;

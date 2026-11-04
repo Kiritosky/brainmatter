@@ -1,4 +1,4 @@
-//! Primitives for the vault key hierarchy (PLAN.md §5).
+//! Primitives for the vault key hierarchy (see SECURITY.md).
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};

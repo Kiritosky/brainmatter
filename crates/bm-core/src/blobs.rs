@@ -1,4 +1,4 @@
-//! Encrypted attachment files (PLAN.md §3). A file is named after a keyed hash
+//! Encrypted attachment files (see SECURITY.md). A file is named after a keyed hash
 //! of its content, which deduplicates and reveals nothing about the content.
 //!
 //! Files stay as long as any row names them, trashed ones included, since undo

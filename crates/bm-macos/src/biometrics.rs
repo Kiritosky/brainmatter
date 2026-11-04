@@ -1,7 +1,7 @@
 //! Touch ID via LocalAuthentication.
 //!
 //! Without an Apple Developer account the biometric check gates *reading* the
-//! Touch ID key from the Keychain (see PLAN.md §5); it is not bound to the
+//! Touch ID key from the Keychain (see SECURITY.md); it is not bound to the
 //! Secure Enclave.
 
 use std::sync::mpsc;

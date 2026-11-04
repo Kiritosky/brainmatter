@@ -1,6 +1,6 @@
 //! The local embedding model: multilingual-e5-small on candle (Metal).
 //!
-//! Chosen in spike 5 (PLAN.md §13): 4.7 ms per query at ~0.9 GB while loaded,
+//! Chosen over ONNX Runtime after measuring both: 4.7 ms per query at ~0.9 GB while loaded,
 //! with f32 weights (f16 ruined the quality). Weights are not secret, so they
 //! live unencrypted next to the vault. They are loaded on first use and unloaded
 //! when idle, so the app stays small in the background.

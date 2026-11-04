@@ -1,4 +1,4 @@
-//! Verified, encrypted snapshots of the database (PLAN.md §3).
+//! Verified, encrypted snapshots of the database (see SECURITY.md).
 //!
 //! A backup is encrypted with the same data key as the database, so it stays
 //! readable after a password change. Attachment files are not copied: they are

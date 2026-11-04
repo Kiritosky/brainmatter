@@ -1,4 +1,4 @@
-//! Engine load test against the PLAN.md §9 targets.
+//! Engine load test against the targets in the README's performance table.
 //!
 //! `cargo run --release -p bm-core --example bench_engine [-- 50000]`
 

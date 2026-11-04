@@ -4,7 +4,7 @@
 //! A random 256-bit data key (DEK) encrypts everything. It is stored wrapped
 //! once per *slot*: password (Argon2id), recovery key, and optionally a key
 //! kept in the macOS Keychain for Touch ID. Changing the password only
-//! re-wraps the DEK. See PLAN.md §5.
+//! re-wraps the DEK. See SECURITY.md.
 
 mod crypto;
 mod recovery;
