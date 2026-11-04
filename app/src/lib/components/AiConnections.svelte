@@ -39,14 +39,18 @@
   let limitProjects = $state(false);
   let projects = $state<string[]>([]);
 
+  let memory = $state(true);
+
   let token = $state('');
   let copied = $state(false);
+  let ruleCopied = $state(false);
 
   onMount(load);
 
   async function load() {
     try {
       info = await api.mcpInfo();
+      integrations = await api.integrations();
     } catch (e) {
       error = errorMessage(e);
     }
@@ -71,6 +75,7 @@
     scopes = { read: true, write: true, delete: false };
     limitProjects = false;
     projects = [];
+    memory = true;
     error = null;
     view = 'new';
   }
@@ -93,7 +98,7 @@
     error = null;
     try {
       const chosen = (Object.keys(scopes) as Scope[]).filter((s) => scopes[s]);
-      await api.connectIntegration(integration.target, chosen, limitProjects ? projects : []);
+      await api.connectIntegration(integration.target, chosen, limitProjects ? projects : [], memory);
       name = integration.name;
       await load();
       view = 'connected';
@@ -113,6 +118,7 @@
       const created = await api.createClient(name, chosen, limitProjects ? projects : []);
       token = created.token;
       copied = false;
+      ruleCopied = false;
       await load();
       view = 'created';
     } catch (err) {
@@ -120,6 +126,16 @@
     } finally {
       busy = false;
     }
+  }
+
+  async function setRule(i: Integration, on: boolean) {
+    error = null;
+    try {
+      await api.setMemoryRule(i.target, on);
+    } catch (e) {
+      error = errorMessage(e);
+    }
+    integrations = await api.integrations().catch(() => integrations);
   }
 
   async function revoke(c: AiClient) {
@@ -168,6 +184,24 @@
     setTimeout(() => (copied = false), 1600);
   }
 
+  /** What makes the AI use Brainmatter unasked; without write access it only looks things up. */
+  const rule = $derived(info ? (scopes.write ? info.rule : info.rule_read_only) : '');
+  const ruleTitle = $derived(scopes.write ? t('Von selbst nachschlagen und sichern', 'Look up and save unasked') : t('Von selbst nachschlagen', 'Look things up unasked'));
+  /** Written for it, unless it keeps its instructions where Brainmatter cannot reach. */
+  const ruleWritten = $derived(!!integration?.available && !!integration.rule_file);
+  const ruleWhere = $derived.by(() => {
+    if (preset === 'Cursor') return t('In Cursor unter Customize → Rules als User Rule einfügen', 'In Cursor, add it as a user rule under Customize → Rules');
+    if (preset === 'Claude Desktop') return t('In Claude bei den persönlichen Präferenzen in den Einstellungen einfügen', "Paste it into the personal preferences in Claude's settings");
+    if (integration?.rule_file) return t(`In ${integration.rule_file} einfügen`, `Add it to ${integration.rule_file}`);
+    return t('In die Anweisungen oder Regeln der KI einfügen', "Paste it into the AI client's instructions or rules");
+  });
+
+  async function copyRule() {
+    await navigator.clipboard.writeText(rule);
+    ruleCopied = true;
+    setTimeout(() => (ruleCopied = false), 1600);
+  }
+
   function seen(ms: number | null) {
     if (!ms) return t('Noch nie verbunden', 'Never connected');
     const s = Math.round((Date.now() - ms) / 1000);
@@ -182,6 +216,15 @@
   let projectQuery = $state('');
   const projectName = (id: string) => ws.projects.find((p) => p.project.id === id)?.project.name ?? '?';
 </script>
+
+{#snippet copyBlock(text: string, done: boolean, onCopy: () => void, wrap = false)}
+  <div class="relative mb-3">
+    <pre class="selectable overflow-x-auto rounded-xl border border-line bg-bg/70 p-3.5 pr-12 text-left font-mono text-[11.5px] leading-relaxed {wrap ? 'whitespace-pre-wrap' : 'whitespace-pre'}">{text}</pre>
+    <button class="icon-btn absolute top-2 right-2 !bg-raised" aria-label={t('Kopieren', 'Copy')} title={t('Kopieren', 'Copy')} onclick={onCopy}>
+      {#if done}<Check size={14} class="text-ok" />{:else}<Copy size={14} />{/if}
+    </button>
+  </div>
+{/snippet}
 
 {#if view === 'list'}
   <h2 class="mb-1 text-lg font-semibold">{t('KI-Verbindungen', 'AI connections')}</h2>
@@ -200,6 +243,7 @@
     {#if info.clients.length}
       <div class="card mb-4">
         {#each info.clients as c (c.id)}
+          {@const ig = integrations.find((i) => i.name === c.name && i.rule_file)}
           <div class="row group" animate:flip={{ duration: 180 }}>
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={avatarStyle(tint(c.name))}><Bot size={16} /></div>
             <div class="min-w-0 flex-1">
@@ -210,6 +254,12 @@
                 · {seen(c.last_seen_at)}
               </div>
             </div>
+            {#if ig && confirmRevoke !== c.id}
+              <div class="flex shrink-0 items-center gap-2 text-xs text-muted" title={t(`Regel in ${ig.rule_file}`, `Rule in ${ig.rule_file}`)}>
+                {t('Gedächtnis', 'Memory')}
+                <Toggle checked={ig.rule} label={t(`${c.name} nutzt Brainmatter von selbst`, `${c.name} uses Brainmatter unasked`)} onchange={(on) => setRule(ig, on)} />
+              </div>
+            {/if}
             {#if confirmRevoke === c.id}
               <button class="btn-danger" in:pop={{ duration: 120, y: 0 }} onclick={() => revoke(c)} onblur={() => (confirmRevoke = null)}>{t('Wirklich trennen?', 'Really disconnect?')}</button>
             {:else}
@@ -295,6 +345,23 @@
       {/if}
     </div>
 
+    <div class="section-title">{t('Gedächtnis', 'Memory')}</div>
+    <div class="card mb-5">
+      <div class="row">
+        <div class="flex-1">
+          <div>{ruleTitle}</div>
+          <div class="text-xs text-faint">
+            {#if ruleWritten}
+              {t(`Schreibt eine kurze Regel nach ${integration?.rule_file}, damit ${integration?.name} Brainmatter vor jeder Aufgabe nutzt.`, `Writes a short rule to ${integration?.rule_file}, so that ${integration?.name} turns to Brainmatter before every task.`)}
+            {:else}
+              {t('Du bekommst eine kurze Regel für die Anweisungen der KI, damit sie Brainmatter vor jeder Aufgabe nutzt.', "You get a short rule for the AI client's instructions, so that it turns to Brainmatter before every task.")}
+            {/if}
+          </div>
+        </div>
+        <Toggle bind:checked={memory} label={ruleTitle} />
+      </div>
+    </div>
+
     {#if error}<p class="mb-3 leading-relaxed text-danger" in:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
     <div class="flex items-center gap-2">
       {#if integration?.available}
@@ -317,6 +384,16 @@
         `Restart ${name} once, and Brainmatter is there. While the app is locked, Touch ID asks before the AI client gets in.`,
       )}
     </p>
+    {#if memory && integration?.rule}
+      <p class="-mt-3 mb-6 flex items-center gap-1.5 text-xs text-faint"><Check size={13} class="text-ok" /> {t(`Die Regel steht in ${integration.rule_file}.`, `The rule is in ${integration.rule_file}.`)}</p>
+    {:else if memory && integration?.rule_file}
+      <p class="-mt-3 mb-6 max-w-sm text-xs text-warn">{t(`Die Regel ließ sich nicht nach ${integration.rule_file} schreiben. Du kannst sie unter KI-Verbindungen noch einmal einschalten.`, `The rule could not be written to ${integration.rule_file}. You can switch it on again under AI connections.`)}</p>
+    {:else if memory}
+      <div class="mb-4 w-full max-w-md">
+        <div class="section-title text-left">{ruleWhere}</div>
+        {@render copyBlock(rule, ruleCopied, copyRule, true)}
+      </div>
+    {/if}
     <button class="btn-primary" onclick={() => (view = 'list')}>{t('Fertig', 'Done')}</button>
   </div>
 {:else}
@@ -324,12 +401,11 @@
   <p class="mb-5 text-muted"><strong class="font-medium text-warn">{t('Nur jetzt sichtbar.', 'Visible only now.')}</strong> {t('Das Token wird nicht gespeichert und lässt sich später nicht mehr anzeigen.', 'The token is not stored and cannot be shown again later.')}</p>
 
   <div class="section-title">{snippet.where}</div>
-  <div class="relative mb-3">
-    <pre class="selectable overflow-x-auto rounded-xl border border-line bg-bg/70 p-3.5 pr-12 font-mono text-[11.5px] leading-relaxed whitespace-pre">{snippet.text}</pre>
-    <button class="icon-btn absolute top-2 right-2 !bg-raised" aria-label={t('Kopieren', 'Copy')} title={t('Kopieren', 'Copy')} onclick={copy}>
-      {#if copied}<Check size={14} class="text-ok" />{:else}<Copy size={14} />{/if}
-    </button>
-  </div>
+  {@render copyBlock(snippet.text, copied, copy)}
+  {#if memory}
+    <div class="section-title mt-5">{ruleWhere}</div>
+    {@render copyBlock(rule, ruleCopied, copyRule, true)}
+  {/if}
   {#if usesBridge && info && !info.bridge_exists}
     <p class="mb-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
       {t('Die Bridge ist in diesem Dev-Build noch nicht gebaut. Führe', 'The bridge is not built yet in this dev build. Run')} <code class="font-mono">cargo build -p bm-cli</code>{t(' aus.', '.')}

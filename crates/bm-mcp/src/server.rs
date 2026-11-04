@@ -95,7 +95,7 @@ fn error(text: String) -> CallToolResult {
 #[tool_router]
 impl BrainmatterMcp {
     #[tool(
-        description = "Find entries by words and, if the model is set up, by meaning. Search before creating. An empty query lists recent entries."
+        description = "Find entries by words and, if the model is set up, by meaning. Use it when a task starts and before creating. An empty query lists recent entries."
     )]
     async fn search(
         &self,
@@ -124,7 +124,7 @@ impl BrainmatterMcp {
     }
 
     #[tool(
-        description = "Create entries and links in one undoable step. One idea per entry. Warns about likely duplicates."
+        description = "Save decisions, findings and corrections as they come up: entries and links in one undoable step. One idea per entry. Warns about likely duplicates."
     )]
     async fn capture(
         &self,
@@ -173,7 +173,7 @@ impl BrainmatterMcp {
     }
 
     #[tool(
-        description = "Project summary: subprojects, main entries, themes, recent changes, tasks. Good first call."
+        description = "Project summary: subprojects, main entries, themes, recent changes, tasks. Call it first when work on a project starts."
     )]
     async fn project_overview(
         &self,
@@ -446,11 +446,11 @@ fn template_prompts(engine: &Engine, client: &Client) -> Result<Vec<Prompt>, Cor
 
 const INSTRUCTIONS: &str = "Brainmatter is the user's encrypted knowledge graph and your long-term memory across sessions: \
 entries linked by typed relations, in nested projects. An entry can be in several projects.
-- Other sessions and models share this memory. Unasked, save what they will need: decisions with reasons, findings, conventions, \
-the user's corrections, open tasks. Use the fitting project, else one called `AI Memory`. No secrets, nothing code or git already records.
+- Before a task, look up what is known: `project_overview` for the project, `search` for the topic. `list_docs` and \
+`read_doc` tell how a project works; `get` only what you need in full.
+- Other sessions and models share this memory. Save unasked, as soon as it comes up: decisions with reasons, findings, conventions, \
+the user's corrections, open tasks. Use the fitting project, else `AI Memory`. No secrets, nothing code or git already records.
 - Refer to entries and projects by exact title or name, short id (#a1b2c3d4) or full id.
-- Read cheaply: `project_overview` first, `list_docs` and `read_doc` for how a project works, `search` for the rest, `get` only \
-for what you need in full.
 - Before creating, search, and extend existing entries with `update` rather than adding near-duplicates.
 - Write with `capture`: one idea per entry, Markdown, several entries and links in one call. `[[Exact Title]]` in a body links \
 automatically. Relations: related_to, part_of, depends_on, example_of, supports, contradicts, derived_from.

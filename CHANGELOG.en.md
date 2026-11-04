@@ -2,6 +2,14 @@
 
 This text appears in the app when it runs in English. The German version, [CHANGELOG.md](CHANGELOG.md), is the one the release notes on GitHub come from; every version there needs its entry here too.
 
+## 1.2.0
+
+Your AI tools now turn to Brainmatter on their own instead of starting every session from scratch.
+
+### New
+- **Brainmatter as memory:** When you connect an AI client, Brainmatter can add a short rule to its instructions: `~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for Codex, `~/.cursor/rules` for Cursor. It then looks things up before every task and saves decisions, findings and your corrections unasked. For Claude Desktop and any other AI client with MCP, you get the rule to copy. Existing connections get a switch for it under Settings → AI connections.
+- **Clearer hints for every AI client:** The MCP server tells every connected AI client more precisely when to look things up and when to save.
+
 ## 1.1.0 · 2026-11-04
 
 Brainmatter now speaks English, brings in your notes from other apps, and can keep its backups in a second place.

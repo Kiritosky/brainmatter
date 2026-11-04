@@ -492,6 +492,17 @@ function seed() {
   record(`„${T.vault}“ bearbeitet`, [byTitle(T.vault)], { actor: 'Claude Code', client: 'claude-code', ago: 6 * 60_000 });
 }
 
+const MEMORY_RULE =
+  '## Brainmatter\n\nBrainmatter (MCP server `brainmatter`) is my knowledge graph and your long-term memory, shared with my other AI tools and sessions.\n' +
+  '- Before you start a task, look up what is already known: `project_overview` for the project, `search` for the topic.\n';
+const MEMORY_RULE_WRITE =
+  '- Save unasked what a later session will need, as soon as it comes up: decisions with their reasons, findings, conventions, my corrections, open tasks. Use `capture`, and `update` an existing entry rather than adding a near-duplicate.\n' +
+  '- No secrets, and nothing that code or git already records.\n';
+const TARGET_NAMES: Record<string, string> = { claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', cursor: 'Cursor', codex: 'Codex' };
+const RULE_FILES: Record<string, string> = { claude_code: '~/.claude/CLAUDE.md', cursor: '~/.cursor/rules/brainmatter.mdc', codex: '~/.codex/AGENTS.md' };
+/** Clients whose own instructions hold the memory rule. */
+const rules = new Set<string>();
+
 const handlers: Record<string, (a: Args) => unknown> = {
   mcp_info: () => ({
     url: 'http://127.0.0.1:47474/mcp',
@@ -500,6 +511,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
     bridge_path: '/Applications/Brainmatter.app/Contents/MacOS/brainmatter-mcp',
     bridge_exists: true,
     clients,
+    rule: MEMORY_RULE + MEMORY_RULE_WRITE,
+    rule_read_only: MEMORY_RULE,
   }),
   create_client: (a) => {
     if (!String(a.name).trim()) fail('invalid', 'Bitte einen Namen angeben.');
@@ -508,7 +521,11 @@ const handlers: Record<string, (a: Args) => unknown> = {
     clients.push(client);
     return { client, token: 'bm_mock_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg' };
   },
-  revoke_client: (a) => void clients.splice(clients.findIndex((c) => c.id === a.id), 1),
+  revoke_client: (a) => {
+    const [gone] = clients.splice(clients.findIndex((c) => c.id === a.id), 1);
+    const target = Object.entries(TARGET_NAMES).find(([, n]) => n === gone?.name)?.[0];
+    if (target) rules.delete(target);
+  },
   integrations: () =>
     ([['claude_code', 'Claude Code', true], ['claude_desktop', 'Claude Desktop', true], ['cursor', 'Cursor', true], ['codex', 'Codex', false]] as const).map(
       ([target, name, installed]) => ({
@@ -518,14 +535,19 @@ const handlers: Record<string, (a: Args) => unknown> = {
         configured: clients.some((c) => c.name === name),
         available: installed,
         unavailable_reason: installed ? null : `${name} ist auf diesem Mac nicht installiert.`,
+        rule_file: RULE_FILES[target] ?? null,
+        rule: rules.has(target),
       }),
     ),
+  set_memory_rule: (a) => void (a.on ? rules.add(a.target) : rules.delete(a.target)),
   connect_integration: (a) => {
-    const name = ({ claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', cursor: 'Cursor', codex: 'Codex' } as Record<string, string>)[a.target];
+    const name = TARGET_NAMES[a.target];
     const old = clients.findIndex((c) => c.name === name);
     if (old >= 0) clients.splice(old, 1);
     const client: AiClient = { id: id(), name, scopes: a.scopes, projects: a.projects, created_at: now(), last_seen_at: null };
     clients.push(client);
+    if (a.memory && RULE_FILES[a.target]) rules.add(a.target);
+    else rules.delete(a.target);
     return client;
   },
   session_status: () => status(),

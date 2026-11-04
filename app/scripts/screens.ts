@@ -830,15 +830,35 @@ try {
   await shot(page, '14-ai-new');
   await page.getByRole('button', { name: 'Automatisch einrichten' }).click();
   await page.getByText('Claude Desktop ist verbunden').waitFor();
+  // Claude Desktop keeps its instructions in the account, so the rule is pasted.
+  await page.getByText('persönlichen Präferenzen').waitFor();
   await page.waitForTimeout(350);
   await shot(page, '15-ai-connected');
   await page.getByRole('button', { name: 'Fertig' }).click();
+
+  // Claude Code gets the rule written for it, and it can be switched off later.
+  await page.getByRole('button', { name: 'KI verbinden' }).click();
+  await page.getByRole('button', { name: /Claude Code/ }).click();
+  await page.getByText('Von selbst nachschlagen und sichern').waitFor();
+  await page.getByRole('button', { name: 'Automatisch einrichten' }).click();
+  await page.getByText('Die Regel steht in ~/.claude/CLAUDE.md.').waitFor();
+  await page.getByRole('button', { name: 'Fertig' }).click();
+  const memorySwitch = page.getByRole('switch', { name: 'Claude Code nutzt Brainmatter von selbst' });
+  await memorySwitch.waitFor();
+  if ((await memorySwitch.getAttribute('aria-checked')) !== 'true') errors.push('memory rule not shown as on');
+  await page.waitForTimeout(250);
+  await shot(page, '15b-ai-memory');
+  await memorySwitch.click();
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Claude Code nutzt Brainmatter von selbst"]')?.getAttribute('aria-checked') === 'false',
+  );
   await page.getByRole('button', { name: 'KI verbinden' }).click();
   await page.getByRole('button', { name: /Codex/ }).click();
   await page.waitForTimeout(250);
   await shot(page, '16-ai-not-installed');
   await page.getByRole('button', { name: 'Token erstellen' }).click();
   await page.getByText('Nur jetzt sichtbar').waitFor();
+  await page.getByText('In ~/.codex/AGENTS.md einfügen').waitFor();
   await page.waitForTimeout(300);
   await shot(page, '17-ai-token');
 } catch (e) {

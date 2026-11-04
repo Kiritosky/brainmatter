@@ -879,6 +879,10 @@ pub struct McpInfo {
     bridge_path: String,
     bridge_exists: bool,
     clients: Vec<Client>,
+    /// The memory rule to paste into a tool's own instructions, for tools that
+    /// may write and for those that may only read.
+    rule: String,
+    rule_read_only: String,
 }
 
 #[tauri::command(async)]
@@ -897,6 +901,8 @@ pub fn mcp_info(
         bridge_exists: bridge.is_file(),
         bridge_path: bridge.display().to_string(),
         clients: registry.list(),
+        rule: setup::rule_text(true),
+        rule_read_only: setup::rule_text(false),
     })
 }
 
@@ -912,7 +918,8 @@ pub fn integrations(
 
 /// Sets up an installed AI tool in one step. The token goes straight into its
 /// configuration and is never shown. An existing connection of the same tool
-/// keeps working until the new one is in place.
+/// keeps working until the new one is in place. With `memory`, the tool's own
+/// instructions also tell it to use Brainmatter unasked.
 #[tauri::command(async)]
 pub fn connect_integration(
     session: S<'_>,
@@ -921,6 +928,7 @@ pub fn connect_integration(
     target: Target,
     scopes: Vec<Scope>,
     projects: Vec<ProjectId>,
+    memory: bool,
 ) -> ApiResult<Client> {
     require_unlocked(&session)?;
     let local = local_integrations(&status)?;
@@ -940,7 +948,33 @@ pub fn connect_integration(
         registry.revoke(&old.id).map_err(registry_error)?;
     }
     registry.rename(&client.id, name).map_err(registry_error)?;
+    // The connection stands either way; the settings show whether the rule is in.
+    let rule = memory.then(|| setup::rule_text(scopes.contains(&Scope::Write)));
+    if let Err(e) = local.set_rule(target, rule.as_deref()) {
+        tracing::warn!("memory rule for {name}: {e}");
+    }
     Ok(Client { name: name.to_string(), ..client })
+}
+
+/// Puts the memory rule into a connected tool's instructions or takes it out.
+#[tauri::command(async)]
+pub fn set_memory_rule(
+    session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
+    status: State<'_, Arc<McpStatus>>,
+    target: Target,
+    on: bool,
+) -> ApiResult<()> {
+    require_unlocked(&session)?;
+    let write = registry
+        .list()
+        .into_iter()
+        .find(|c| c.name == target.name())
+        .is_none_or(|c| c.scopes.contains(&Scope::Write));
+    let rule = on.then(|| setup::rule_text(write));
+    local_integrations(&status)?
+        .set_rule(target, rule.as_deref())
+        .map_err(|e| ApiError::new("setup_failed", e.to_string()))
 }
 
 #[derive(Serialize)]

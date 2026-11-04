@@ -121,6 +121,11 @@ pub struct Status {
     /// Can be set up automatically right now.
     pub available: bool,
     pub unavailable_reason: Option<String>,
+    /// Where the memory rule goes, with `~` for the home folder. `None` when the
+    /// tool keeps its instructions elsewhere and the rule is pasted by hand.
+    pub rule_file: Option<String>,
+    /// The memory rule is in that file.
+    pub rule: bool,
 }
 
 impl Integrations {
@@ -160,6 +165,8 @@ impl Integrations {
             configured: self.is_configured(target),
             available: unavailable_reason.is_none(),
             unavailable_reason,
+            rule_file: self.rule_file(target).map(|p| self.tilde(&p)),
+            rule: self.has_rule(target),
         }
     }
 
@@ -191,9 +198,10 @@ impl Integrations {
         }
     }
 
-    /// Removes our entry again. Missing files or entries are fine.
+    /// Removes our entry and the memory rule again. Missing files or entries are fine.
     pub fn remove(&self, target: Target) -> Result<(), SetupError> {
-        match target {
+        let rule = self.set_rule(target, None);
+        let entry = match target {
             Target::ClaudeCode => match self.find_claude() {
                 Some(claude) => self
                     .run_claude(&claude, &["mcp", "remove", SERVER_NAME, "--scope", "user"])
@@ -203,7 +211,8 @@ impl Integrations {
             Target::ClaudeDesktop => set_json_server(&self.desktop_config(), None),
             Target::Cursor => set_json_server(&self.cursor_config(), None),
             Target::Codex => set_codex_server(&self.codex_config(), None),
-        }
+        };
+        entry.and(rule)
     }
 
     fn desktop_config(&self) -> PathBuf {
@@ -239,6 +248,78 @@ impl Integrations {
                 .is_some_and(|doc| {
                     doc.get("mcp_servers").and_then(|s| s.get(SERVER_NAME)).is_some()
                 }),
+        }
+    }
+
+    // ------------------------------------------------------- Memory rule ---
+
+    /// Where `target` reads its standing instructions. Claude Desktop keeps them
+    /// in the account, so its rule is pasted by hand.
+    pub fn rule_file(&self, target: Target) -> Option<PathBuf> {
+        match target {
+            Target::ClaudeCode => Some(match &self.claude_config_dir {
+                Some(dir) => dir.join("CLAUDE.md"),
+                None => self.home.join(".claude/CLAUDE.md"),
+            }),
+            Target::Codex => {
+                // Codex reads the override instead, as long as it says anything.
+                let dir = self.home.join(".codex");
+                let over = dir.join("AGENTS.override.md");
+                let used = fs::read_to_string(&over).is_ok_and(|s| !s.trim().is_empty());
+                Some(if used { over } else { dir.join("AGENTS.md") })
+            }
+            Target::Cursor => Some(self.home.join(format!(".cursor/rules/{SERVER_NAME}.mdc"))),
+            Target::ClaudeDesktop => None,
+        }
+    }
+
+    pub fn has_rule(&self, target: Target) -> bool {
+        match (target, self.rule_file(target)) {
+            (_, None) => false,
+            (Target::Cursor, Some(path)) => path.is_file(),
+            (_, Some(path)) => {
+                fs::read_to_string(path).is_ok_and(|s| s.contains(&rule_marker("start")))
+            }
+        }
+    }
+
+    /// Puts the rule in, replaces it, or (with `None`) takes it out. The rest of
+    /// the file stays as it was; a file that held only the rule goes away.
+    pub fn set_rule(&self, target: Target, rule: Option<&str>) -> Result<(), SetupError> {
+        let Some(path) = self.rule_file(target) else { return Ok(()) };
+        if target == Target::Cursor {
+            return match rule {
+                Some(text) => write_config(&path, cursor_rule(text).as_bytes()),
+                None => remove_file(&path),
+            };
+        }
+        let old = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(SetupError::Io(path, e)),
+        };
+        let mut new = without_rule(&old);
+        if let Some(text) = rule {
+            new.truncate(new.trim_end().len());
+            if !new.is_empty() {
+                new.push_str("\n\n");
+            }
+            new.push_str(&format!("{}\n{text}{}\n", rule_marker("start"), rule_marker("end")));
+        }
+        if new == old {
+            Ok(())
+        } else if new.trim().is_empty() {
+            remove_file(&path)
+        } else {
+            write_config(&path, new.as_bytes())
+        }
+    }
+
+    /// `~/…` for paths in the home folder, as people know them.
+    fn tilde(&self, path: &Path) -> String {
+        match path.strip_prefix(&self.home) {
+            Ok(rest) => format!("~/{}", rest.display()),
+            Err(_) => path.display().to_string(),
         }
     }
 
@@ -415,6 +496,67 @@ fn set_codex_server(path: &Path, server: Option<(&str, &str, &str)>) -> Result<(
         }
     }
     write_config(path, doc.to_string().as_bytes())
+}
+
+/// Standing instructions that make an AI tool use Brainmatter unasked. The
+/// server sends its own instructions too, but tools weigh those less than their
+/// own rule files, and some never show them to the model. Without `write`, the
+/// tool may only read, so the rule does not ask it to save.
+pub fn rule_text(write: bool) -> String {
+    let mut text = format!(
+        "## Brainmatter\n\n\
+         Brainmatter (MCP server `{SERVER_NAME}`) is my knowledge graph and your long-term memory, \
+         shared with my other AI tools and sessions.\n\
+         - Before you start a task, look up what is already known: `project_overview` for the \
+         project, `search` for the topic.\n"
+    );
+    if write {
+        text.push_str(
+            "- Save unasked what a later session will need, as soon as it comes up: decisions with \
+             their reasons, findings, conventions, my corrections, open tasks. Use `capture`, and \
+             `update` an existing entry rather than adding a near-duplicate.\n\
+             - No secrets, and nothing that code or git already records.\n",
+        );
+    }
+    text
+}
+
+/// Debug builds mark their own block, like their own server name.
+fn rule_marker(edge: &str) -> String {
+    format!("<!-- {SERVER_NAME}:{edge} -->")
+}
+
+/// The text without our block and the blank line it was given.
+fn without_rule(text: &str) -> String {
+    let (start, end) = (rule_marker("start"), rule_marker("end"));
+    let Some(a) = text.find(&start) else { return text.to_owned() };
+    let Some(b) = text[a..].find(&end).map(|i| a + i + end.len()) else {
+        // Someone cut the block in half; better leave it than guess.
+        return text.to_owned();
+    };
+    let before = text[..a].trim_end();
+    let after = text[b..].trim_start_matches(['\r', '\n']);
+    match (before.is_empty(), after.is_empty()) {
+        (true, _) => after.to_owned(),
+        (false, true) => format!("{before}\n"),
+        (false, false) => format!("{before}\n\n{after}"),
+    }
+}
+
+/// A rule file of its own, applied to every chat.
+fn cursor_rule(text: &str) -> String {
+    format!(
+        "---\ndescription: Brainmatter, long-term memory over MCP\nalwaysApply: true\n---\n\n{text}"
+    )
+}
+
+fn remove_file(path: &Path) -> Result<(), SetupError> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(SetupError::Io(path.to_owned(), e))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Atomic write with mode 0600; the first change keeps a pristine backup.
@@ -610,5 +752,80 @@ mod tests {
 
     fn dirs_home() -> PathBuf {
         PathBuf::from(std::env::var("HOME").unwrap())
+    }
+
+    #[test]
+    fn the_memory_rule_comes_and_goes_without_touching_the_rest() {
+        let (_d, i) = setup();
+        let path = i.rule_file(Target::ClaudeCode).unwrap();
+        let mine = "# My rules\n\nAlways answer in German.\n";
+        write(&path, mine);
+
+        i.set_rule(Target::ClaudeCode, Some(&rule_text(true))).unwrap();
+        let with = fs::read_to_string(&path).unwrap();
+        assert!(with.starts_with(mine), "{with}");
+        assert!(with.contains("`capture`") && with.contains(&format!("`{SERVER_NAME}`")));
+        assert!(i.has_rule(Target::ClaudeCode));
+        assert!(i.status(Target::ClaudeCode).rule);
+
+        // Again, and read-only: replaced, not added twice.
+        i.set_rule(Target::ClaudeCode, Some(&rule_text(false))).unwrap();
+        let again = fs::read_to_string(&path).unwrap();
+        assert_eq!(again.matches(&rule_marker("start")).count(), 1);
+        assert!(!again.contains("`capture`"));
+
+        i.set_rule(Target::ClaudeCode, None).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), mine);
+        assert!(!i.has_rule(Target::ClaudeCode));
+    }
+
+    #[test]
+    fn a_rule_file_made_for_the_rule_goes_away_with_it() {
+        let (_d, i) = setup();
+        for target in [Target::ClaudeCode, Target::Codex, Target::Cursor] {
+            let path = i.rule_file(target).unwrap();
+            i.set_rule(target, Some(&rule_text(true))).unwrap();
+            assert!(i.has_rule(target), "{target:?}");
+            // Not `remove`: for Claude Code that would run the real CLI.
+            i.set_rule(target, None).unwrap();
+            assert!(!path.exists(), "{}", path.display());
+        }
+        // Disconnecting takes the rule along.
+        i.set_rule(Target::Cursor, Some("x")).unwrap();
+        i.remove(Target::Cursor).unwrap();
+        assert!(!i.has_rule(Target::Cursor));
+        assert_eq!(i.rule_file(Target::ClaudeDesktop), None);
+        assert!(i.set_rule(Target::ClaudeDesktop, Some("x")).is_ok());
+    }
+
+    #[test]
+    fn cursor_gets_a_rule_for_every_chat() {
+        let (_d, i) = setup();
+        i.set_rule(Target::Cursor, Some(&rule_text(true))).unwrap();
+        let raw = fs::read_to_string(i.rule_file(Target::Cursor).unwrap()).unwrap();
+        assert!(raw.starts_with("---\n") && raw.contains("alwaysApply: true"), "{raw}");
+        assert_eq!(
+            i.status(Target::Cursor).rule_file.unwrap(),
+            format!("~/.cursor/rules/{SERVER_NAME}.mdc")
+        );
+    }
+
+    #[test]
+    fn codex_gets_the_rule_where_it_reads() {
+        let (_d, i) = setup();
+        assert!(i.rule_file(Target::Codex).unwrap().ends_with(".codex/AGENTS.md"));
+        // An empty override is skipped by Codex, so it is skipped here too.
+        write(&i.home.join(".codex/AGENTS.override.md"), "\n");
+        assert!(i.rule_file(Target::Codex).unwrap().ends_with(".codex/AGENTS.md"));
+        write(&i.home.join(".codex/AGENTS.override.md"), "Be brief.\n");
+        assert!(i.rule_file(Target::Codex).unwrap().ends_with(".codex/AGENTS.override.md"));
+    }
+
+    #[test]
+    fn a_broken_block_is_left_alone() {
+        let half = format!("Mine\n\n{}\nhalf a rule\n", rule_marker("start"));
+        assert_eq!(without_rule(&half), half);
+        let between = format!("A\n\n{}\nx\n{}\n\nB\n", rule_marker("start"), rule_marker("end"));
+        assert_eq!(without_rule(&between), "A\n\nB\n");
     }
 }

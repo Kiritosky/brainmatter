@@ -345,6 +345,7 @@ pub fn run() {
             commands::revoke_client,
             commands::integrations,
             commands::connect_integration,
+            commands::set_memory_rule,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Brainmatter");

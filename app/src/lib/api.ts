@@ -335,6 +335,9 @@ export interface McpInfo {
   bridge_path: string;
   bridge_exists: boolean;
   clients: AiClient[];
+  /** The memory rule to paste into an AI client's own instructions. */
+  rule: string;
+  rule_read_only: string;
 }
 
 export type IntegrationTarget = 'claude_code' | 'claude_desktop' | 'cursor' | 'codex';
@@ -346,6 +349,9 @@ export interface Integration {
   configured: boolean;
   available: boolean;
   unavailable_reason: string | null;
+  /** Where the memory rule goes; null when it is pasted by hand. */
+  rule_file: string | null;
+  rule: boolean;
 }
 
 export type BodyEdit = { mode: 'replace' | 'append' | 'prepend'; text: string };
@@ -452,8 +458,9 @@ export const api = {
     call<{ client: AiClient; token: string }>('create_client', { name, scopes, projects }),
   revokeClient: (id: Id) => call<void>('revoke_client', { id }),
   integrations: () => call<Integration[]>('integrations'),
-  connectIntegration: (target: IntegrationTarget, scopes: Scope[], projects: Id[]) =>
-    call<AiClient>('connect_integration', { target, scopes, projects }),
+  connectIntegration: (target: IntegrationTarget, scopes: Scope[], projects: Id[], memory: boolean) =>
+    call<AiClient>('connect_integration', { target, scopes, projects, memory }),
+  setMemoryRule: (target: IntegrationTarget, on: boolean) => call<void>('set_memory_rule', { target, on }),
 
   // data
   projects: () => call<ProjectSummary[]>('projects'),
