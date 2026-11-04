@@ -604,10 +604,7 @@ mod tests {
 
     #[test]
     fn accepts_the_four_url_forms() {
-        assert_eq!(
-            parse_url("https://github.com/anthropics/skills"),
-            url("anthropics", "skills", &[], false)
-        );
+        assert_eq!(parse_url("https://github.com/acme/skills"), url("acme", "skills", &[], false));
         assert_eq!(parse_url(" https://github.com/a/b.git "), url("a", "b", &[], false));
         assert_eq!(parse_url("https://www.GitHub.com/a/b/"), url("a", "b", &[], false));
         assert_eq!(parse_url("a-b/c.d_e"), url("a-b", "c.d_e", &[], false));

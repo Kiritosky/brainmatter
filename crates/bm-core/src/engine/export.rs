@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub(super) const NO_PROJECT: &str = "Ohne Projekt";
-/// Skill folders as `~/.claude/skills` and other tools expect them.
+/// One folder per skill with its `SKILL.md`, the layout other tools read skills from.
 pub(super) const SKILLS: &str = "skills";
 const DOCS: &str = "_Doku";
 const TEMPLATES: &str = "_Vorlagen";
