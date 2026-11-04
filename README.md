@@ -82,9 +82,11 @@ Requires macOS 13 or newer on Apple Silicon.
 
 The easiest way is Homebrew:
 
-```
+```sh
 brew install --cask kiritosky/tap/brainmatter
 ```
+
+If you installed it from the DMG before, add `--adopt` so Homebrew takes over the existing app.
 
 Or download the DMG from the [latest release](https://github.com/Kiritosky/brainmatter/releases/latest) and drag Brainmatter to Applications.
 
