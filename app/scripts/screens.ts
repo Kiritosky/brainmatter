@@ -1169,7 +1169,7 @@ try {
   await fresh.close();
 }
 
-// The same app in English. The mock's entries and its error messages stay German;
+// The same app in English, with English demo entries. The mock's error messages stay German;
 // these words only ever come from the app itself.
 {
   const en = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'en-US' });
@@ -1180,7 +1180,7 @@ try {
   const page = await en.newPage();
   page.on('pageerror', (e) => errors.push(`english: ${e.message}`));
   const UI_WORDS =
-    '\\b(Einstellungen|Papierkorb|Bibliothek|Aktivität|Einträge|Eintrag|Verbindungen?|Schließen|Suchen|Sperren|Entsperren|Abbrechen|Speichern|Zurück|Weiter|Fertig|Wiederherstellen|Prüfen|Ansicht|Vorlagen?|Hilfe|Allgemein|Projekte|Neue[rs]?|Ohne|Alles|Gesperrt|Passwort|ungeprüft|anlegen|wählen|verbinden)\\b';
+    '\\b(Einstellungen|Papierkorb|Bibliothek|Aktivität|Einträge|Eintrag|Verbindungen?|Schließen|Suchen|Sperren|Entsperren|Abbrechen|Speichern|Zurück|Weiter|Fertig|Wiederherstellen|Prüfen|Ansicht|Vorlagen?|Hilfe|Allgemein|Projekte|Neue[rs]?|Ohne|Alles|Gesperrt|Passwort|ungeprüft|anlegen|wählen|verbinden|erstellt|bearbeitet|gelöscht|erfasst)\\b';
   const german = async (where: string) => {
     const found = await page.evaluate((source) => {
       const words = new RegExp(source, 'g');
@@ -1221,6 +1221,10 @@ try {
     await page.waitForTimeout(400);
     await german('workspace');
     await shot(page, '90-english');
+    // What an AI just did, as the note over the graph says it.
+    await page.evaluate(() => (globalThis as unknown as { mockAiCapture(t: string, n: string): void }).mockAiCapture('Session summary', 'Vault'));
+    await page.getByRole('status').filter({ hasText: 'Claude Code' }).waitFor();
+    await german('ai activity');
 
     for (const panel of ['Review', 'Activity']) {
       await page.getByRole('button', { name: panel, exact: true }).click();

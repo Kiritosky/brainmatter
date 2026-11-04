@@ -20,6 +20,7 @@ import type {
   Settings,
   Status,
 } from './api';
+import { t } from './i18n';
 
 type Args = Record<string, any>;
 
@@ -111,12 +112,28 @@ const MODEL_BYTES = 487_724_985;
 let modelState: ModelStatus['state'] = 'missing';
 let modelBytes = 0;
 const dismissed = new Set<string>();
+/**
+ * The demo vault's titles that differ between the languages, so that screenshots
+ * of the English interface show English entries. Error messages stay German.
+ */
+const T = {
+  core: t('Kern', 'Core'),
+  life: t('Privat', 'Personal'),
+  vault: t('Tresor', 'Vault'),
+  palette: t('Command-Palette', 'Command palette'),
+  layout: t('Graph-Layout', 'Graph layout'),
+  hybrid: t('Hybrid-Suche', 'Hybrid search'),
+  sourdough: t('Sauerteig', 'Sourdough'),
+  starter: t('Sauerteig ansetzen', 'Starting a sourdough'),
+  rye: t('Roggenbrot', 'Rye bread'),
+  marathon: t('Marathon-Plan', 'Marathon plan'),
+};
 /** Stands in for the model: pairs of titles with a made-up similarity. */
 const SIMILAR: [string, string, number][] = [
-  ['Sauerteig', 'Sauerteig ansetzen', 0.95],
+  [T.sourdough, T.starter, 0.95],
   ['Touch ID', 'SQLCipher', 0.9],
-  ['Brainmatter', 'Hybrid-Suche', 0.89],
-  ['Graph-Layout', 'Command-Palette', 0.88],
+  ['Brainmatter', T.hybrid, 0.89],
+  [T.layout, T.palette, 0.88],
 ];
 
 const liveCount = () => [...nodes.values()].filter((n) => !n.deleted_at).length;
@@ -262,7 +279,7 @@ function createNode(input: Args, reviewed = true): Node {
 /** For the walkthrough: what the app sees while an AI writes. `mockAiForget`
  * takes it back, so the steps after it find the data they expect. */
 (globalThis as { mockAiCapture?: (title: string, near: string) => void }).mockAiCapture = (title, near) => {
-  const node = createNode({ title, body: 'Von einer KI.', kind: 'note' }, false);
+  const node = createNode({ title, body: t('Von einer KI.', 'From an AI.'), kind: 'note' }, false);
   node.created_by = 'actor-Claude Code';
   const other = [...nodes.values()].find((n) => n.title === near);
   if (other) addEdge(node.id, other.id);
@@ -418,51 +435,61 @@ function search(q: Args): SearchHit[] {
 
 function seed() {
   const bm = createProject('Brainmatter', null, '#7c9cff');
-  const core = createProject('Kern', bm.id, '#5fd3a5');
+  const core = createProject(T.core, bm.id, '#5fd3a5');
   const ui = createProject('UI', bm.id, '#4cc9f0');
-  const life = createProject('Privat', null, '#ffa24c');
+  const life = createProject(T.life, null, '#ffa24c');
+  const concept = t('konzept', 'concept');
   const n = (title: string, body: string, ps: Project[], kind = 'note', reviewed = true) =>
-    createNode({ title, body, kind, projects: ps.map((p) => p.id), tags: kind === 'concept' ? ['konzept'] : [] }, reviewed);
-  n('Brainmatter', 'Lokaler Wissensgraph mit [[MCP]]-Hub. Kern in Rust: [[SQLCipher]], [[Tokio]]. UI mit [[Svelte 5]] und [[Sigma.js]].', [bm], 'concept');
-  n('SQLCipher', 'Verschlüsselt jede Seite der SQLite-Datenbank mit AES-256. Auf macOS über **CommonCrypto**.', [core], 'concept');
-  n('Argon2id', 'Speicherintensive Passwort-KDF. Wir nutzen 128 MiB, t=3, p=4 (~0,5 s).', [core], 'concept');
-  n('Tresor', 'Der DEK wird pro Slot gewrappt: Passwort ([[Argon2id]]), Recovery-Key, [[Touch ID]].', [core]);
-  n('Touch ID', 'LocalAuthentication + Keychain ohne UI. Nach Updates einmal Passwort.', [core]);
-  n('Tokio', 'Asynchrone Laufzeit für Rust mit Work-Stealing-Scheduler.', [core], 'concept');
-  n('MCP', 'Model Context Protocol: KIs rufen Tools von Servern auf. Wir nutzen rmcp über Streamable HTTP.', [bm], 'concept');
+    createNode({ title, body, kind, projects: ps.map((p) => p.id), tags: kind === 'concept' ? [concept] : [] }, reviewed);
+  n('Brainmatter', t('Lokaler Wissensgraph mit [[MCP]]-Hub. Kern in Rust: [[SQLCipher]], [[Tokio]]. UI mit [[Svelte 5]] und [[Sigma.js]].', 'Local knowledge graph with an [[MCP]] hub. Core in Rust: [[SQLCipher]], [[Tokio]]. UI with [[Svelte 5]] and [[Sigma.js]].'), [bm], 'concept');
+  n('SQLCipher', t('Verschlüsselt jede Seite der SQLite-Datenbank mit AES-256. Auf macOS über **CommonCrypto**.', 'Encrypts every page of the SQLite database with AES-256. On macOS through **CommonCrypto**.'), [core], 'concept');
+  n('Argon2id', t('Speicherintensive Passwort-KDF. Wir nutzen 128 MiB, t=3, p=4 (~0,5 s).', 'Memory-hard password KDF. We use 128 MiB, t=3, p=4 (~0.5 s).'), [core], 'concept');
+  n(T.vault, t('Der DEK wird pro Slot gewrappt: Passwort ([[Argon2id]]), Recovery-Key, [[Touch ID]].', 'The DEK is wrapped once per slot: password ([[Argon2id]]), recovery key, [[Touch ID]].'), [core]);
+  n('Touch ID', t('LocalAuthentication + Keychain ohne UI. Nach Updates einmal Passwort.', 'LocalAuthentication + Keychain without UI. After an update, the password once.'), [core]);
+  n('Tokio', t('Asynchrone Laufzeit für Rust mit Work-Stealing-Scheduler.', 'Async runtime for Rust with a work-stealing scheduler.'), [core], 'concept');
+  n('MCP', t('Model Context Protocol: KIs rufen Tools von Servern auf. Wir nutzen rmcp über Streamable HTTP.', 'Model Context Protocol: AIs call tools on servers. We use rmcp over Streamable HTTP.'), [bm], 'concept');
   n('Svelte 5', 'Runes: `$state`, `$derived`, `$effect`.', [ui], 'concept');
-  n('Sigma.js', 'WebGL-Graph-Rendering, 50k Knoten bei 60 fps in WKWebView.', [ui], 'source');
-  n('Command-Palette', '⌘K öffnet Suche und Aktionen. Verlinkt [[Svelte 5]].', [ui], 'task');
-  n('Graph-Layout', 'ForceAtlas2 im Worker, Positionen pro Ansicht gespeichert. Siehe [[Sigma.js]].', [ui]);
-  n('Hybrid-Suche', 'BM25 + Vektoren mit RRF. Kommt in Phase 4. Ergänzt [[SQLCipher]] FTS5.', [core], 'decision', false);
-  n('Sauerteig', 'Anstellgut 1:5:5 füttern, 12 h Gare bei 24 °C.', [life]);
-  n('Sauerteig ansetzen', 'Anstellgut im Verhältnis 1:5:5 füttern und 12 Stunden bei 24 Grad gehen lassen.', [life]);
-  n('Roggenbrot', 'Basiert auf [[Sauerteig]]. 70 % Roggen, 30 % Dinkel.', [life]);
-  n('Marathon-Plan', '16 Wochen, lange Läufe sonntags, Intervalle dienstags.', [life], 'task');
-  n('Code-Review', 'Prüfe {{datei}} auf {{thema}}. Nenne nur Fehler, keine Stilfragen.', [], 'template');
-  n('Übergabe', 'Fasse den Stand von {{projekt}} für die nächste Sitzung zusammen.', [bm], 'template', false);
+  n('Sigma.js', t('WebGL-Graph-Rendering, 50k Knoten bei 60 fps in WKWebView.', 'WebGL graph rendering, 50k nodes at 60 fps in WKWebView.'), [ui], 'source');
+  n(T.palette, t('⌘K öffnet Suche und Aktionen. Verlinkt [[Svelte 5]].', '⌘K opens search and actions. Links to [[Svelte 5]].'), [ui], 'task');
+  n(T.layout, t('ForceAtlas2 im Worker, Positionen pro Ansicht gespeichert. Siehe [[Sigma.js]].', 'ForceAtlas2 in a worker, positions saved per view. See [[Sigma.js]].'), [ui]);
+  n(T.hybrid, t('BM25 + Vektoren mit RRF. Kommt in Phase 4. Ergänzt [[SQLCipher]] FTS5.', 'BM25 + vectors with RRF. Comes in phase 4. Adds to [[SQLCipher]] FTS5.'), [core], 'decision', false);
+  n(T.sourdough, t('Anstellgut 1:5:5 füttern, 12 h Gare bei 24 °C.', 'Feed the starter 1:5:5, 12 h proof at 24 °C.'), [life]);
+  n(T.starter, t('Anstellgut im Verhältnis 1:5:5 füttern und 12 Stunden bei 24 Grad gehen lassen.', 'Feed the starter at 1:5:5 and let it rise for 12 hours at 24 degrees.'), [life]);
+  n(T.rye, t('Basiert auf [[Sauerteig]]. 70 % Roggen, 30 % Dinkel.', 'Based on [[Sourdough]]. 70 % rye, 30 % spelt.'), [life]);
+  n(T.marathon, t('16 Wochen, lange Läufe sonntags, Intervalle dienstags.', '16 weeks, long runs on Sundays, intervals on Tuesdays.'), [life], 'task');
+  n(t('Code-Review', 'Code review'), t('Prüfe {{datei}} auf {{thema}}. Nenne nur Fehler, keine Stilfragen.', 'Check {{file}} for {{topic}}. Name only bugs, no matters of style.'), [], 'template');
+  n(t('Übergabe', 'Handover'), t('Fasse den Stand von {{projekt}} für die nächste Sitzung zusammen.', 'Sum up where {{project}} stands, for the next session.'), [bm], 'template', false);
   const ids = [...nodes.values()];
-  const guide = addDoc(bm.id, 'Handbuch', '# Überblick\n\nBrainmatter hält dein Wissen lokal und verschlüsselt. Diese Seite erklärt, wie die Teile zusammenspielen.\n\n## Der Tresor\n\nAlles liegt in einem Tresor, den dein Passwort oder Touch ID öffnet. Ohne eines von beiden kommt niemand an die Daten, auch keine KI.\n\n## Verbindungen\n\nEinträge verbinden sich über Links im Text oder über benannte Beziehungen.\n\n```sh\nbun run tauri dev\n```\n\n## KI-Zugriff\n\nJede KI bekommt ihr eigenes Token und sieht nur, was du erlaubst.');
-  addDoc(bm.id, 'Installation', '# Installation\n\nZiehe die App in den Programme-Ordner und starte sie.', guide.id);
-  const architecture = addDoc(bm.id, 'Architektur', '# Architektur\n\nDer Kern ist in Rust geschrieben.');
-  guide.tags = ['handbuch', 'start'];
-  architecture.tags = ['handbuch'];
+  const guide = addDoc(
+    bm.id,
+    t('Handbuch', 'Handbook'),
+    t(
+      '# Überblick\n\nBrainmatter hält dein Wissen lokal und verschlüsselt. Diese Seite erklärt, wie die Teile zusammenspielen.\n\n## Der Tresor\n\nAlles liegt in einem Tresor, den dein Passwort oder Touch ID öffnet. Ohne eines von beiden kommt niemand an die Daten, auch keine KI.\n\n## Verbindungen\n\nEinträge verbinden sich über Links im Text oder über benannte Beziehungen.\n\n```sh\nbun run tauri dev\n```\n\n## KI-Zugriff\n\nJede KI bekommt ihr eigenes Token und sieht nur, was du erlaubst.',
+      '# Overview\n\nBrainmatter keeps your knowledge local and encrypted. This page explains how the parts fit together.\n\n## The vault\n\nEverything sits in a vault that your password or Touch ID opens. Without one of them, nobody gets at the data, no AI either.\n\n## Links\n\nEntries connect through links in the text or through named relations.\n\n```sh\nbun run tauri dev\n```\n\n## AI access\n\nEach AI gets its own token and sees only what you allow.',
+    ),
+  );
+  addDoc(bm.id, 'Installation', t('# Installation\n\nZiehe die App in den Programme-Ordner und starte sie.', '# Installation\n\nDrag the app into Applications and open it.'), guide.id);
+  const architecture = addDoc(bm.id, t('Architektur', 'Architecture'), t('# Architektur\n\nDer Kern ist in Rust geschrieben.', '# Architecture\n\nThe core is written in Rust.'));
+  const handbook = t('handbuch', 'handbook');
+  guide.tags = [handbook, 'start'];
+  architecture.tags = [handbook];
   addEdge(ids[3].id, ids[1].id, 'depends_on');
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
   const H = 3_600_000;
   const byTitle = (t: string) => ids.find((x) => x.title === t)!.id;
   clients.push({ id: id(), name: 'Claude Code', scopes: ['read', 'write'], projects: [], created_at: now() - 72 * H, last_seen_at: now() - 6 * 60_000 });
   clients.push({ id: id(), name: 'Cursor', scopes: ['read'], projects: [core.id], created_at: now() - 50 * H, last_seen_at: null });
-  record('Demo-Daten angelegt', [], { ago: 72 * H });
-  record('„Marathon-Plan“ erstellt', [byTitle('Marathon-Plan')], { ago: 50 * H });
-  record('5 Einträge, 4 Verbindungen erfasst', ['Brainmatter', 'SQLCipher', 'Argon2id', 'Tresor', 'Touch ID'].map(byTitle),
+  // Summaries are stored German, as the core writes them; the interface translates them.
+  record(t('Demo-Daten angelegt', 'Created the demo data'), [], { ago: 72 * H });
+  record(`„${T.marathon}“ erstellt`, [byTitle(T.marathon)], { ago: 50 * H });
+  record('5 Einträge, 4 Verbindungen erfasst', ['Brainmatter', 'SQLCipher', 'Argon2id', T.vault, 'Touch ID'].map(byTitle),
     { actor: 'Claude Code', client: 'claude-code', ago: 27 * H });
-  record('„Roggenbrot“ bearbeitet', [byTitle('Roggenbrot')], { ago: 26 * H, reverted: true });
-  record('Projekt „Privat“ erstellt', [], { ago: 5 * H });
-  record('„Hybrid-Suche“ erstellt', [byTitle('Hybrid-Suche')], { actor: 'Cursor', client: 'cursor', ago: 3 * H });
-  record('„Sauerteig“ gelöscht', [byTitle('Sauerteig')], { actor: 'Codex', client: 'codex', ago: 2 * H, reverted: true });
+  record(`„${T.rye}“ bearbeitet`, [byTitle(T.rye)], { ago: 26 * H, reverted: true });
+  record(`Projekt „${T.life}“ erstellt`, [], { ago: 5 * H });
+  record(`„${T.hybrid}“ erstellt`, [byTitle(T.hybrid)], { actor: 'Cursor', client: 'cursor', ago: 3 * H });
+  record(`„${T.sourdough}“ gelöscht`, [byTitle(T.sourdough)], { actor: 'Codex', client: 'codex', ago: 2 * H, reverted: true });
   record('Verbindung erstellt', [], { actor: 'Claude Code', client: 'claude-code', ago: 40 * 60_000 });
-  record('„Tresor“ bearbeitet', [byTitle('Tresor')], { actor: 'Claude Code', client: 'claude-code', ago: 6 * 60_000 });
+  record(`„${T.vault}“ bearbeitet`, [byTitle(T.vault)], { actor: 'Claude Code', client: 'claude-code', ago: 6 * 60_000 });
 }
 
 const handlers: Record<string, (a: Args) => unknown> = {
