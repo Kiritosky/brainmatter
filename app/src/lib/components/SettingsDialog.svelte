@@ -283,7 +283,7 @@
                   <button class="btn-primary flex-1" onclick={() => (newRecovery = '')}>{t('Gesichert', 'Saved it')}</button>
                 </div>
               {:else}
-                <p class="mb-3 text-xs text-muted">{t('Erstellt einen neuen Schlüssel und macht den alten ungültig, etwa wenn er in falsche Hände geraten sein könnte.', 'Creates a new key and voids the old one, if it may have fallen into the wrong hands, say.')}</p>
+                <p class="mb-3 text-xs text-muted">{t('Erstellt einen neuen Schlüssel und macht den alten ungültig, etwa wenn er in falsche Hände geraten sein könnte.', 'Creates a new key and voids the old one, for example if it may have fallen into the wrong hands.')}</p>
                 <form class="flex gap-2" onsubmit={rotateRecovery}>
                   <input class="field flex-1" type="password" placeholder={t('Aktuelles Passwort', 'Current password')} bind:value={recoveryPassword} />
                   <button class="btn-ghost" disabled={busy || !recoveryPassword}>{t('Neu erstellen', 'Create new key')}</button>

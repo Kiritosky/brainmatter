@@ -11,7 +11,7 @@ Deine KIs greifen jetzt von selbst zu Brainmatter, statt jede Sitzung bei null a
 - **Klarere Hinweise für jede KI:** Der MCP-Server sagt jeder verbundenen KI genauer, wann sie nachschlagen und wann sie speichern soll.
 
 ### Behoben
-- Die Suche nach Sinn nutzt eine Bibliothek ohne die bekannten Sicherheitslücken beim Lesen von ZIP-Dateien.
+- Die Suche nach Sinn hängt nicht mehr von einer ZIP-Bibliothek mit bekannten Sicherheitslücken ab.
 - Die Fehlermeldungen im Browser-Demo folgen jetzt der Sprache der Oberfläche.
 
 ## 1.1.0 · 2026-11-04

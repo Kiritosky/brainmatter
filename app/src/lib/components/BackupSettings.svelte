@@ -150,7 +150,7 @@
 <p class="mb-5 text-muted">
   {t(
     'Verschlüsselte Sicherungen deiner Einträge. Sie liegen neben dem Tresor und schützen vor Bedienfehlern und beschädigten Daten. Gegen den Verlust des Macs hilft eine Kopie an einem zweiten Ort.',
-    'Encrypted copies of your entries. They sit next to the vault and protect against mistakes and damaged data. Against losing the Mac, a copy in a second place helps.',
+    'Encrypted copies of your entries. They sit next to the vault and protect against mistakes and damaged data. If the Mac is lost, only a copy in a second place helps.',
   )}
 </p>
 

@@ -381,7 +381,7 @@
     <p class="mt-2 mb-6 max-w-sm leading-relaxed text-muted">
       {t(
         `Starte ${name} einmal neu, dann steht Brainmatter dort zur Verfügung. Ist die App gesperrt, fragt Touch ID nach, bevor die KI zugreifen darf.`,
-        `Restart ${name} once, and Brainmatter is there. While the app is locked, Touch ID asks before the AI client gets in.`,
+        `Restart ${name} once, and Brainmatter is there. While the app is locked, you confirm with Touch ID before the AI client can read anything.`,
       )}
     </p>
     {#if memory && integration?.rule}
@@ -414,7 +414,7 @@
   <p class="mb-5 text-xs leading-relaxed text-faint">
     {t(
       'Danach die KI neu starten. Sie findet Brainmatter dann als MCP-Server. Ist die App gesperrt, fragt Touch ID nach, bevor sie zugreifen darf.',
-      'Then restart the AI client. It finds Brainmatter as an MCP server. While the app is locked, Touch ID asks before it gets in.',
+      'Then restart the AI client. It finds Brainmatter as an MCP server. While the app is locked, you confirm with Touch ID before it can read anything.',
     )}
   </p>
   <button class="btn-primary" onclick={() => ((token = ''), (view = 'list'))}>{t('Fertig', 'Done')}</button>

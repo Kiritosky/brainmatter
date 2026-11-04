@@ -128,15 +128,15 @@
           </button>
         </form>
         <button class="mt-4 w-full text-center text-xs text-muted transition-colors hover:text-text" onclick={() => goTo('adopt')}>
-          {t('Schon Brainmatter genutzt? Aus einem Backup übernehmen', 'Used Brainmatter before? Take over a backup')}
+          {t('Schon Brainmatter genutzt? Aus einem Backup übernehmen', 'Used Brainmatter before? Restore from a backup')}
         </button>
       {:else if step === 'adopt'}
         <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent"><HardDrive size={22} /></div>
-        <h1 class="text-xl font-semibold tracking-tight">{t('Aus einem Backup übernehmen', 'Take over a backup')}</h1>
+        <h1 class="text-xl font-semibold tracking-tight">{t('Aus einem Backup übernehmen', 'Restore from a backup')}</h1>
         <p class="mt-1 mb-5 leading-relaxed text-muted">
           {t(
             'Wähle den Ordner „Brainmatter-Backup“, etwa auf deinem externen Laufwerk. Das Master-Passwort von damals öffnet ihn, und das neueste Backup wird dein Tresor.',
-            'Choose the “Brainmatter-Backup” folder, on your external drive, say. The master password from back then opens it, and the newest backup becomes your vault.',
+            'Choose the “Brainmatter-Backup” folder, for example on your external drive. The master password you used then opens it, and the newest backup becomes your vault.',
           )}
         </p>
         <form class="flex flex-col gap-3.5" onsubmit={adopt}>

@@ -6,7 +6,7 @@ Found a security problem? Please follow [SECURITY.md](SECURITY.md) instead of op
 
 ## Set up
 
-You need [Rust](https://rustup.rs) (the version in `rust-toolchain.toml` installs itself) and [Bun](https://bun.sh). The desktop app builds on macOS only for now. The core, the MCP server and the interface also build on Linux, which is what CI uses.
+You need [Rust](https://rustup.rs) (the version in `rust-toolchain.toml` installs itself) and [Bun](https://bun.sh). The desktop app builds on macOS 13 or newer with the Xcode Command Line Tools. The core, the MCP server and the interface also build on Linux, which is what CI uses.
 
 ```sh
 git clone https://github.com/Kiritosky/brainmatter
@@ -40,13 +40,13 @@ cargo test --workspace
 cd app && bun run check && bun run test
 ```
 
-If you changed the interface, also run `bun scripts/screens.ts` in `app/` with `bun run dev` running. It clicks through the whole app against the mock, once in German and once in English, saves screenshots and fails on page errors or on German words left in the English interface.
+If you changed the interface, also run `bun scripts/screens.ts [outDir]` in `app/` with `bun run dev` running (the first time, `bunx playwright install chromium` fetches the browser). It clicks through the whole app against the mock, once in German and once in English, saves screenshots and fails on page errors or on German words left in the English interface.
 
 ## Conventions
 
 - **Both languages.** Every text in the interface comes as a pair, `t('Speichern', 'Save')`, German first. In Rust it is `tr("…", "…")`. If your German is shaky, write your best guess and say so in the pull request.
 - **Changelog.** A change people will notice gets a line in both `CHANGELOG.md` (German) and `CHANGELOG.en.md` under the next version. Write it for users, not developers.
-- **Commits** start with `feat:`, `fix:`, `perf:`, `docs:` or `refactor:` and say what changed for the user, such as `fix: links ignore case also for umlauts`.
+- **Commits** start with `feat:`, `fix:`, `perf:`, `docs:`, `refactor:`, `test:`, `ci:` or `chore:` and say what changed, for the user where there is one, such as `fix: links ignore case also for umlauts`. Releases are `release: 1.2.0`.
 - **Tests** for new behaviour in the core and the MCP server. Tool answers have a size budget (`crates/bm-mcp/tests/token_cost.rs`), so keep them short.
 - **Comments** explain why, not what. Plain words over jargon.
 - **No new dependency** without a reason in the pull request. The app is meant to stay small and fast.

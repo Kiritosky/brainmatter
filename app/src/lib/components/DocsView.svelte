@@ -220,7 +220,7 @@
     </div>
 
     <div class="border-t border-line-soft p-2">
-      <div class="flex items-center pl-1.5" title={t('Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein. Speicherst du dort, ist die Seite einen Moment später auch hier.', 'Mirrors a repo’s docs folder, say, read-only. Save a file there, and the page is here a moment later.')}>
+      <div class="flex items-center pl-1.5" title={t('Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein. Speicherst du dort, ist die Seite einen Moment später auch hier.', 'Mirrors a folder read-only, such as a repo’s docs folder. Save a file there, and the page is here a moment later.')}>
         <span class="section-title !mb-0 flex-1">{t('Aus Dateien', 'From files')}</span>
         <button class="icon-btn !h-6 !w-6" aria-label={t('Doku-Ordner einbinden', 'Mirror a docs folder')} title={t('Doku-Ordner einbinden', 'Mirror a docs folder')} onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={13} /></button>
         <button class="icon-btn !h-6 !w-6" aria-label={t('Markdown-Datei einbinden', 'Mirror a Markdown file')} title={t('Markdown-Datei einbinden', 'Mirror a Markdown file')} onclick={() => act(() => api.addDocSource(project, false))}><FilePlus size={13} /></button>
@@ -228,7 +228,7 @@
       {#each sources as s (s.id)}
         <div class="group flex items-center gap-1.5 rounded-md py-1 pr-0.5 pl-1.5 hover:bg-elevated" title={s.path}>
           {#if unreachable.includes(s.path)}
-            <span title={t('Gerade nicht erreichbar. Die Seiten bleiben, bis der Ordner wieder da ist.', 'Out of reach right now. The pages stay until the folder is back.')}><TriangleAlert size={12} class="shrink-0 text-warn" /></span>
+            <span title={t('Gerade nicht erreichbar. Die Seiten bleiben, bis der Ordner wieder da ist.', 'Not available right now. The pages stay until the folder is back.')}><TriangleAlert size={12} class="shrink-0 text-warn" /></span>
           {/if}
           <span class="min-w-0 flex-1 truncate text-xs text-muted">{s.path.split('/').pop()}</span>
           <span class="text-[11px] text-faint tabular-nums">{s.pages}</span>

@@ -141,7 +141,7 @@
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
       {#if step === 0}
         <h3 class="font-medium">{t('Womit möchtest du anfangen?', 'What would you like to start with?')}</h3>
-        <p class="mt-0.5 mb-3 text-xs leading-relaxed text-muted">{t('Eine Vorlage ist ein Text, den du immer wieder brauchst. Was sich jedes Mal ändert, trägst du beim Verwenden ein.', 'A template is a text you need again and again. What changes each time, you fill in when you use it.')}</p>
+        <p class="mt-0.5 mb-3 text-xs leading-relaxed text-muted">{t('Eine Vorlage ist ein Text, den du immer wieder brauchst. Was sich jedes Mal ändert, trägst du beim Verwenden ein.', 'A template is a text you need again and again. You fill in the parts that change each time you use it.')}</p>
         <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t('Art der Vorlage', 'Kind of template')}>
           {#each STARTERS as s (s.id)}
             <button class="rounded-lg border p-3 text-left transition-colors {starter === s.id ? 'border-accent/70 bg-text/5' : 'border-line-soft hover:border-line hover:bg-text/3'}"

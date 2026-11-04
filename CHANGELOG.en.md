@@ -7,11 +7,11 @@ This text appears in the app when it runs in English, and above the German versi
 Your AI tools now turn to Brainmatter on their own instead of starting every session from scratch.
 
 ### New
-- **Brainmatter as memory:** When you connect an AI client, Brainmatter can add a short rule to its instructions: `~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for Codex, `~/.cursor/rules` for Cursor. It then looks things up before every task and saves decisions, findings and your corrections unasked. For Claude Desktop and any other AI client with MCP, you get the rule to copy. Existing connections get a switch for it under Settings → AI connections.
+- **Brainmatter as memory:** When you connect an AI client, Brainmatter can add a short rule to its instructions: `~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for Codex, `~/.cursor/rules` for Cursor. It then looks things up before every task and saves decisions, findings and your corrections without being asked. For Claude Desktop and any other AI client with MCP, you get the rule to copy. Existing connections get a switch for it under Settings → AI connections.
 - **Clearer hints for every AI client:** The MCP server tells every connected AI client more precisely when to look things up and when to save.
 
 ### Fixed
-- Search by meaning uses a library without the known security holes in reading ZIP files.
+- Search by meaning no longer depends on a ZIP library with known vulnerabilities.
 - The in-browser demo's error messages now follow the interface language.
 
 ## 1.1.0 · 2026-11-04
@@ -22,7 +22,7 @@ Brainmatter now speaks English, brings in your notes from other apps, and can ke
 - **English:** The app follows the language of macOS. If German comes first in System Settings, everything stays German; otherwise it is English.
 - **Import Markdown:** A folder from Obsidian, Logseq or a Brainmatter export becomes entries. Folders become projects, front matter becomes tags and kind, links between the files become links. You see what is coming first, and the whole import can be undone with one click. Find it under Settings → Backups.
 - **Backups in a second place:** Every backup can also go to an external drive or another folder. If the drive is not there, Brainmatter catches up as soon as it is plugged in again.
-- **Carry on on a new Mac:** During setup, choose “Take over a backup”, point to the folder and open it with the master password from back then.
+- **Carry on on a new Mac:** During setup, choose “Restore from a backup”, point to the folder and open it with the master password you used then.
 - **Docs follow their files live:** Mirrored docs folders update as soon as you save there, not only when you open the docs.
 - **Brainmatter in the menu bar:** A click on the icon shows whether the vault is open, what the AIs changed last, and a search. You can unlock right there, with Touch ID or the password. A right click opens the menu as before.
 - **Only in the menu bar while the window is closed:** Close the window and Brainmatter leaves the Dock and ⌘Tab, and keeps running up top.
