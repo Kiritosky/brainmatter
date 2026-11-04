@@ -24,9 +24,9 @@ jobs:
       TARGET: aarch64-apple-darwin
       VERSION: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: The tag must match the version in the code
         run: |
@@ -69,6 +69,11 @@ jobs:
           cargo build --release -p bm-cli
           mkdir -p app/src-tauri/binaries
           cp target/release/brainmatter-mcp "app/src-tauri/binaries/brainmatter-mcp-$TARGET"
+
+      # CI on Linux cannot build the macOS-only crates and the app, so they are
+      # linted here.
+      - name: Lint everything
+        run: cargo clippy --workspace --release --all-targets -- -D warnings
 
       # In release mode, so the app build below reuses these compiled dependencies
       # instead of building everything a second time.
@@ -113,7 +118,7 @@ jobs:
             printf '\n</details>\n'
             sed "s/VERSION/${VERSION#v}/" .github/release-footer.md
           } > release.md
-          gh release create "$VERSION" --notes-file release.md --verify-tag \
+          gh release create "$VERSION" --title "Brainmatter ${VERSION#v}" --notes-file release.md --verify-tag \
             "$bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
             "$bundle/macos/Brainmatter.app.tar.gz" \
             "$bundle/macos/Brainmatter.app.tar.gz.sig" \
