@@ -10,7 +10,7 @@ bm-core.workspace = true
 candle-core = { version = "0.11", features = ["metal"] }
 candle-nn = { version = "0.11", features = ["metal"] }
 candle-transformers = { version = "0.11", features = ["metal"] }
-tokenizers = "0.22"
+tokenizers = "0.23"
 hf-hub = { version = "0.5", default-features = false, features = ["ureq", "rustls-tls"] }
 sha2 = "0.10"
 serde_json.workspace = true
