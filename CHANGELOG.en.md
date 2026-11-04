@@ -1,6 +1,6 @@
 # What's new
 
-This text appears in the app when it runs in English. The German version, [CHANGELOG.md](CHANGELOG.md), is the one the release notes on GitHub come from; every version there needs its entry here too.
+This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
 ## 1.2.0
 

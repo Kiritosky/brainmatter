@@ -26,7 +26,7 @@ use bm_core::{
     time::now_ms,
     vault::{BACKUPS_DIR, BLOBS_DIR, KdfParams, RecoveryKey, SecretKey, SlotKind},
 };
-use bm_embed::{DOWNLOAD_BYTES, E5Embedder, ModelStore};
+use bm_embed::{DOWNLOAD_BYTES, E5Embedder, ModelError, ModelStore};
 use bm_macos::{biometrics, keychain, power::LockTrigger, watch::Watcher};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -785,7 +785,7 @@ impl Session {
                 Ok(()) => Download::Idle,
                 Err(e) => {
                     tracing::warn!("model download failed: {e}");
-                    Download::Failed(e.to_string())
+                    Download::Failed(download_error(&e))
                 }
             };
             session.start_indexer();
@@ -971,6 +971,30 @@ impl Session {
 fn open_engine(dir: &Path, vault: &Vault, keys: &VaultKeys) -> ApiResult<Engine> {
     let blobs = BlobStore::new(dir.join(BLOBS_DIR), &keys.blob_key());
     Ok(Engine::open(&vault.db_path(), &keys.db_key(), READERS)?.with_blobs(blobs))
+}
+
+/// The settings page shows this, so it is in the interface language. The detail
+/// comes from the network or file system and stays as it is.
+fn download_error(e: &ModelError) -> String {
+    let german = crate::i18n::german();
+    match e {
+        ModelError::Download(detail) => match german {
+            true => format!("Download fehlgeschlagen: {detail}"),
+            false => format!("Download failed: {detail}"),
+        },
+        ModelError::Corrupt(file) => match german {
+            true => format!("{file} stimmt nicht mit der erwarteten Prüfsumme überein."),
+            false => format!("{file} does not match the expected checksum."),
+        },
+        ModelError::Load(detail) => match german {
+            true => format!("Das Modell konnte nicht geladen werden: {detail}"),
+            false => format!("The model could not be loaded: {detail}"),
+        },
+        ModelError::Io(detail) => match german {
+            true => format!("Die Modelldateien konnten nicht gespeichert werden: {detail}"),
+            false => format!("The model files could not be saved: {detail}"),
+        },
+    }
 }
 
 fn check_password(password: &str) -> ApiResult<()> {

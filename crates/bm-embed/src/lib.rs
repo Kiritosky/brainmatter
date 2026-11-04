@@ -41,11 +41,11 @@ const BATCH: usize = 16;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {
-    #[error("Download fehlgeschlagen: {0}")]
+    #[error("download failed: {0}")]
     Download(String),
-    #[error("{0} stimmt nicht mit der erwarteten Prüfsumme überein")]
+    #[error("{0} does not match the expected checksum")]
     Corrupt(String),
-    #[error("Modell konnte nicht geladen werden: {0}")]
+    #[error("model could not be loaded: {0}")]
     Load(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),

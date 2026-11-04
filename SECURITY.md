@@ -46,7 +46,7 @@ The plaintext `vault.header` holds the KDF parameters and the wrapped keys, neve
 
 ## Touch ID without an Apple Developer account
 
-Releases are signed with a self-signed certificate. The Touch ID key sits in the login Keychain, and the app reads it only after `LocalAuthentication` has confirmed a fingerprint. This is a software gate, not a Secure Enclave binding: a process running as you that may read that Keychain item could skip the fingerprint. The cryptographic root stays the password.
+Releases from GitHub are signed ad hoc, without an Apple Developer ID. Builds made with `scripts/build-release.sh` use the self-signed identity from `scripts/create-signing-cert.sh`. The Touch ID key sits in the login Keychain, and the app reads it only after `LocalAuthentication` has confirmed a fingerprint. This is a software gate, not a Secure Enclave binding: a process running as you that may read that Keychain item could skip the fingerprint. The cryptographic root stays the password.
 
 macOS binds such Keychain items to the binary, so after every update the item can no longer be read. The app then asks for the password once and sets Touch ID up again.
 

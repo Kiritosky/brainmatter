@@ -1,5 +1,5 @@
-//! Errors as the UI sees them: a stable `code` to branch on, a German message
-//! to show, and candidates for ambiguous or unknown references.
+//! Errors as the UI sees them: a stable `code` to branch on, a message in the
+//! interface language, and candidates for ambiguous or unknown references.
 
 use crate::i18n::tr;
 use bm_core::{CoreError, VaultError, mirror::MirrorError, model::NodeBrief};
