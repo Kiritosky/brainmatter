@@ -111,6 +111,23 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${nam
     await page.keyboard.press('Escape');
     await page.getByRole('radio', { name: 'Graph' }).click().catch(() => {});
 
+    // Skills, with an import from GitHub on top.
+    await page.getByRole('button', { name: 'Library', exact: true }).click();
+    await page.getByRole('radio', { name: 'Skills' }).click();
+    await page.getByText('Writing release notes', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    const importer = page.getByRole('dialog', { name: 'Import skills from GitHub' });
+    await importer.getByLabel('GitHub address').fill('example/agent-skills');
+    await importer.getByRole('button', { name: 'Load preview' }).click();
+    await importer.getByText('updates “pdf-forms”').waitFor();
+    await page.waitForTimeout(500);
+    await shot(page, 'skills');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (await page.getByRole('radio', { name: 'Skills' }).count()) {
+      await page.getByRole('button', { name: 'Library', exact: true }).click();
+    }
+
     // The light theme.
     await page.keyboard.press('Meta+,');
     await settings.getByRole('button', { name: 'General', exact: true }).click();

@@ -30,6 +30,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - Type `/` to pick a heading, list, table or any other format, without knowing the Markdown for it
 - Full-text search in German and English, and optionally by meaning, with a local model that also flags likely duplicates and suggests links
 - Quick capture from anywhere with ⌥⇧Space, into the project of your choice
+- Lives in the menu bar while the window is closed: unlock, search, and see what the AI clients changed last
 - Projects nested to any depth, an entry can be in several of them, and wherever you assign one you can search for it
 
 **See how it connects**
@@ -41,6 +42,8 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 
 **AI access you stay in control of**
 - Set up Claude Code, Claude Desktop, Cursor and Codex in one click
+- With one switch, a short rule tells the AI client to look things up in Brainmatter before a task and to save what the next session needs, without being asked
+- A skill vault: instructions your AI tools load by themselves when a task fits, per project or for everything, editable in the app, and importable from GitHub in the Agent Skills format
 - Each client gets its own token, limited to read, write or delete, and optionally to certain projects
 - Whatever an AI writes is attributed to it and marked as unreviewed until you have seen it
 - Every change can be undone, one step at a time, and the graph shows live what an AI is doing
@@ -72,7 +75,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
   </tr>
   <tr>
     <td><img src="docs/screenshots/light.png" alt="The light theme with an entry open" /></td>
-    <td></td>
+    <td><img src="docs/screenshots/skills.png" alt="Importing skills from a GitHub repository" /></td>
   </tr>
 </table>
 
@@ -119,6 +122,7 @@ Clients that only speak stdio can use the bridge inside the app bundle, `Brainma
 | `list_docs`, `read_doc`, `write_doc` | Project documentation |
 | `delete`, `trash`, `restore`, `revert` | Removing and undoing |
 | `list_templates`, `get_template`, `save_template` | Reusable templates and prompts |
+| `list_skills`, `get_skill`, `save_skill` | Skills: instructions a model loads when a task fits |
 
 Connected models also get commands you can call by name, in Claude Code as `/mcp__brainmatter__setup-project`:
 
@@ -130,7 +134,9 @@ Connected models also get commands you can call by name, in Claude Code as `/mcp
 | `recall` | Answers a question from what Brainmatter knows |
 | `tidy-project` | Merges duplicates, links loose entries and sorts them into subprojects |
 
-Models are also told to save decisions, findings and your corrections without being asked, so what one model learns is there for the next.
+Models are also told to save decisions, findings and your corrections without being asked, so what one model learns is there for the next. When you connect a client, Brainmatter can also put a short rule into its own instructions (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` or a Cursor rule) so it turns to Brainmatter before every task. For other clients, the settings give you the rule to copy.
+
+Skills are the vault's answer to scattered prompt files: a description that says when to use them, instructions, and optional files such as scripts. A model sees the descriptions through `list_skills` and loads a skill with `get_skill` when the task fits, whichever client it runs in. Import them from any public GitHub repository that uses the [Agent Skills](https://agentskills.io) layout, a folder with a `SKILL.md`, and update them from there later. An export writes them back in that layout, ready for `~/.claude/skills`. Reviewed skills also appear as prompts, such as `/mcp__brainmatter__skill-pdf-forms`.
 
 Templates you have reviewed also appear as MCP prompts, so in Claude Code a template called "Code Review" becomes `/mcp__brainmatter__code-review`. A reviewed template named like a command replaces it, which is how you adapt one. Whatever an AI writes or changes in a template stays out of that list until you have looked at it, and connected clients are told when the list changes.
 
