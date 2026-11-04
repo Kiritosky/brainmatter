@@ -508,7 +508,9 @@ pub fn rule_text(write: bool) -> String {
          Brainmatter (MCP server `{SERVER_NAME}`) is my knowledge graph and your long-term memory, \
          shared with my other AI tools and sessions.\n\
          - Before you start a task, look up what is already known: `project_overview` for the \
-         project, `search` for the topic.\n"
+         project, `search` for the topic.\n\
+         - If a task matches one of my skills (`list_skills`), load it with `get_skill` and \
+         follow it.\n"
     );
     if write {
         text.push_str(
@@ -777,6 +779,18 @@ mod tests {
         i.set_rule(Target::ClaudeCode, None).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), mine);
         assert!(!i.has_rule(Target::ClaudeCode));
+    }
+
+    #[test]
+    fn both_rules_point_to_the_skills_right_after_looking_things_up() {
+        let skills = "- If a task matches one of my skills (`list_skills`), load it with \
+                      `get_skill` and follow it.\n";
+        for write in [true, false] {
+            let rule = rule_text(write);
+            let look_up = rule.find("- Before you start a task").unwrap();
+            let next = look_up + rule[look_up..].find('\n').unwrap() + 1;
+            assert!(rule[next..].starts_with(skills), "{rule}");
+        }
     }
 
     #[test]
