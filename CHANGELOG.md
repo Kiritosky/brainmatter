@@ -12,6 +12,8 @@ Brainmatter spricht jetzt auch Englisch, holt deine Notizen aus anderen Apps und
 - **Backups an einem zweiten Ort:** Jedes Backup landet auf Wunsch auch auf einem externen Laufwerk oder in einem anderen Ordner. Ist das Laufwerk gerade nicht da, holt Brainmatter die Kopie nach, sobald es wieder angeschlossen ist.
 - **Auf einem neuen Mac weitermachen:** Beim Einrichten „Aus einem Backup übernehmen“ wählen, den Ordner zeigen und mit dem Master-Passwort von damals öffnen.
 - **Doku folgt ihren Dateien live:** Eingebundene Doku-Ordner aktualisieren sich, sobald du dort speicherst, nicht erst beim Öffnen der Doku.
+- **Brainmatter in der Menüleiste:** Ein Klick auf das Symbol zeigt, ob der Tresor offen ist, was die KIs zuletzt geändert haben, und eine Suche. Entsperren geht direkt dort, per Touch ID oder Passwort. Ein Rechtsklick öffnet das Menü wie bisher.
+- **Nur noch in der Menüleiste, wenn das Fenster zu ist:** Schließt du das Fenster, verschwindet Brainmatter aus dem Dock und aus ⌘Tab und läuft oben weiter.
 
 ### Verbessert
 - **Große Tresore:** Entsperren und Suchen sind bei 50.000 Einträgen schneller, und eine Änderung lädt nur noch, was sie betrifft, statt des ganzen Graphen.

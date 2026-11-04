@@ -5,6 +5,7 @@ import {
   errorMessage,
   onDomainEvent,
   onModel,
+  onOpen,
   onResync,
   onUpdateAvailable,
   type Actor,
@@ -324,6 +325,13 @@ class Workspace {
       }),
     );
     this.unlisten.push(await onUpdateAvailable((u) => (this.update = u)));
+    // The menu bar panel points at an entry or at what the AIs did.
+    this.unlisten.push(
+      await onOpen((target) => {
+        if (target.panel) this.panel = target.panel;
+        if (target.entry) this.select(target.entry, true);
+      }),
+    );
     this.unlisten.push(
       await onModel((m) => {
         this.model = m;

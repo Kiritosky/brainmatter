@@ -12,6 +12,8 @@ Brainmatter now speaks English, brings in your notes from other apps, and can ke
 - **Backups in a second place:** Every backup can also go to an external drive or another folder. If the drive is not there, Brainmatter catches up as soon as it is plugged in again.
 - **Carry on on a new Mac:** During setup, choose “Take over a backup”, point to the folder and open it with the master password from back then.
 - **Docs follow their files live:** Mirrored docs folders update as soon as you save there, not only when you open the docs.
+- **Brainmatter in the menu bar:** A click on the icon shows whether the vault is open, what the AIs changed last, and a search. You can unlock right there, with Touch ID or the password. A right click opens the menu as before.
+- **Only in the menu bar while the window is closed:** Close the window and Brainmatter leaves the Dock and ⌘Tab, and keeps running up top.
 
 ### Improved
 - **Large vaults:** Unlocking and searching are faster at 50,000 entries, and a change loads only what it touched instead of the whole graph.

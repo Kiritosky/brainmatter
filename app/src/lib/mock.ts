@@ -746,6 +746,9 @@ const handlers: Record<string, (a: Args) => unknown> = {
   install_update: () => undefined,
   hide_capture: () => undefined,
   show_main_window: () => undefined,
+  hide_tray: () => undefined,
+  open_in_main: () => undefined,
+  toggle_capture: () => undefined,
   backup_status: () => backupStatus(),
   backup_now: () => {
     const b = { name: `backup-${now()}.db`, at: now(), size: 2_450_000 };

@@ -1135,6 +1135,39 @@ try {
   await capture.close();
 }
 
+// The menu bar panel: unlock right there, then the latest changes and a search.
+{
+  const tray = await context.newPage();
+  await tray.setViewportSize({ width: 356, height: 520 });
+  tray.on('pageerror', (e) => errors.push(`tray: ${e.message}`));
+  try {
+    await tray.goto(`${BASE}/?window=tray&touchid=ok`);
+    await tray.getByRole('button', { name: 'Mit Touch ID entsperren' }).waitFor();
+    await tray.waitForTimeout(300);
+    await shot(tray, '87-tray-locked');
+    await tray.getByPlaceholder('Master-Passwort').fill('falsch');
+    await tray.keyboard.press('Enter');
+    await tray.getByText('Falsches Passwort').waitFor();
+    await tray.getByPlaceholder('Master-Passwort').fill('demo1234');
+    await tray.keyboard.press('Enter');
+    await tray.getByText('Zuletzt').waitFor();
+    await tray.locator('.change').first().waitFor();
+    await tray.waitForTimeout(300);
+    await shot(tray, '88-tray-open');
+    await tray.getByPlaceholder('Einträge suchen …').fill('sig');
+    await tray.getByRole('option', { name: 'Sigma.js' }).waitFor();
+    await shot(tray, '89-tray-search');
+    await tray.keyboard.press('Escape');
+    await tray.getByText('Zuletzt').waitFor();
+    await tray.getByRole('button', { name: 'Sperren' }).click();
+    await tray.getByRole('button', { name: 'Mit Touch ID entsperren' }).waitFor();
+  } catch (e) {
+    await shot(tray, 'zz-tray-failure');
+    errors.push(`tray failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await tray.close();
+}
+
 // After an update the app says once what changed, back to the last seen version.
 {
   const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'de-DE' });
@@ -1259,6 +1292,15 @@ try {
     }
     await settings.getByRole('radio', { name: 'For AI' }).click();
     await german('settings, help for AI');
+    await page.keyboard.press('Escape');
+
+    await page.goto(`${BASE}/?window=tray`);
+    await page.getByPlaceholder('Master password').fill('demo1234');
+    await german('menu bar panel, locked');
+    await page.keyboard.press('Enter');
+    await page.getByText('Recent').waitFor();
+    await page.locator('.change').first().waitFor();
+    await german('menu bar panel');
     await page.keyboard.press('Escape');
   } catch (e) {
     await shot(page, 'zz-english-failure');

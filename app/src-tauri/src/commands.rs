@@ -151,6 +151,25 @@ pub fn show_main_window(app: tauri::AppHandle) {
     crate::show_main(&app);
 }
 
+/// Closes the menu bar panel; see [`crate::tray::hide_panel`].
+#[tauri::command]
+pub fn hide_tray(app: tauri::AppHandle, give_back: bool) {
+    crate::tray::hide_panel(&app, give_back);
+}
+
+/// From the menu bar panel: the main window, with an entry or a panel open.
+#[tauri::command]
+pub fn open_in_main(app: tauri::AppHandle, entry: Option<String>, panel: Option<String>) {
+    crate::tray::open_in_main(&app, crate::tray::OpenTarget { entry, panel });
+}
+
+/// From the menu bar panel, which makes room for quick capture.
+#[tauri::command]
+pub fn toggle_capture(app: tauri::AppHandle) {
+    crate::tray::hide_panel(&app, false);
+    crate::toggle_capture(&app);
+}
+
 /// Called by the UI on user input so auto-lock measures real idleness.
 #[tauri::command]
 pub fn touch(session: S<'_>) {

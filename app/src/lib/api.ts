@@ -427,6 +427,11 @@ export const api = {
   installUpdate: () => call<void>('install_update'),
   hideCapture: () => call<void>('hide_capture'),
   showMainWindow: () => call<void>('show_main_window'),
+  /** Closes the menu bar panel; `giveBack` returns the focus to the app used before. */
+  hideTray: (giveBack: boolean) => call<void>('hide_tray', { giveBack }),
+  /** From the menu bar panel: the main window, showing an entry or a panel. */
+  openInMain: (target: OpenTarget) => call<void>('open_in_main', { entry: target.entry ?? null, panel: target.panel ?? null }),
+  toggleCapture: () => call<void>('toggle_capture'),
 
   // backups
   backupStatus: () => call<BackupStatus>('backup_status'),
@@ -555,6 +560,20 @@ export function onUpdateProgress(cb: (p: { downloaded: number; total: number | n
 
 export function onCaptureOpen(cb: () => void): Promise<UnlistenFn> {
   return listen('bm:capture-open', () => cb());
+}
+
+export function onTrayOpen(cb: () => void): Promise<UnlistenFn> {
+  return listen('bm:tray-open', () => cb());
+}
+
+/** What the menu bar panel asks the main window to show. */
+export interface OpenTarget {
+  entry?: Id;
+  panel?: 'activity';
+}
+
+export function onOpen(cb: (target: OpenTarget) => void): Promise<UnlistenFn> {
+  return listen<OpenTarget>('bm:open', (e) => cb(e.payload));
 }
 
 export function onResync(cb: () => void): Promise<UnlistenFn> {

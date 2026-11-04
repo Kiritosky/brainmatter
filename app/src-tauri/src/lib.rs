@@ -8,9 +8,9 @@ pub mod i18n;
 pub mod integrations;
 mod perf;
 pub mod session;
+mod tray;
 mod updates;
 
-use crate::i18n::tr;
 use std::{
     sync::{
         Arc,
@@ -23,12 +23,7 @@ use bm_core::{Engine, semantic::Embedder, vault::KdfParams};
 use bm_mcp::{Client, ClientRegistry, Hub};
 use parking_lot::Mutex;
 use session::{Emit, Session, Settings, Theme};
-use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
-    image::Image,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::TrayIconBuilder,
-};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const CAPTURE_WINDOW: &str = "capture";
@@ -67,6 +62,7 @@ impl Hub for SessionHub {
 }
 
 fn show_main(app: &AppHandle) {
+    tray::show_in_dock(app, true);
     let _ = app.show();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -161,40 +157,6 @@ fn apply_settings(app: &AppHandle, settings: &Settings) {
     app.state::<Arc<Session>>().set_capture_shortcut_blocked(result.is_err());
 }
 
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(
-        app,
-        "open",
-        tr("Brainmatter öffnen", "Open Brainmatter"),
-        true,
-        None::<&str>,
-    )?;
-    let lock =
-        MenuItem::with_id(app, "lock", tr("Sperren", "Lock"), true, Some("CmdOrCtrl+Shift+L"))?;
-    let quit = MenuItem::with_id(app, "quit", tr("Beenden", "Quit"), true, Some("CmdOrCtrl+Q"))?;
-    let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &lock, &sep, &quit])?;
-
-    TrayIconBuilder::with_id("main")
-        // Monochrome template image: macOS tints it for light/dark menu bars.
-        .icon(Image::from_bytes(include_bytes!("../icons/tray-template.png"))?)
-        .icon_as_template(true)
-        .tooltip("Brainmatter")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "open" => show_main(app),
-            "lock" => app.state::<Arc<Session>>().lock(),
-            "quit" => {
-                app.state::<Arc<Session>>().lock();
-                app.exit(0);
-            }
-            _ => {}
-        })
-        .build(app)?;
-    Ok(())
-}
-
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -275,15 +237,19 @@ pub fn run() {
                 }
             });
 
-            build_tray(app.handle())?;
+            tray::build(app.handle())?;
             Ok(())
         })
         .on_page_load(perf::run_script)
         .on_window_event(|window, event| {
-            // Closing the window keeps Brainmatter running in the menu bar.
+            // Closing the window keeps Brainmatter running in the menu bar, and
+            // only there: it leaves the Dock until the window opens again.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
+                if window.label() == "main" {
+                    tray::show_in_dock(window.app_handle(), false);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -347,6 +313,9 @@ pub fn run() {
             commands::purge_node,
             commands::hide_capture,
             commands::show_main_window,
+            commands::hide_tray,
+            commands::open_in_main,
+            commands::toggle_capture,
             commands::backup_status,
             commands::backup_now,
             commands::restore_backup,
