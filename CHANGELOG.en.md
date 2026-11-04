@@ -29,6 +29,7 @@ Brainmatter now speaks English, brings in your notes from other apps, and can ke
 
 ### Fixed
 - Links and references told upper and lower case apart for umlauts, such as “Ärger” and “ärger”.
+- The demo's error messages now follow the interface language.
 
 ## 1.0.0 · 2026-11-02
 

@@ -230,7 +230,7 @@ function record(
 
 const live = (nid: string) => {
   const n = nodes.get(nid);
-  if (!n || n.deleted_at) fail('not_found', `Eintrag „${nid}“ nicht gefunden`);
+  if (!n || n.deleted_at) fail('not_found', t(`Eintrag „${nid}“ nicht gefunden`, `Entry “${nid}” not found`));
   return n;
 };
 
@@ -515,8 +515,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
     rule_read_only: MEMORY_RULE,
   }),
   create_client: (a) => {
-    if (!String(a.name).trim()) fail('invalid', 'Bitte einen Namen angeben.');
-    if (clients.some((c) => c.name.toLowerCase() === a.name.trim().toLowerCase())) fail('invalid', `Es gibt schon eine Verbindung namens „${a.name}“.`);
+    if (!String(a.name).trim()) fail('invalid', t('Bitte einen Namen angeben.', 'Please enter a name.'));
+    if (clients.some((c) => c.name.toLowerCase() === a.name.trim().toLowerCase())) fail('invalid', t(`Es gibt schon eine Verbindung namens „${a.name}“.`, `There is already a connection named “${a.name}”.`));
     const client: AiClient = { id: id(), name: a.name.trim(), scopes: a.scopes, projects: a.projects, created_at: now(), last_seen_at: null };
     clients.push(client);
     return { client, token: 'bm_mock_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg' };
@@ -552,31 +552,31 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   session_status: () => status(),
   create_vault: (a) => {
-    if (String(a.password).length < 8) fail('invalid', 'Das Passwort braucht mindestens 8 Zeichen.');
+    if (String(a.password).length < 8) fail('invalid', t('Das Passwort braucht mindestens 8 Zeichen.', 'The password needs at least 8 characters.'));
     userName = a.name;
     state = 'unlocked';
     emit('bm:session', status());
     return '7K3Q-M9XA-2PZD-W4TB-8HNR-C6FE-1VJS-QY5G-0KAM';
   },
   unlock_password: (a) => {
-    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort. (Mock: demo1234)');
+    if (a.password !== 'demo1234') fail('wrong_password', t('Falsches Passwort. (Mock: demo1234)', 'Wrong password. (Mock: demo1234)'));
     state = 'unlocked';
     emit('bm:session', status());
   },
   unlock_recovery: () => ((state = 'unlocked'), emit('bm:session', status())),
   // Behaves as if the user dismissed the prompt, unless `?touchid=ok`.
   unlock_touch_id: () => {
-    if (new URLSearchParams(location.search).get('touchid') !== 'ok') fail('touch_id_cancelled', 'Touch ID abgebrochen.');
+    if (new URLSearchParams(location.search).get('touchid') !== 'ok') fail('touch_id_cancelled', t('Touch ID abgebrochen.', 'Touch ID cancelled.'));
     state = 'unlocked';
     emit('bm:session', status());
   },
   enroll_touch_id: () => void (touchId = true),
   disable_touch_id: () => void (touchId = false),
   change_password: (a) => {
-    if (a.current !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    if (a.current !== 'demo1234') fail('wrong_password', t('Falsches Passwort.', 'Wrong password.'));
   },
   rotate_recovery_key: (a) => {
-    if (a.current !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    if (a.current !== 'demo1234') fail('wrong_password', t('Falsches Passwort.', 'Wrong password.'));
     return 'N3W4-K3Y5-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345';
   },
   lock: () => ((state = 'locked'), emit('bm:session', status())),
@@ -633,7 +633,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   ],
   rename_project: (a) => {
     const p = projects.get(a.id);
-    if (!p) fail('not_found', 'Projekt nicht gefunden');
+    if (!p) fail('not_found', t('Projekt nicht gefunden', 'Project not found'));
     record(`Projekt „${p.name}“ in „${a.name}“ umbenannt`);
     p.name = a.name;
     notify({ type: 'project_upserted', id: p.id });
@@ -641,7 +641,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   move_project: (a) => {
     const p = projects.get(a.id);
-    if (!p) fail('not_found', 'Projekt nicht gefunden');
+    if (!p) fail('not_found', t('Projekt nicht gefunden', 'Project not found'));
     if (a.parent && subtree(a.id).has(a.parent)) fail('invalid', 'a project cannot go inside itself');
     p.parent_id = a.parent ?? null;
     const siblings = [...projects.values()]
@@ -688,7 +688,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   place_doc_page: (a) => {
     const doc = docs.find((d) => d.node === a.id);
-    if (!doc) fail('not_found', 'Seite nicht gefunden');
+    if (!doc) fail('not_found', t('Seite nicht gefunden', 'Page not found'));
     if (doc.source) fail('conflict', 'this page mirrors a file and can only be changed there');
     doc.parent = a.parent ?? null;
     const siblings = docs.filter((d) => d.project === doc.project && d.parent === doc.parent && d !== doc).sort((x, y) => x.sort - y.sort);
@@ -788,14 +788,14 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return backupStatus();
   },
   adopt_backup: (a) => {
-    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    if (a.password !== 'demo1234') fail('wrong_password', t('Falsches Passwort.', 'Wrong password.'));
     settings = { ...settings, backup_copy: '/Volumes/Archiv' };
     state = 'unlocked';
     emit('bm:session', status());
     return true;
   },
   export_markdown: (a) => {
-    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    if (a.password !== 'demo1234') fail('wrong_password', t('Falsches Passwort.', 'Wrong password.'));
     return { folder: '/Users/alex/Dokumente/Brainmatter-Export-2026-11-01', entries: 16, attachments: 2, failed_attachments: [] };
   },
   import_preview: () => importSummary(null),
@@ -816,19 +816,19 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return importSummary(changeSets[0].id);
   },
   restore_backup: (a) => {
-    if (a.password !== 'demo1234') fail('wrong_password', 'Falsches Passwort.');
+    if (a.password !== 'demo1234') fail('wrong_password', t('Falsches Passwort.', 'Wrong password.'));
     state = 'locked';
     emit('bm:session', status());
   },
   add_attachment: (a) => addAttachment(a as unknown as Uint8Array),
   attachment_data: (a) => {
     const found = attachments.get(a.id);
-    if (!found || found.deleted) fail('not_found', 'Anhang nicht gefunden');
+    if (!found || found.deleted) fail('not_found', t('Anhang nicht gefunden', 'Attachment not found'));
     return found.bytes.buffer.slice(found.bytes.byteOffset, found.bytes.byteOffset + found.bytes.byteLength);
   },
   delete_attachment: (a) => {
     const found = attachments.get(a.id);
-    if (!found) fail('not_found', 'Anhang nicht gefunden');
+    if (!found) fail('not_found', t('Anhang nicht gefunden', 'Attachment not found'));
     found.deleted = true;
     record(`Anhang „${found.meta.filename}“ entfernt`);
     notify({ type: 'node_upserted', id: found.meta.node_id });
@@ -924,7 +924,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   revert: (a) => {
     const cs = changeSets.find((c) => c.id === a.changeSet);
-    if (!cs) fail('not_found', 'Änderung nicht gefunden');
+    if (!cs) fail('not_found', t('Änderung nicht gefunden', 'Change not found'));
     cs.reverted_by = 'reverted';
     // An import is the one change the walkthrough takes back, so only it is undone here.
     for (const pid of imported.get(cs.id) ?? []) {

@@ -29,6 +29,7 @@ Brainmatter spricht jetzt auch Englisch, holt deine Notizen aus anderen Apps und
 
 ### Behoben
 - Links und Verweise unterschieden bei Umlauten zwischen Groß- und Kleinschreibung, etwa bei „Ärger“ und „ärger“.
+- Die Fehlermeldungen im Browser-Demo folgen jetzt der Sprache der Oberfläche.
 
 ## 1.0.0 · 2026-11-02
 
