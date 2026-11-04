@@ -37,7 +37,7 @@
             <span class="font-semibold">Version {release.version}</span>
             {#if release.date}<span class="text-xs text-faint">{when(release.date)}</span>{/if}
           </div>
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
+          <!-- sanitized by DOMPurify -->
           <div class="prose-bm selectable">{@html renderMarkdown(release.notes)}</div>
         </section>
       {:else}

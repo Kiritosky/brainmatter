@@ -277,7 +277,7 @@
           </header>
 
           {#if current.node.body.trim()}
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
+            <!-- sanitized by DOMPurify -->
             <article class="prose-bm prose-doc selectable" role="presentation" bind:this={article} onclick={onArticleClick}>{@html html}</article>
           {:else}
             <button class="w-full rounded-xl border border-dashed border-line py-10 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = 'body')}>

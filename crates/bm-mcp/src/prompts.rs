@@ -1,5 +1,5 @@
 //! Commands the user can give any connected model, such as
-//! `/mcp__brainmatter__setup_project` in Claude Code.
+//! `/mcp__brainmatter__setup-project` in Claude Code.
 //!
 //! They ship with the app, so unlike templates no AI can have written them, and
 //! they need no unlocked vault to be offered. A reviewed template with the same

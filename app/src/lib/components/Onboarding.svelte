@@ -102,7 +102,7 @@
           <label class="flex flex-col gap-1.5">
             <span class="text-xs font-medium text-muted">{t('Dein Name', 'Your name')}</span>
             <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-            <input class="field" bind:value={name} placeholder={t('z. B. Lasse', 'e.g. Alex')} autofocus />
+            <input class="field" bind:value={name} placeholder={t('z. B. Alex', 'e.g. Alex')} autofocus />
           </label>
           <label class="flex flex-col gap-1.5">
             <span class="text-xs font-medium text-muted">{t('Master-Passwort', 'Master password')}</span>

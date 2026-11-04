@@ -22,7 +22,6 @@ serde.workspace = true
 # preserve_order: edited config files of other tools keep their key order.
 serde_json = { workspace = true, features = ["preserve_order"] }
 toml_edit = "0.23"
-thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 parking_lot = "0.13"

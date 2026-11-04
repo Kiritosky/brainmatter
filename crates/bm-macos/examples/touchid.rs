@@ -1,4 +1,4 @@
-//! Spike 4: Touch ID availability, Keychain round-trip, optional prompt.
+//! Touch ID availability, a Keychain round-trip and an optional prompt.
 //!
 //! `cargo run -p bm-macos --example touchid [-- --prompt | --store | --load | --delete]`
 //!
@@ -8,7 +8,7 @@
 
 use bm_macos::{biometrics, keychain};
 
-const SERVICE: &str = "app.brainmatter.spike";
+const SERVICE: &str = "app.brainmatter.touchid-example";
 const ACCOUNT: &str = "touchid-key";
 const BUILD_TAG: Option<&str> = option_env!("BM_BUILD_TAG");
 
@@ -33,7 +33,7 @@ fn main() {
             println!("waiting for Touch ID…");
             println!(
                 "prompt: {:?}",
-                biometrics::authenticate("Brainmatter entsperren (Spike-Test)")
+                biometrics::authenticate("Unlock Brainmatter (Touch ID example)")
             );
         }
         _ => {

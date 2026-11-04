@@ -283,7 +283,7 @@
         onsave={() => draft.save()}
         onchange={(text) => ((draft.body = text), draft.changed())} />
     {:else if node.body.trim()}
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
+      <!-- sanitized by DOMPurify -->
       <div class="prose-bm" role="presentation" bind:this={preview} onclick={onPreviewClick} ondblclick={() => (editing = true)}>{@html html}</div>
     {:else if !detail.read_only}
       <button class="w-full rounded-xl border border-dashed border-line py-6 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = true)}>
