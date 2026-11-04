@@ -12,15 +12,16 @@
   <a href="https://github.com/Kiritosky/brainmatter/actions/workflows/ci.yml"><img src="https://github.com/Kiritosky/brainmatter/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/Kiritosky/brainmatter/releases/latest"><img src="https://img.shields.io/github/v/release/Kiritosky/brainmatter?include_prereleases" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey" alt="Platform" />
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Kiritosky/brainmatter" alt="MIT license" /></a>
 </p>
 
-![The graph with its projects and the activity of AI clients](docs/screenshots/graph.png)
+![Finding an entry, watching Claude Code add one live, and what the AI clients did](docs/screenshots/demo.gif)
 
 Brainmatter keeps simple entries, connects them by topic, and groups them into nested projects. Everything is stored on your Mac in an encrypted vault. Claude, Cursor, Codex and other tools connect through [MCP](https://modelcontextprotocol.io), so what one model learns is there for the next, and you can see and undo everything they do.
 
 **Why it exists:** AI tools forget everything between sessions, and most tools that fix this send your notes to someone's server. Here the memory is yours: local, encrypted, readable by you, and open source.
 
-> The interface is in German for now. Updates carry your vault along, and everything can be exported as plain Markdown at any time. Brainmatter has not had an external security audit.
+> The interface follows the language of macOS, English or German. Updates carry your vault along, and everything can be exported as plain Markdown at any time. Brainmatter has not had an external security audit.
 
 ## Features
 
@@ -50,22 +51,28 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - Unlock with your password or Touch ID. While locked, an AI's request can ask you for Touch ID
 - Locks automatically after a set time, on sleep, or with the screen
 - Export everything as Markdown with front matter and wikilinks, whenever you like
+- Import a folder of Markdown notes from Obsidian, Logseq or a Brainmatter export: folders become projects, links become connections, and the whole import can be undone in one click
+- Verified daily backups, optionally copied to a second place such as an external drive, and a new Mac can start from them
 
 **Project documentation**
 - A handbook per project: pages in a tree, written right on the page, with a table of contents and search
-- Mirror a repo's `docs` folder or `README.md` read-only. It updates when you open the documentation
+- Mirror a repo's `docs` folder or `README.md` read-only. It follows the files live as you save them
 - AI clients see the table of contents and read just the section they need
 
-**Also included:** a tour on first start and a help page in the settings, a library of templates and prompts with `{{placeholders}}` and a guided way to create them, links to files on your Mac, encrypted attachments with previews, verified daily backups with restore, a trash, light and dark themes, signed automatic updates.
+**Also included:** English and German, following macOS, a tour on first start and a help page in the settings, a library of templates and prompts with `{{placeholders}}` and a guided way to create them, links to files on your Mac, encrypted attachments with previews, a trash, light and dark themes, signed automatic updates.
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/docs-slash.png" alt="Writing a documentation page with the slash menu" /></td>
+    <td><img src="docs/screenshots/graph.png" alt="The graph with its projects, while Claude Code adds an entry" /></td>
     <td><img src="docs/screenshots/suggestions.png" alt="An entry with a suggested duplicate, drawn into the graph" /></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/ai-connections.png" alt="Connecting AI tools in the settings" /></td>
-    <td><img src="docs/screenshots/light.png" alt="The light theme" /></td>
+    <td><img src="docs/screenshots/docs-slash.png" alt="Writing a documentation page with the slash menu" /></td>
+    <td><img src="docs/screenshots/ai-connections.png" alt="Connecting Claude Desktop in the settings" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/light.png" alt="The light theme with an entry open" /></td>
+    <td></td>
   </tr>
 </table>
 
@@ -82,7 +89,7 @@ Write down the recovery key the app shows you when you create your vault. **With
 
 ## Connect your AI tools
 
-Open **Settings → KI-Verbindungen**, choose a tool and confirm. Brainmatter writes the configuration for you and never shows the token.
+Open **Settings → AI connections**, choose a tool and confirm. Brainmatter writes the configuration for you and never shows the token.
 
 For anything else, create a token there and point the client at the local server:
 
@@ -135,11 +142,11 @@ Only you can mark entries as reviewed, erase them for good, manage backups or ch
 | AI access | Local only (`127.0.0.1`), hashed bearer tokens, browser origins rejected |
 | Network | Only update checks, which you can turn off, and the optional model download. Your entries never leave the Mac |
 
-What this does not protect against: malware running as your user while the vault is unlocked, and a forgotten password together with a lost recovery key. Backups sit next to the vault, so they protect against mistakes and damaged data, not against losing the Mac. A Markdown export is not encrypted, and the app says so before writing one.
+What this does not protect against: malware running as your user while the vault is unlocked, and a forgotten password together with a lost recovery key. Backups sit next to the vault unless you choose a second place for copies, so without one they do not help when the Mac is lost. A Markdown export is not encrypted, and the app says so before writing one.
 
-No external audit has been done. The design and its known gaps are written down in [PLAN.md](PLAN.md), in German.
+Entries are treated as untrusted when shown: Markdown is sanitized, and AI clients are told that content is data, not instructions.
 
-Entries are treated as untrusted when shown: Markdown is sanitized, and AI clients are told that content is data, not instructions. To report a vulnerability, please use [GitHub's private reporting](https://github.com/Kiritosky/brainmatter/security/advisories/new).
+No external audit has been done. [SECURITY.md](SECURITY.md) has the design in full, what it does not protect against, and how to report a vulnerability privately.
 
 ## Performance
 
@@ -185,7 +192,8 @@ To try the interface without the native app, `bun run dev` runs it in a browser 
 |---|---|
 | `cargo test --workspace` | All tests |
 | `bun run check` (in `app/`) | Typecheck the frontend |
-| `bun scripts/screens.ts` (in `app/`) | Click through the interface against the mock and save screenshots |
+| `bun scripts/screens.ts` (in `app/`) | Click through the interface against the mock, in German and English, and save screenshots |
+| `bun scripts/readme-media.ts` (in `app/`) | Make the screenshots and the demo GIF in this README |
 | `app/scripts/perf-app.sh` | Measure the real app against an invented vault from `seed_vault` |
 | `cargo run --release -p bm-embed --example bench_search` | Measure search by meaning on such a vault, without a window |
 | `scripts/build-release.sh` | A signed `.app` and DMG, using an identity from `scripts/create-signing-cert.sh` |
@@ -199,12 +207,16 @@ crates/bm-core    Encrypted storage, graph, search, history, attachments, backup
 crates/bm-embed   The local embedding model (candle on Metal)
 crates/bm-mcp     The MCP server: tools, tokens, scopes
 crates/bm-cli     brainmatter-mcp, a stdio bridge to that server
-crates/bm-macos   Touch ID, Keychain, sleep and screen-lock events
+crates/bm-macos   Touch ID, Keychain, file events, sleep and screen-lock events, system language
 app/src-tauri     The desktop app (Tauri 2): lock session, setup of AI tools, updates
 app/src           The interface (Svelte 5, Sigma.js, CodeMirror)
 ```
 
-The core has no UI or network dependencies. [PLAN.md](PLAN.md) (in German) has the design decisions, measurements and known gaps.
+The core has no UI or network dependencies.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains the setup and the conventions, and issues labelled [good first issue](https://github.com/Kiritosky/brainmatter/labels/good%20first%20issue) are a place to start. Most interface work needs only `bun run dev`, no Mac-specific setup.
 
 ## License
 

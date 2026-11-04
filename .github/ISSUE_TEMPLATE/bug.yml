@@ -1,0 +1,64 @@
+name: Bug
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please leave out anything from your vault you would not want public.
+        A security problem goes to [private reporting](https://github.com/Kiritosky/brainmatter/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Brainmatter version
+      description: Settings → General, or the release you downloaded.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 26.1, MacBook Air M3"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Graph
+        - Writing and entries
+        - Search
+        - Projects
+        - Documentation pages
+        - AI connections (MCP)
+        - Lock, password, Touch ID
+        - Backups, import, export
+        - Updates
+        - Something else
+  - type: input
+    id: client
+    attributes:
+      label: AI client, if one is involved
+      placeholder: "Claude Code 2.3, Cursor 1.9 …"
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, or the error message as text.
