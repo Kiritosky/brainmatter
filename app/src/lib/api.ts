@@ -143,6 +143,64 @@ export interface TemplateInfo {
   reviewed: boolean;
 }
 
+export const SKILL_KIND = 'skill';
+
+/** Where an imported skill came from. */
+export interface SkillSource {
+  url: string;
+  repo: string;
+  path: string;
+  revision: string;
+  imported_at: number;
+}
+
+/** Instructions an AI loads by itself when a task fits; its files are the entry's attachments. */
+export interface SkillInfo {
+  node: NodeBrief;
+  slug: string;
+  description: string;
+  body: string;
+  files: Attachment[];
+  projects: { id: Id; name: string }[];
+  reviewed: boolean;
+  source: SkillSource | null;
+  updated_at: number;
+}
+
+/** Creates a skill when `id` is null. `projects` replaces the skill's projects. */
+export interface SkillInput {
+  id: Id | null;
+  title: string;
+  description: string;
+  body: string;
+  projects: Id[];
+}
+
+export interface SkillFilePreview {
+  path: string;
+  size: number;
+}
+
+export interface SkillCandidate {
+  /** The skill's folder in the repo. */
+  path: string;
+  name: string;
+  description: string;
+  body: string;
+  files: SkillFilePreview[];
+  /** All of it in bytes, SKILL.md included. */
+  size: number;
+  /** The skill an import would update. */
+  existing: Id | null;
+}
+
+export interface SkillImportPreview {
+  url: string;
+  repo: string;
+  revision: string;
+  skills: SkillCandidate[];
+}
+
 export interface TrashedNode {
   node: NodeBrief;
   deleted_at: number;
@@ -532,6 +590,13 @@ export const api = {
   revealFile: (id: Id) => call<void>('reveal_file', { id }),
   openFile: (id: Id) => call<void>('open_file', { id }),
   templates: () => call<TemplateInfo[]>('templates'),
+  skills: () => call<SkillInfo[]>('skills'),
+  saveSkill: (input: SkillInput) => call<SkillInfo>('save_skill', { input }),
+  /** Reads only the SKILL.md files of a GitHub repo, folder or file. */
+  previewSkillImport: (url: string) => call<SkillImportPreview>('preview_skill_import', { url }),
+  /** New skills go into `projects`; those already here keep theirs. */
+  importSkills: (url: string, revision: string, paths: string[], projects: Id[]) =>
+    call<SkillInfo[]>('import_skills', { url, revision, paths, projects }),
   trash: (limit = 500) => call<TrashedNode[]>('trash', { limit }),
   restoreNode: (id: Id) => call<Node>('restore_node', { id }),
   purgeNode: (id: Id) => call<void>('purge_node', { id }),

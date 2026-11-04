@@ -1,6 +1,6 @@
 <script lang="ts">
   import { lang, t } from '#lib/i18n.ts';
-  import { Activity, BookMarked, Compass, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Newspaper, Sun, Trash2 } from '@lucide/svelte';
+  import { Activity, BookMarked, Compass, CornerDownLeft, FolderGit2, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Puzzle, Search, Settings, Newspaper, Sun, Trash2 } from '@lucide/svelte';
   import { releases } from '#lib/changelog.ts';
   import { theme } from '#lib/theme.svelte.ts';
   import { api, errorMessage, type SearchHit } from '#lib/api.ts';
@@ -35,6 +35,8 @@
     { label: t('Papierkorb öffnen', 'Open trash'), icon: Trash2, run: panel('trash') },
     { label: t('Einstellungen', 'Settings'), icon: Settings, hint: '⌘,', run: () => (ws.settingsOpen = true) },
     { label: t('Neue Vorlage', 'New template'), icon: BookMarked, run: () => (ws.templateWizard = true) },
+    { label: t('Neuer Skill', 'New skill'), icon: Puzzle, run: () => ws.startSkill() },
+    { label: t('Skill von GitHub importieren', 'Import skill from GitHub'), icon: FolderGit2, run: () => (ws.skillImport = true) },
     { label: t('Einführung starten', 'Start the tour'), icon: Compass, run: () => (ws.tourOpen = true) },
     { label: t('Was ist neu', 'What’s new'), icon: Newspaper, run: () => (ws.changelog = { heading: t('Alle Änderungen', 'All changes'), items: releases }) },
     { label: t('Filter zurücksetzen', 'Reset filters'), icon: ListFilter, run: () => ws.clearFilters() },

@@ -114,6 +114,10 @@ class Workspace {
   panel = $state<'activity' | 'review' | 'trash' | 'library' | null>(null);
   settingsOpen = $state(false);
   templateWizard = $state(false);
+  libraryTab = $state<'templates' | 'skills'>('templates');
+  /** A skill being written that is not saved yet; shown in the library's column. */
+  newSkill = $state(false);
+  skillImport = $state(false);
   tourOpen = $state(false);
   /** Bumped after every coalesced refresh, for views that reload on change. */
   revision = $state(0);
@@ -436,7 +440,17 @@ class Workspace {
     await this.loadGraph();
   }
 
+  /** The library at its skills, with an empty one to write. */
+  async startSkill() {
+    await this.select(null);
+    this.panel = 'library';
+    this.libraryTab = 'skills';
+    this.newSkill = true;
+  }
+
   async select(id: Id | null, focus = false) {
+    // Whatever opens now takes the place of a skill not yet saved.
+    if (id) this.newSkill = false;
     this.selected = id;
     if (focus) this.focusTick++;
     await Promise.all([this.refreshDetail(), this.refreshSuggestions()]);

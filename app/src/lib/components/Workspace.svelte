@@ -3,7 +3,7 @@
   import { summary as readable } from '#lib/summaries.ts';
   import { onDestroy, onMount } from 'svelte';
   import { ChevronRight, Clock, Network } from '@lucide/svelte';
-  import { api, createdAt, errorMessage, type GraphNode, type Id, type Status } from '#lib/api.ts';
+  import { api, createdAt, errorMessage, SKILL_KIND, type GraphNode, type Id, type Status } from '#lib/api.ts';
   import { ws, type ColorMode } from '#lib/workspace.svelte.ts';
   import { prefs } from '#lib/prefs.svelte.ts';
   import Segmented from '#lib/ui/Segmented.svelte';
@@ -20,6 +20,8 @@
   import LibraryPanel from './LibraryPanel.svelte';
   import ReviewPanel from './ReviewPanel.svelte';
   import SettingsDialog from './SettingsDialog.svelte';
+  import SkillImport from './SkillImport.svelte';
+  import SkillPanel from './SkillPanel.svelte';
   import TimeSlider from './TimeSlider.svelte';
   import TrashPanel from './TrashPanel.svelte';
   import WhatsNew from './WhatsNew.svelte';
@@ -112,6 +114,7 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
       // One step back at a time: the selection first, then up the projects.
       if (ws.selected) ws.select(null);
+      else if (ws.newSkill) ws.newSkill = false;
       else if (ws.view && !ws.panel && !ws.changelog && ws.main === 'graph') ws.setView(ws.breadcrumb.at(-2)?.id ?? null);
     }
   }
@@ -229,8 +232,16 @@
     {#if ws.detail}
       <div class="h-full w-100" in:slideIn>
         {#key ws.detail.node.id}
-          <Inspector />
+          {#if ws.detail.node.kind === SKILL_KIND}
+            <SkillPanel id={ws.detail.node.id} />
+          {:else}
+            <Inspector />
+          {/if}
         {/key}
+      </div>
+    {:else if ws.panel === 'library' && ws.newSkill}
+      <div class="h-full w-100" in:slideIn>
+        <SkillPanel />
       </div>
     {:else if ws.panel === 'activity'}
       <div class="h-full w-100" in:slideIn>
@@ -262,6 +273,10 @@
 
 {#if ws.templateWizard}
   <TemplateWizard />
+{/if}
+
+{#if ws.skillImport}
+  <SkillImport />
 {/if}
 
 {#if ws.tourOpen}

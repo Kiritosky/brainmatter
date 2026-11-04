@@ -642,6 +642,165 @@ try {
   if (await page.getByRole('button', { name: 'Neue Vorlage' }).count()) await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
   await page.waitForTimeout(250);
 
+  // Skills: in the library next to the templates, and like them out of the graph.
+  const skillNamed = (title: string) =>
+    page.evaluate(async (t) => {
+      const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+      return ((await invoke('skills')) as any[]).find((s) => s.node.title === t) ?? null;
+    }, title);
+  const eventually = async (what: string, check: () => Promise<boolean>) => {
+    for (let i = 0; i < 30; i++) {
+      if (await check()) return;
+      await page.waitForTimeout(150);
+    }
+    errors.push(what);
+  };
+  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
+  await page.getByRole('radio', { name: 'Skills' }).click();
+  await page.getByText('Release-Notizen schreiben', { exact: true }).waitFor();
+  await page.getByText('einen Skill wählt die KI anhand seiner Beschreibung').waitFor();
+  await page.waitForTimeout(350);
+  await shot(page, '62-skills');
+  const skillInGraph = await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    return (await invoke('graph', { project: null })).nodes.some((n: any) => n.kind === 'skill');
+  });
+  if (skillInGraph) errors.push('skills must stay out of the graph');
+
+  // One an AI wrote waits for review, like its templates.
+  await page.getByText('Fehler eingrenzen', { exact: true }).click();
+  const skillPanel = page.getByRole('complementary', { name: 'Skill', exact: true });
+  await skillPanel.getByRole('button', { name: 'ungeprüft' }).waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '63-skill-unreviewed');
+  await skillPanel.getByRole('button', { name: 'ungeprüft' }).click();
+  await skillPanel.getByRole('button', { name: 'ungeprüft' }).waitFor({ state: 'detached' });
+  if (!(await skillNamed('Fehler eingrenzen'))?.reviewed) errors.push('reviewing a skill did not stick');
+  await skillPanel.getByLabel('Schließen').click();
+
+  // A new one needs a name and a description, and a name of its own.
+  await page.getByRole('button', { name: 'Neuer Skill' }).click();
+  const newSkill = page.getByRole('complementary', { name: 'Neuer Skill' });
+  const createSkill = newSkill.getByRole('button', { name: 'Skill anlegen' });
+  if (await createSkill.isEnabled()) errors.push('a skill can be created without a name');
+  await newSkill.getByLabel('Name des Skills').fill('Release Notizen schreiben');
+  if (await createSkill.isEnabled()) errors.push('a skill can be created without a description');
+  await newSkill.getByLabel('Beschreibung').fill('Prüft vor einem Release, ob Abhängigkeiten bekannte Sicherheitslücken haben. Nutzen, wenn ein Release ansteht.');
+  await createSkill.click();
+  await newSkill.getByText('Es gibt schon einen Skill namens „Release-Notizen schreiben“').waitFor();
+  await newSkill.getByLabel('Name des Skills').fill('Abhängigkeiten prüfen');
+  await newSkill.locator('.cm-content').click();
+  await page.keyboard.type('Führe `scripts/audit.sh` aus und nenne nur, was ein Update braucht.');
+  await newSkill.locator('input[type=file]').setInputFiles({ name: 'audit.sh', mimeType: 'text/x-sh', buffer: Buffer.from('#!/bin/sh\nnpm audit --omit=dev\n') });
+  const filePath = newSkill.getByLabel('Pfad für audit.sh');
+  if ((await filePath.inputValue()) !== 'scripts/audit.sh') errors.push(`a script was not put under scripts/: ${await filePath.inputValue()}`);
+  await filePath.fill('../audit.sh');
+  await newSkill.getByText('Ein Pfad im Ordner des Skills').waitFor();
+  if (await createSkill.isEnabled()) errors.push('a file can leave the skill’s folder');
+  await filePath.fill('scripts/audit.sh');
+  await newSkill.getByRole('button', { name: 'Projekt', exact: true }).click();
+  await page.getByLabel('Projekt suchen …').fill('ker');
+  await page.getByLabel('Projekt suchen …').press('Enter');
+  await newSkill.getByLabel('Aus „Kern“ nehmen').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '64-skill-new');
+  await createSkill.click();
+  await skillPanel.getByRole('button', { name: 'scripts/audit.sh', exact: true }).waitFor();
+  const made = await skillNamed('Abhängigkeiten prüfen');
+  if (!made?.description.startsWith('Prüft vor einem Release')) errors.push('a new skill lost its description');
+  if (made?.files.map((f: any) => f.filename).join() !== 'scripts/audit.sh') errors.push(`a new skill has the wrong files: ${made?.files.map((f: any) => f.filename)}`);
+  if (made?.projects.map((p: any) => p.name).join() !== 'Kern') errors.push('a new skill did not go into its project');
+  await page.waitForTimeout(300);
+  await shot(page, '65-skill-edit');
+
+  // Changes save by themselves, but never without a description.
+  await skillPanel.getByLabel('Beschreibung').fill('');
+  await skillPanel.getByText('Ohne Beschreibung wird nicht gespeichert').waitFor();
+  await skillPanel.getByLabel('Beschreibung').fill('Prüft Abhängigkeiten auf bekannte Lücken. Nutzen, wenn ein Release ansteht oder nach veralteten Paketen gefragt wird.');
+  await eventually('an edited description was not saved', async () => (await skillNamed('Abhängigkeiten prüfen'))?.description.includes('veralteten Paketen'));
+  await skillPanel.getByLabel('In den Papierkorb').click();
+  await skillPanel.getByRole('button', { name: 'Löschen?' }).click();
+  await skillPanel.waitFor({ state: 'detached' });
+  await page.getByText('Release-Notizen schreiben', { exact: true }).waitFor();
+  if (await page.getByText('Abhängigkeiten prüfen', { exact: true }).count()) errors.push('a deleted skill stays in the library');
+  // Out of the trash again, which the steps below expect empty.
+  await page.evaluate(async () => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    for (const item of await invoke('trash', { limit: 50 })) if (item.node.kind === 'skill') await invoke('purge_node', { id: item.node.id });
+  });
+
+  // An imported skill tells when its repo has a newer version.
+  await page.getByText('pdf-forms', { exact: true }).click();
+  await skillPanel.getByText('example/agent-skills').waitFor();
+  await skillPanel.getByRole('button', { name: 'Von GitHub aktualisieren' }).click();
+  await skillPanel.getByText('Neue Fassung 9f2c4e1').waitFor();
+  await page.waitForTimeout(450);
+  await shot(page, '65b-skill-update');
+  await skillPanel.getByRole('button', { name: 'Später' }).click();
+  await skillPanel.getByLabel('Schließen').click();
+
+  // Importing from GitHub: found from the palette, wrong addresses and GitHub's limits said in place.
+  await page.keyboard.press('Meta+k');
+  await page.getByPlaceholder('Suchen oder neuen Eintrag anlegen …').fill('skill');
+  const search = page.getByRole('dialog', { name: 'Suche' });
+  await search.getByRole('button', { name: /Neuer Skill/ }).waitFor();
+  await search.getByRole('button', { name: /Skill von GitHub importieren/ }).click();
+  const importer = page.getByRole('dialog', { name: 'Skills von GitHub importieren' });
+  const address = importer.getByLabel('GitHub-Adresse');
+  const loadPreview = importer.getByRole('button', { name: 'Vorschau laden' });
+  await address.fill('gitlab.com/example/agent-skills');
+  await loadPreview.click();
+  await importer.getByText('Das ist keine GitHub-Adresse').waitFor();
+  await address.fill('example/rate-limit');
+  await loadPreview.click();
+  await importer.getByText('GitHub nimmt gerade keine Anfragen mehr an').waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '69-skill-import-error');
+  await address.fill('https://github.com/example/agent-skills');
+  await loadPreview.click();
+  await importer.getByText('Sieht in example/agent-skills nach').waitFor();
+  await shot(page, '66-skill-import-loading');
+  await importer.getByText('aktualisiert „pdf-forms“').waitFor();
+  if ((await importer.getByText('neu', { exact: true }).count()) !== 2) errors.push('the preview does not tell new skills from updates');
+  await page.waitForTimeout(300);
+  await shot(page, '67-skill-import-choose');
+  await importer.getByRole('switch', { name: 'webapp-testing importieren' }).click();
+  await importer.getByText('In Projekten').click();
+  const importTwo = importer.getByRole('button', { name: '2 Skills importieren' });
+  if (await importTwo.isEnabled()) errors.push('the import goes on with no project chosen');
+  await importer.getByLabel('Projekt suchen …').fill('UI');
+  await importer.getByLabel('Projekt suchen …').press('Enter');
+  await importTwo.click();
+  await importer.getByText('2 Skills importiert').waitFor();
+  await importer.getByText('1 neu, 1 aktualisiert').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '68-skill-import-done');
+  const [pdf, commits, testing] = await Promise.all(['pdf-forms', 'commit-messages', 'webapp-testing'].map(skillNamed));
+  if (pdf?.files.length !== 3 || pdf.source?.revision !== '9f2c4e1b7a03d5c8e6f1a2b3c4d5e6f7a8b9c0d1') errors.push('an update did not bring the new files and version');
+  if (pdf?.projects.length) errors.push('an updated skill did not keep its projects');
+  if (commits?.projects.map((p: any) => p.name).join() !== 'UI' || !commits.reviewed) errors.push('a new imported skill is not reviewed in its project');
+  if (testing) errors.push('a skill left out was imported');
+  await importer.getByRole('button', { name: 'Fertig' }).click();
+  await importer.waitFor({ state: 'detached' });
+
+  // One SKILL.md on its own, everywhere.
+  await page.getByRole('button', { name: 'Importieren', exact: true }).click();
+  await address.fill('https://github.com/example/agent-skills/blob/main/skills/webapp-testing/SKILL.md');
+  await loadPreview.click();
+  await importer.getByRole('button', { name: 'Einen Skill importieren' }).click();
+  await importer.getByText('1 Skill importiert').waitFor();
+  await importer.getByRole('button', { name: /webapp-testing/ }).click();
+  await skillPanel.getByText('Überall verfügbar').waitFor();
+  await skillPanel.getByRole('button', { name: 'scripts/with_server.py', exact: true }).waitFor();
+  await skillPanel.getByLabel('Schließen').click();
+  await page.getByText('pdf-forms', { exact: true }).click();
+  await skillPanel.getByRole('button', { name: 'Von GitHub aktualisieren' }).click();
+  await skillPanel.getByText('Schon aktuell').waitFor();
+  await skillPanel.getByLabel('Schließen').click();
+  await page.getByRole('radio', { name: 'Vorlagen' }).click();
+  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
+  await page.waitForTimeout(250);
+
   // Trash: delete, restore, delete again, erase for good.
   const deleteOpenEntry = async () => {
     await page.getByLabel('In den Papierkorb').click();
@@ -718,6 +877,19 @@ try {
   await openEntry('Brainmatter');
   await page.waitForTimeout(600);
   await shot(page, '36-light-inspector');
+  await page.getByLabel('Schließen').first().click();
+  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
+  await page.getByRole('radio', { name: 'Skills' }).click();
+  await page.getByText('Release-Notizen schreiben', { exact: true }).waitFor();
+  await page.waitForTimeout(350);
+  await shot(page, '36b-light-skills');
+  await page.getByText('Release-Notizen schreiben', { exact: true }).click();
+  await page.getByRole('complementary', { name: 'Skill', exact: true }).getByRole('button', { name: 'references/beispiel.md', exact: true }).waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, '36c-light-skill');
+  await page.getByLabel('Schließen').first().click();
+  await page.getByRole('radio', { name: 'Vorlagen' }).click();
+  await sidebar.getByRole('button', { name: 'Bibliothek' }).click();
   await page.keyboard.press('Meta+,');
   await page.getByRole('radio', { name: 'Dunkel' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Sperren' }).click();
@@ -1291,6 +1463,35 @@ try {
       await german(panel);
     }
     await page.getByLabel('Close').first().click();
+
+    // Skills: the list, one to review, a new one, and an import.
+    await page.getByRole('button', { name: 'Library', exact: true }).click();
+    await page.getByRole('radio', { name: 'Skills' }).click();
+    await page.getByText('Writing release notes', { exact: true }).waitFor();
+    await page.getByText('an AI picks a skill by its description').waitFor();
+    await german('skills');
+    await page.getByText('Narrowing down a bug', { exact: true }).click();
+    const skill = page.getByRole('complementary', { name: 'Skill', exact: true });
+    await skill.getByRole('button', { name: 'unreviewed' }).waitFor();
+    await german('skill');
+    await skill.getByLabel('Close').click();
+    await page.getByRole('button', { name: 'New skill' }).click();
+    await page.getByRole('complementary', { name: 'New skill' }).getByText('An AI picks the skill by this text.').waitFor();
+    await german('new skill');
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    const importer = page.getByRole('dialog', { name: 'Import skills from GitHub' });
+    await importer.getByLabel('GitHub address').fill('example/agent-skills');
+    await importer.getByRole('button', { name: 'Load preview' }).click();
+    await importer.getByText('updates “pdf-forms”').waitFor();
+    await page.waitForTimeout(300);
+    await german('skill import');
+    await shot(page, '91-english-skill-import');
+    await importer.getByRole('button', { name: 'Import 3 skills' }).click();
+    await importer.getByText('3 skills imported').waitFor();
+    await german('skills imported');
+    await importer.getByRole('button', { name: 'Done' }).click();
+    await page.getByRole('button', { name: 'Library', exact: true }).click();
 
     await page.keyboard.press('Meta+k');
     await page.getByRole('dialog', { name: 'Search' }).waitFor();

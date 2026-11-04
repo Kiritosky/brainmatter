@@ -18,9 +18,12 @@ import type {
   ProjectSummary,
   SearchHit,
   Settings,
+  SkillInfo,
+  SkillSource,
   Status,
 } from './api';
 import { t } from './i18n';
+import { parseSkillAddress, skillSlug, type SkillAddress } from './skills';
 
 type Args = Record<string, any>;
 
@@ -135,6 +138,9 @@ const SIMILAR: [string, string, number][] = [
   ['Brainmatter', T.hybrid, 0.89],
   [T.layout, T.palette, 0.88],
 ];
+
+/** Kept out of the graph and the project counts, and deleted with their project. */
+const isDocument = (kind: string) => kind === 'doc' || kind === 'template' || kind === 'skill';
 
 const liveCount = () => [...nodes.values()].filter((n) => !n.deleted_at).length;
 const modelStatus = (): ModelStatus => ({
@@ -319,7 +325,7 @@ function projectList(): ProjectSummary[] {
   const out: ProjectSummary[] = [];
   const visit = (parent: string | null) => {
     for (const p of all.filter((x) => x.parent_id === parent).sort((a, b) => a.sort - b.sort)) {
-      out.push({ project: p, node_count: [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'doc' && n.kind !== 'template' && members.has(`${p.id}|${n.id}`)).length });
+      out.push({ project: p, node_count: [...nodes.values()].filter((n) => !n.deleted_at && !isDocument(n.kind) && members.has(`${p.id}|${n.id}`)).length });
       visit(p.id);
     }
   };
@@ -367,7 +373,7 @@ function graph(project: string | null): GraphSnapshot {
 function ownGraph(project: string | null): GraphSnapshot {
   const view = project ?? 'all';
   const scope = project ? subtree(project) : null;
-  const ns = [...nodes.values()].filter((n) => !n.deleted_at && n.kind !== 'template' && n.kind !== 'doc' && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
+  const ns = [...nodes.values()].filter((n) => !n.deleted_at && !isDocument(n.kind) && (!scope || projectsOf(n.id).some((p) => scope.has(p.id))));
   const ids = new Set(ns.map((n) => n.id));
   const es = [...edges.values()].filter((e) => !e.deleted_at && ids.has(e.src) && ids.has(e.dst));
   const degree = new Map<string, number>();
@@ -413,6 +419,204 @@ function detail(nid: string): NodeDetail {
     file_links: fileLinks.filter((l) => l.node_id === nid),
     read_only: docs.some((d) => d.node === nid && d.source),
   };
+}
+
+// Skills: entries of kind `skill`, their files are attachments named by their path.
+type SkillProps = { description: string; source?: SkillSource };
+interface RepoSkill {
+  path: string;
+  name: string;
+  description: string;
+  body: string;
+  files: { path: string; text: string }[];
+}
+
+const bytes = (text: string) => new TextEncoder().encode(text);
+const MIME: Record<string, string> = { py: 'text/x-python', sh: 'text/x-sh', md: 'text/markdown', json: 'application/json', txt: 'text/plain' };
+const mimeOf = (path: string) => MIME[path.split('.').pop()!.toLowerCase()] ?? 'application/octet-stream';
+
+function addSkillFile(node: string, path: string, text: string) {
+  const data = bytes(text);
+  const meta: Attachment = { id: id(), node_id: node, filename: path, mime: mimeOf(path), size: data.length, created_at: now(), created_by: USER };
+  attachments.set(meta.id, { meta, bytes: data, deleted: false });
+}
+
+const skillFiles = (node: string) =>
+  [...attachments.values()].filter((a) => a.meta.node_id === node && !a.deleted).map((a) => a.meta).sort((a, b) => a.filename.localeCompare(b.filename));
+
+const liveSkills = () => [...nodes.values()].filter((n) => !n.deleted_at && n.kind === 'skill');
+
+function skillInfo(n: Node): SkillInfo {
+  const props = (n.props ?? { description: '' }) as SkillProps;
+  return {
+    node: { id: n.id, title: n.title, kind: n.kind },
+    slug: skillSlug(n.title),
+    description: props.description,
+    body: n.body,
+    files: skillFiles(n.id),
+    projects: projectsOf(n.id).map((p) => ({ id: p.id, name: p.name })),
+    reviewed: n.reviewed,
+    source: props.source ?? null,
+    updated_at: n.updated_at,
+  };
+}
+
+function setSkillProjects(node: string, wanted: string[]) {
+  for (const p of projects.keys()) members.delete(`${p}|${node}`);
+  for (const p of wanted) members.add(`${p}|${node}`);
+}
+
+/** What `github.com/example/agent-skills` holds in the demo. */
+const REPO = {
+  repo: 'example/agent-skills',
+  revision: '9f2c4e1b7a03d5c8e6f1a2b3c4d5e6f7a8b9c0d1',
+  skills: [
+    {
+      path: 'skills/pdf-forms',
+      name: 'pdf-forms',
+      description: 'Fills in PDF forms: reads the fields, fills them from the data given and checks the result. Use when someone wants a PDF form filled in, or asks which fields a form has.',
+      body:
+        '# PDF forms\n\n1. List the fields with `python scripts/check_fields.py form.pdf`.\n2. Match the data you were given to those fields. Ask for anything missing; never guess a value.\n' +
+        '3. Fill them in with `python scripts/fill_form.py form.pdf values.json out.pdf`.\n4. Run `check_fields.py` on the result and show what went where.\n\nField types and their quirks are in `reference.md`.\n',
+      files: [
+        { path: 'reference.md', text: '# Field types\n\n- **Text**: plain strings; multi-line fields keep `\\n`.\n- **Checkbox**: the export value, often `Yes` or `On`, not `true`.\n- **Radio**: the value of the chosen option.\n- **Choice**: one of the listed options, spelled exactly.\n\nSigned or flattened forms cannot be filled; say so instead of trying.\n' },
+        { path: 'scripts/check_fields.py', text: '"""Lists the fields of a PDF form with their type and current value."""\nimport sys\nfrom pypdf import PdfReader\n\nfor name, field in (PdfReader(sys.argv[1]).get_fields() or {}).items():\n    print(f"{name}\\t{field.get(\'/FT\')}\\t{field.get(\'/V\', \'\')}")\n' },
+        { path: 'scripts/fill_form.py', text: '"""Fills a PDF form from a JSON file of field names and values."""\nimport json\nimport sys\nfrom pypdf import PdfReader, PdfWriter\n\nsource, values, target = sys.argv[1:4]\nwriter = PdfWriter(clone_from=PdfReader(source))\nfor page in writer.pages:\n    writer.update_page_form_field_values(page, json.load(open(values)), auto_regenerate=False)\nwriter.write(target)\n' },
+      ],
+    },
+    {
+      path: 'skills/commit-messages',
+      name: 'commit-messages',
+      description: 'Writes a commit message in the Conventional Commits style from the staged changes. Use when someone asks for a commit message or is about to commit.',
+      body:
+        '# Commit messages\n\nRead the staged diff with `git diff --cached`, then write:\n\n- a subject of at most 50 characters, `type: what changed`, where the type is feat, fix, docs, refactor, test or chore;\n' +
+        '- a blank line, then why, if the diff does not say it.\n\nNo full stop at the end. Write “add”, not “added”.\n',
+      files: [],
+    },
+    {
+      path: 'skills/webapp-testing',
+      name: 'webapp-testing',
+      description: 'Checks a local web app in a real browser with Playwright: starts the server, clicks through and takes screenshots. Use when a change to an interface should be seen working, not only tested.',
+      body:
+        '# Testing a web app\n\nStart the server and the test together:\n\n```sh\npython scripts/with_server.py --port 5173 -- python check.py\n```\n\n' +
+        'The helper waits until the server answers and stops it afterwards.\n\n- Wait until the page has settled before reading it.\n- Find elements by role and text, not by CSS classes.\n- Take a screenshot of every state you check, and look at it.\n',
+      files: [
+        { path: 'scripts/with_server.py', text: '"""Starts a server, waits for its port, runs a command, stops the server."""\nimport socket\nimport subprocess\nimport sys\nimport time\n\nport = int(sys.argv[sys.argv.index("--port") + 1])\ncommand = sys.argv[sys.argv.index("--") + 1:]\nserver = subprocess.Popen(["bun", "run", "dev", "--port", str(port)])\ntry:\n    while socket.socket().connect_ex(("127.0.0.1", port)):\n        time.sleep(0.2)\n    sys.exit(subprocess.call(command))\nfinally:\n    server.terminate()\n' },
+      ],
+    },
+  ] as RepoSkill[],
+};
+
+/** Like the vault: an address it cannot read, a repo that is not there, GitHub saying no. */
+async function repoAt(url: string): Promise<{ address: SkillAddress; skills: RepoSkill[] }> {
+  await new Promise((done) => setTimeout(done, 700));
+  const address = parseSkillAddress(String(url ?? ''));
+  if (!address) {
+    fail('invalid', t(
+      'Das ist keine GitHub-Adresse. Es geht ein Repo wie https://github.com/owner/repo, ein Ordner darin, eine SKILL.md oder kurz owner/repo.',
+      'That is not a GitHub address. A repo works, like https://github.com/owner/repo, a folder in it, a SKILL.md, or owner/repo for short.',
+    ));
+  }
+  // The demo's way to show what happens when GitHub has had enough.
+  if (address.repo.toLowerCase() === 'example/rate-limit') {
+    fail('unavailable', t('GitHub nimmt gerade keine Anfragen mehr an. Versuch es in ein paar Minuten noch einmal.', 'GitHub is not taking any more requests right now. Try again in a few minutes.'));
+  }
+  if (address.repo.toLowerCase() !== REPO.repo) {
+    fail('not_found', t(`„${address.repo}“ gibt es auf GitHub nicht, oder es ist nicht öffentlich.`, `“${address.repo}” does not exist on GitHub, or it is not public.`));
+  }
+  if (address.ref && address.ref !== 'main' && address.ref !== REPO.revision) {
+    fail('not_found', t(`In „${REPO.repo}“ gibt es „${address.ref}“ nicht.`, `There is no “${address.ref}” in “${REPO.repo}”.`));
+  }
+  const skills = REPO.skills.filter((s) => !address.path || s.path === address.path || s.path.startsWith(`${address.path}/`));
+  if (!skills.length) fail('not_found', t('Dort liegt kein Skill. Gesucht wird nach Ordnern mit einer SKILL.md.', 'There is no skill there. Brainmatter looks for folders with a SKILL.md in them.'));
+  return { address, skills };
+}
+
+/** The skill an import would update: imported from the same place before, else the one of that name. */
+function existingSkill(s: RepoSkill) {
+  const all = liveSkills();
+  const from = all.find((n) => {
+    const source = (n.props as SkillProps | null)?.source;
+    return source?.repo === REPO.repo && source.path === s.path;
+  });
+  return from ?? all.find((n) => skillSlug(n.title) === skillSlug(s.name)) ?? null;
+}
+
+const repoUrl = (address: SkillAddress) =>
+  `https://github.com/${REPO.repo}${address.ref || address.path ? `/tree/${address.ref ?? 'main'}${address.path ? `/${address.path}` : ''}` : ''}`;
+
+function importSkill(s: RepoSkill, into: string[]): Node {
+  const source: SkillSource = { url: `https://github.com/${REPO.repo}/tree/main/${s.path}`, repo: REPO.repo, path: s.path, revision: REPO.revision, imported_at: now() };
+  let n = existingSkill(s);
+  if (n) {
+    // Updated in place: the files are replaced, the projects stay.
+    n.body = s.body;
+    n.reviewed = true;
+    n.rev++;
+    n.updated_at = now();
+    for (const a of attachments.values()) if (a.meta.node_id === n.id) a.deleted = true;
+  } else {
+    n = createNode({ title: s.name, body: s.body, kind: 'skill', projects: into });
+  }
+  n.props = { description: s.description, source } satisfies SkillProps;
+  for (const f of s.files) addSkillFile(n.id, f.path, f.text);
+  return n;
+}
+
+function seedSkills(bm: Project, core: Project) {
+  const skill = (title: string, description: string, body: string, ps: Project[], files: { path: string; text: string }[] = [], reviewed = true) => {
+    const n = createNode({ title, body, kind: 'skill', projects: ps.map((p) => p.id) }, reviewed);
+    n.props = { description } satisfies SkillProps;
+    for (const f of files) addSkillFile(n.id, f.path, f.text);
+    return n;
+  };
+  skill(
+    t('Release-Notizen schreiben', 'Writing release notes'),
+    t(
+      'Schreibt die Release-Notizen einer neuen Version aus den Commits seit dem letzten Tag. Nutzen, wenn ein Release ansteht oder jemand nach dem Changelog fragt.',
+      'Writes the release notes of a new version from the commits since the last tag. Use when a release is due or someone asks for the changelog.',
+    ),
+    t(
+      '## Vorgehen\n\n1. Die Commits seit dem letzten Tag lesen: `git log v1.1.0..HEAD --oneline`.\n2. Nach Neu, Verbessert und Behoben ordnen. Interne Umbauten weglassen.\n3. Jeden Punkt aus Sicht der Nutzer schreiben: was sie jetzt tun können, nicht was im Code geändert wurde.\n4. Deutsch in `CHANGELOG.md`, Englisch in `CHANGELOG.en.md`, beide gleich aufgebaut.\n\nWie das aussieht, zeigt `references/beispiel.md`.\n',
+      '## Steps\n\n1. Read the commits since the last tag: `git log v1.1.0..HEAD --oneline`.\n2. Sort them into New, Improved and Fixed. Leave out internal rework.\n3. Write each point from the users’ side: what they can do now, not what changed in the code.\n4. German in `CHANGELOG.md`, English in `CHANGELOG.en.md`, both built the same way.\n\n`references/example.md` shows what it looks like.\n',
+    ),
+    [bm],
+    [{
+      path: t('references/beispiel.md', 'references/example.md'),
+      text: t('## 1.1.0\n\n### Neu\n\n- **Zeitregler:** Sieh zu, wie dein Graph gewachsen ist.\n\n### Behoben\n\n- Die Suche findet wieder Wörter mit Umlauten.\n', '## 1.1.0\n\n### New\n\n- **Timeline:** Watch your graph grow.\n\n### Fixed\n\n- Search finds words with umlauts again.\n'),
+    }],
+  );
+  // An earlier version of the one in the demo repo, so that importing it again updates it.
+  const pdf = skill(
+    'pdf-forms',
+    'Fills in PDF forms from the data given. Use when someone wants a PDF form filled in.',
+    '# PDF forms\n\n1. Match the data you were given to the fields of the form. Ask for anything missing.\n2. Fill them in with `python scripts/fill_form.py form.pdf values.json out.pdf`.\n\nField types are in `reference.md`.\n',
+    [],
+    REPO.skills[0].files.filter((f) => f.path !== 'scripts/check_fields.py'),
+  );
+  (pdf.props as SkillProps).source = {
+    url: `https://github.com/${REPO.repo}/tree/main/skills/pdf-forms`,
+    repo: REPO.repo,
+    path: 'skills/pdf-forms',
+    revision: 'a41c9e27d0b5f3e8c1a6b2d4e7f9a0c3b5d8e1f2',
+    imported_at: now() - 12 * DAY,
+  };
+  const written = skill(
+    t('Fehler eingrenzen', 'Narrowing down a bug'),
+    t(
+      'Grenzt einen Fehler Schritt für Schritt ein, bevor etwas geändert wird. Nutzen, wenn ein Test fehlschlägt oder ein Fehler gemeldet wird, dessen Ursache unklar ist.',
+      'Narrows a bug down step by step before anything is changed. Use when a test fails or a bug is reported whose cause is unclear.',
+    ),
+    t(
+      '1. Den Fehler zuverlässig auslösen, am besten mit einem Test.\n2. Die Änderung suchen, seit der er auftritt, etwa mit `git bisect`.\n3. Eine Vermutung aufschreiben und prüfen. Nie zwei Dinge auf einmal ändern.\n4. Erst wenn die Ursache feststeht, beheben. Der Test aus Schritt 1 bleibt.\n\nWas du herausgefunden hast, hältst du in Brainmatter fest.\n',
+      '1. Make the bug happen reliably, ideally with a test.\n2. Find the change since which it happens, with `git bisect` for instance.\n3. Write down a guess and check it. Never change two things at once.\n4. Fix it only once the cause is clear. The test from step 1 stays.\n\nWrite down what you found out in Brainmatter.\n',
+    ),
+    [core],
+    [],
+    false,
+  );
+  written.created_by = 'actor-Claude Code';
+  written.updated_by = 'actor-Claude Code';
 }
 
 function search(q: Args): SearchHit[] {
@@ -490,11 +694,13 @@ function seed() {
   record(`„${T.sourdough}“ gelöscht`, [byTitle(T.sourdough)], { actor: 'Codex', client: 'codex', ago: 2 * H, reverted: true });
   record('Verbindung erstellt', [], { actor: 'Claude Code', client: 'claude-code', ago: 40 * 60_000 });
   record(`„${T.vault}“ bearbeitet`, [byTitle(T.vault)], { actor: 'Claude Code', client: 'claude-code', ago: 6 * 60_000 });
+  seedSkills(bm, core);
 }
 
 const MEMORY_RULE =
   '## Brainmatter\n\nBrainmatter (MCP server `brainmatter`) is my knowledge graph and your long-term memory, shared with my other AI tools and sessions.\n' +
-  '- Before you start a task, look up what is already known: `project_overview` for the project, `search` for the topic.\n';
+  '- Before you start a task, look up what is already known: `project_overview` for the project, `search` for the topic.\n' +
+  '- If a task matches one of my skills (`list_skills`), load it with `get_skill` and follow it.\n';
 const MEMORY_RULE_WRITE =
   '- Save unasked what a later session will need, as soon as it comes up: decisions with their reasons, findings, conventions, my corrections, open tasks. Use `capture`, and `update` an existing entry rather than adding a near-duplicate.\n' +
   '- No secrets, and nothing that code or git already records.\n';
@@ -623,7 +829,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   tag_counts: () => {
     const counts = new Map<string, number>();
     for (const n of nodes.values()) {
-      if (!n.deleted_at && n.kind !== 'doc' && n.kind !== 'template') n.tags.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1));
+      if (!n.deleted_at && !isDocument(n.kind)) n.tags.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1));
     }
     return [...counts].map(([tag, count]) => ({ tag, count })).sort((x, y) => y.count - x.count);
   },
@@ -656,12 +862,11 @@ const handlers: Record<string, (a: Args) => unknown> = {
     const tree = subtree(a.id);
     const inTree = [...nodes.values()].filter((n) => !n.deleted_at && projectsOf(n.id).some((p) => tree.has(p.id)));
     const only = (n: Node) => projectsOf(n.id).every((p) => tree.has(p.id));
-    const isDoc = (n: Node) => n.kind === 'doc' || n.kind === 'template';
     return {
       subprojects: tree.size - 1,
-      entries_only_here: inTree.filter((n) => !isDoc(n) && only(n)).length,
-      entries_elsewhere: inTree.filter((n) => !isDoc(n) && !only(n)).length,
-      documents: inTree.filter((n) => isDoc(n) && only(n)).length,
+      entries_only_here: inTree.filter((n) => !isDocument(n.kind) && only(n)).length,
+      entries_elsewhere: inTree.filter((n) => !isDocument(n.kind) && !only(n)).length,
+      documents: inTree.filter((n) => isDocument(n.kind) && only(n)).length,
     };
   },
   delete_project: (a) => {
@@ -670,7 +875,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     for (const n of nodes.values()) {
       const own = projectsOf(n.id);
       const only = !n.deleted_at && own.length > 0 && own.every((p) => tree.has(p.id));
-      if (only && (a.withEntries || n.kind === 'doc' || n.kind === 'template')) {
+      if (only && (a.withEntries || isDocument(n.kind))) {
         n.deleted_at = now();
         trashed++;
       }
@@ -741,6 +946,62 @@ const handlers: Record<string, (a: Args) => unknown> = {
         projects: projectsOf(n.id).map((p) => ({ id: p.id, name: p.name })),
         reviewed: n.reviewed,
       })),
+  skills: () => liveSkills().sort((a, b) => a.title.localeCompare(b.title)).map(skillInfo),
+  save_skill: (a) => {
+    const input = a.input;
+    const title = String(input.title ?? '').trim();
+    const description = String(input.description ?? '').trim();
+    if (!title) fail('invalid', t('Der Skill braucht einen Namen.', 'The skill needs a name.'));
+    if (!description) fail('invalid', t('Der Skill braucht eine Beschreibung. Nach ihr wählt eine KI ihn aus.', 'The skill needs a description. That is what an AI picks it by.'));
+    const slug = skillSlug(title);
+    if (!slug) fail('invalid', t('Der Name braucht mindestens einen Buchstaben oder eine Ziffer.', 'The name needs at least one letter or digit.'));
+    const clash = liveSkills().find((n) => n.id !== input.id && skillSlug(n.title) === slug);
+    if (clash) fail('conflict', t(`Es gibt schon einen Skill namens „${clash.title}“.`, `There is already a skill called “${clash.title}”.`));
+    let n: Node;
+    if (input.id) {
+      n = live(input.id);
+      if (n.kind !== 'skill') fail('invalid', t('Dieser Eintrag ist kein Skill.', 'This entry is not a skill.'));
+      n.title = title;
+      n.body = input.body ?? '';
+      n.rev++;
+      n.updated_at = now();
+      syncWikilinks(n);
+    } else {
+      n = createNode({ title, body: input.body ?? '', kind: 'skill' });
+    }
+    n.props = { ...(n.props as SkillProps | null), description } satisfies SkillProps;
+    setSkillProjects(n.id, input.projects ?? []);
+    record(`„${n.title}“ ${input.id ? 'bearbeitet' : 'erstellt'}`, [n.id]);
+    notify({ type: 'node_upserted', id: n.id });
+    return skillInfo(n);
+  },
+  preview_skill_import: async (a) => {
+    const { address, skills } = await repoAt(a.url);
+    return {
+      url: repoUrl(address),
+      repo: REPO.repo,
+      revision: REPO.revision,
+      skills: skills.map((s) => ({
+        path: s.path,
+        name: s.name,
+        description: s.description,
+        body: s.body,
+        files: s.files.map((f) => ({ path: f.path, size: bytes(f.text).length })),
+        size: bytes(s.body).length + s.files.reduce((sum, f) => sum + bytes(f.text).length, 0),
+        existing: existingSkill(s)?.id ?? null,
+      })),
+    };
+  },
+  import_skills: async (a) => {
+    const { skills } = await repoAt(a.url);
+    if (a.revision !== REPO.revision) fail('conflict', t('Das Repo hat sich seit der Vorschau geändert. Lade sie bitte noch einmal.', 'The repo has changed since the preview. Please load it again.'));
+    const chosen = skills.filter((s) => (a.paths as string[]).includes(s.path));
+    if (!chosen.length) fail('invalid', t('Kein Skill ausgewählt.', 'No skill chosen.'));
+    const made = chosen.map((s) => importSkill(s, a.projects ?? []));
+    record(`„${REPO.repo}“ importiert`, made.map((n) => n.id));
+    notify(...made.map((n) => ({ type: 'node_upserted' as const, id: n.id })));
+    return made.map(skillInfo);
+  },
   trash: () =>
     [...nodes.values()]
       .filter((n) => n.deleted_at)
@@ -863,7 +1124,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   orphans: () =>
     [...nodes.values()]
-      .filter((n) => !n.deleted_at && n.kind !== 'doc' && n.kind !== 'template' && ![...edges.values()].some((e) => !e.deleted_at && (e.src === n.id || e.dst === n.id)))
+      .filter((n) => !n.deleted_at && !isDocument(n.kind) && ![...edges.values()].some((e) => !e.deleted_at && (e.src === n.id || e.dst === n.id)))
       .map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
   unreviewed: () =>
     [...nodes.values()].filter((n) => !n.deleted_at && !n.reviewed).map((n) => ({ id: n.id, title: n.title, kind: n.kind })),

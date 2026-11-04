@@ -184,7 +184,7 @@ export const MCP_TOOLS: { title: string; tools: { name: string; about: string }[
     ],
   },
   {
-    title: t('Doku, Vorlagen und Dateien', 'Docs, templates and files'),
+    title: t('Doku, Vorlagen, Skills und Dateien', 'Docs, templates, skills and files'),
     tools: [
       { name: 'list_docs', about: t('Doku-Seiten eines Projekts', 'Documentation pages of a project') },
       { name: 'read_doc', about: t('Eine Seite oder einen Abschnitt lesen', 'Read a page or a section') },
@@ -192,6 +192,9 @@ export const MCP_TOOLS: { title: string; tools: { name: string; about: string }[
       { name: 'list_templates', about: t('Deine Vorlagen', 'Your templates') },
       { name: 'get_template', about: t('Eine Vorlage ausgefüllt holen', 'Get a template, filled in') },
       { name: 'save_template', about: t('Eine Vorlage anlegen oder ersetzen', 'Create or replace a template') },
+      { name: 'list_skills', about: t('Deine Skills mit ihren Beschreibungen', 'Your skills with their descriptions') },
+      { name: 'get_skill', about: t('Einen Skill mit Anleitung und Dateien laden', 'Load a skill with its instructions and files') },
+      { name: 'save_skill', about: t('Einen Skill anlegen oder ändern', 'Create or change a skill') },
       { name: 'link_file', about: t('Eine Datei auf dem Mac verknüpfen, du gibst sie frei', 'Link a file on the Mac; you allow it') },
       { name: 'read_linked_file', about: t('Eine freigegebene Datei lesen', 'Read an allowed file') },
     ],
