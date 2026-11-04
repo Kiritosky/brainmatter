@@ -26,6 +26,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 parking_lot = "0.13"
 tokio = { version = "1", features = ["sync", "time"] }
+# The client and TLS stack the updater brings, for importing skills from GitHub.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [dev-dependencies]
 tempfile.workspace = true

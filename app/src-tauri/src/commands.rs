@@ -7,18 +7,21 @@ use bm_core::{
     backups::BackupInfo,
     ids::{AttachmentId, ChangeSetId, DocSourceId, FileLinkId, NodeId, ProjectId},
     model::*,
+    templates::slug,
 };
 use bm_mcp::{Client, ClientRegistry, RegistryError, Scope};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::i18n::tr;
+use crate::i18n::{german, tr};
 use crate::{
     McpStatus,
     error::{ApiError, ApiResult},
+    github::Github,
     integrations::{self as setup, Integrations, Target},
     session::{BackupStatus, ModelStatus, Session, Settings, Status},
+    skill_import::{self, SkillImportPreview},
     updates::AvailableUpdate,
 };
 
@@ -638,6 +641,84 @@ pub fn remove_doc_source(session: S<'_>, id: DocSourceId) -> ApiResult<()> {
 pub fn templates(session: S<'_>) -> ApiResult<Vec<TemplateInfo>> {
     let (engine, _) = session.engine()?;
     Ok(engine.templates(None)?)
+}
+
+#[tauri::command(async)]
+pub fn skills(session: S<'_>) -> ApiResult<Vec<SkillInfo>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.skills(None)?)
+}
+
+/// Creates or changes a skill. The checks come first so they read in the app's language.
+#[tauri::command(async)]
+pub fn save_skill(session: S<'_>, input: SkillInput) -> ApiResult<SkillInfo> {
+    let (engine, ctx) = session.engine()?;
+    let name = slug(&input.title);
+    if name.is_empty() {
+        return Err(ApiError::new(
+            "invalid",
+            tr(
+                "Der Skill braucht einen Namen mit Buchstaben oder Ziffern.",
+                "The skill needs a name with letters or digits.",
+            ),
+        ));
+    }
+    if input.description.trim().is_empty() {
+        return Err(ApiError::new(
+            "invalid",
+            tr(
+                "Der Skill braucht eine Beschreibung. An ihr erkennt die KI, wann er passt.",
+                "The skill needs a description. It tells the AI when the skill fits.",
+            ),
+        ));
+    }
+    let skills = engine.skills(None)?;
+    let taken = skills.iter().find(|s| s.slug == name && Some(&s.node.id) != input.id.as_ref());
+    if let Some(other) = taken {
+        return Err(ApiError::new(
+            "conflict",
+            match german() {
+                true => format!(
+                    "Der Skill „{}“ hat schon den Namen {name}. Bitte einen anderen wählen.",
+                    other.node.title
+                ),
+                false => format!(
+                    "The skill “{}” has the name {name} already. Please choose another one.",
+                    other.node.title
+                ),
+            },
+        ));
+    }
+    Ok(engine.save_skill(&ctx, input)?)
+}
+
+#[tauri::command]
+pub async fn preview_skill_import(session: S<'_>, url: String) -> ApiResult<SkillImportPreview> {
+    // A locked vault could not tell which skills exist; no need to ask GitHub then.
+    session.engine()?;
+    let mut preview = skill_import::preview(&Github::new()?, &url).await?;
+    let (engine, _) = session.engine()?;
+    skill_import::mark_existing(&mut preview, &engine)?;
+    Ok(preview)
+}
+
+#[tauri::command]
+pub async fn import_skills(
+    session: S<'_>,
+    url: String,
+    revision: String,
+    paths: Vec<String>,
+    projects: Vec<ProjectId>,
+) -> ApiResult<Vec<SkillInfo>> {
+    session.engine()?;
+    let fetched = skill_import::fetch(&Github::new()?, &url, &revision, &paths).await?;
+    let session = session.inner().clone();
+    // Encrypting up to a few megabytes per skill.
+    blocking(move || {
+        let (engine, ctx) = session.engine()?;
+        Ok(engine.import_skills(&ctx, fetched, &projects)?)
+    })
+    .await
 }
 
 #[tauri::command(async)]

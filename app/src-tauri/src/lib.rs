@@ -4,10 +4,12 @@
 mod commands;
 mod docs_watch;
 pub mod error;
+mod github;
 pub mod i18n;
 pub mod integrations;
 mod perf;
 pub mod session;
+mod skill_import;
 mod tray;
 mod updates;
 
@@ -303,6 +305,10 @@ pub fn run() {
             commands::sync_doc_sources,
             commands::remove_doc_source,
             commands::templates,
+            commands::skills,
+            commands::save_skill,
+            commands::preview_skill_import,
+            commands::import_skills,
             commands::file_links,
             commands::link_files,
             commands::set_file_link_approved,

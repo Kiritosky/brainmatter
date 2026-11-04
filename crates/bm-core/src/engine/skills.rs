@@ -231,6 +231,9 @@ impl Engine {
         skills: Vec<SkillImport>,
         projects: &[ProjectId],
     ) -> Result<Vec<SkillInfo>> {
+        if skills.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut stored = Vec::with_capacity(skills.len());
         for skill in &skills {
             rows::clean_title(&skill.title)?;

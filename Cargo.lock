@@ -534,6 +534,8 @@ dependencies = [
  "bm-macos",
  "bm-mcp",
  "parking_lot 0.13.0",
+ "reqwest 0.13.5",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",
