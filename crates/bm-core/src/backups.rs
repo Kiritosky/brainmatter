@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::OpenFlags;
 use serde::Serialize;
 
 use crate::{
@@ -94,7 +94,7 @@ fn snapshot(db: &Path, key: &DbKey, target: &Path) -> Result<()> {
 /// Opens a database file read-only and runs SQLite's structure check.
 pub fn verify(path: &Path, key: &DbKey) -> Result<()> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let conn = Connection::open_with_flags(path, flags)?;
+    let conn = crate::store::connect(path, flags)?;
     key.apply(&conn)?;
     crate::store::register_functions(&conn)?;
     let check: String = conn

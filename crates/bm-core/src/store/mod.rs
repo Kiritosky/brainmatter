@@ -2,7 +2,7 @@
 
 mod schema;
 
-use std::path::Path;
+use std::{ffi::c_int, path::Path, sync::OnceLock};
 
 use rusqlite::{Connection, OpenFlags, ffi, functions::FunctionFlags};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -50,6 +50,18 @@ impl DbKey {
     }
 }
 
+/// Opens a connection only after SQLite's one-time setup has finished. SQLite
+/// counts itself as set up before SQLCipher's part has run, so a connection
+/// opened on another thread meanwhile cannot be keyed.
+pub(crate) fn connect(path: &Path, flags: OpenFlags) -> rusqlite::Result<Connection> {
+    static INIT: OnceLock<c_int> = OnceLock::new();
+    // SAFETY: sqlite3_initialize is thread-safe and may be called more than once.
+    match *INIT.get_or_init(|| unsafe { ffi::sqlite3_initialize() }) {
+        ffi::SQLITE_OK => Connection::open_with_flags(path, flags),
+        rc => Err(rusqlite::Error::SqliteFailure(ffi::Error::new(rc), None)),
+    }
+}
+
 pub struct Db {
     conn: Connection,
 }
@@ -75,7 +87,7 @@ impl Db {
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
             | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-        let conn = Connection::open_with_flags(path, flags)?;
+        let conn = connect(path, flags)?;
 
         // Without SQLCipher, `PRAGMA key` is silently ignored and data would be
         // written in plaintext, so verify the cipher is actually present.
