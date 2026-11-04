@@ -80,8 +80,15 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 
 Requires macOS 13 or newer on Apple Silicon.
 
-1. Download the DMG from the [latest release](https://github.com/Kiritosky/brainmatter/releases/latest) and drag Brainmatter to Applications.
-2. Open it. macOS will refuse the first time, because the app is not notarized. Go to **System Settings → Privacy & Security** and choose **Open Anyway**.
+The easiest way is Homebrew:
+
+```
+brew install --cask kiritosky/tap/brainmatter
+```
+
+Or download the DMG from the [latest release](https://github.com/Kiritosky/brainmatter/releases/latest) and drag Brainmatter to Applications.
+
+Either way, macOS will refuse to open it the first time, because the app is not notarized. Go to **System Settings → Privacy & Security** and choose **Open Anyway**.
 
 Later versions install themselves from inside the app. After each update it asks for your password once, then Touch ID works again.
 
