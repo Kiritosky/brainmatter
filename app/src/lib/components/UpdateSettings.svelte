@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onDestroy, onMount } from 'svelte';
   import { Check, Download, RefreshCw } from '@lucide/svelte';
   import { api, errorMessage, onUpdateProgress, type Settings } from '#lib/api.ts';
@@ -43,7 +44,7 @@
     const update = ws.update;
     if (!update) return;
     ws.changelog = {
-      heading: `Neu in Version ${update.version}`,
+      heading: t(`Neu in Version ${update.version}`, `New in version ${update.version}`),
       items: [{ version: update.version, date: null, notes: update.notes ?? '' }],
     };
   }
@@ -67,35 +68,35 @@
 <div class="card">
   <div class="row">
     <div class="flex-1">
-      <div>Automatisch nach Updates suchen</div>
-      <div class="text-xs text-faint">Fragt einmal täglich bei GitHub nach. Dabei werden keine Einträge übertragen.</div>
+      <div>{t('Automatisch nach Updates suchen', 'Check for updates automatically')}</div>
+      <div class="text-xs text-faint">{t('Fragt einmal täglich bei GitHub nach. Dabei werden keine Einträge übertragen.', 'Asks GitHub once a day. No entries are sent.')}</div>
     </div>
-    <Toggle checked={settings.auto_update} label="Automatisch nach Updates suchen" onchange={(v) => onsave({ auto_update: v })} />
+    <Toggle checked={settings.auto_update} label={t('Automatisch nach Updates suchen', 'Check for updates automatically')} onchange={(v) => onsave({ auto_update: v })} />
   </div>
   <div class="row">
     {#if ws.update}
       <div class="min-w-0 flex-1" in:pop={{ duration: 180, y: 3 }}>
-        <div class="font-medium">Version {ws.update.version} ist verfügbar</div>
-        <div class="text-xs text-faint">Installiert ist {version}. Die App sperrt sich und startet dann neu.</div>
+        <div class="font-medium">{t(`Version ${ws.update.version} ist verfügbar`, `Version ${ws.update.version} is available`)}</div>
+        <div class="text-xs text-faint">{t(`Installiert ist ${version}. Die App sperrt sich und startet dann neu.`, `${version} is installed. The app locks and then restarts.`)}</div>
       </div>
       {#if ws.update.notes}
-        <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={showUpdateNotes}>Was ist neu?</button>
+        <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={showUpdateNotes}>{t('Was ist neu?', 'What’s new?')}</button>
       {/if}
       <button class="btn-primary shrink-0" disabled={installing} onclick={install}>
-        <Download size={14} /> {installing ? 'Wird geladen …' : 'Installieren'}
+        <Download size={14} /> {installing ? t('Wird geladen …', 'Downloading …') : t('Installieren', 'Install')}
       </button>
     {:else}
       <div class="min-w-0 flex-1">
-        <div>Version {version}</div>
+        <div>{t('Version', 'Version')} {version}</div>
         {#if upToDate}
-          <div class="flex items-center gap-1 text-xs text-ok" in:pop={{ duration: 160, y: 2 }}><Check size={12} /> Das ist die neueste Version.</div>
+          <div class="flex items-center gap-1 text-xs text-ok" in:pop={{ duration: 160, y: 2 }}><Check size={12} /> {t('Das ist die neueste Version.', 'This is the latest version.')}</div>
         {:else}
-          <div class="text-xs text-faint">Updates sind signiert, andere installiert die App nicht.</div>
+          <div class="text-xs text-faint">{t('Updates sind signiert, andere installiert die App nicht.', 'Updates are signed; the app installs no others.')}</div>
         {/if}
       </div>
-      <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={() => (ws.changelog = { heading: 'Alle Änderungen', items: releases })}>Änderungen</button>
+      <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={() => (ws.changelog = { heading: t('Alle Änderungen', 'All changes'), items: releases })}>{t('Änderungen', 'Changes')}</button>
       <button class="btn-ghost !h-7.5 shrink-0 text-xs" disabled={checking} onclick={check}>
-        <RefreshCw size={13} class={checking ? 'animate-spin' : ''} /> Jetzt suchen
+        <RefreshCw size={13} class={checking ? 'animate-spin' : ''} /> {t('Jetzt suchen', 'Check now')}
       </button>
     {/if}
   </div>
@@ -104,7 +105,7 @@
       <div class="h-1.5 overflow-hidden rounded-full bg-bg/70">
         <div class="h-full rounded-full bg-accent transition-[width] duration-200 ease-(--ease-out-soft)" style="width: {share}%"></div>
       </div>
-      <div class="mt-1.5 text-right text-xs text-faint tabular-nums">{formatSize(progress.downloaded)}{progress.total ? ` von ${formatSize(progress.total)}` : ''}</div>
+      <div class="mt-1.5 text-right text-xs text-faint tabular-nums">{formatSize(progress.downloaded)}{progress.total ? t(` von ${formatSize(progress.total)}`, ` of ${formatSize(progress.total)}`) : ''}</div>
     </div>
   {/if}
 </div>

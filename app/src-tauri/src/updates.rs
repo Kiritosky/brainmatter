@@ -14,6 +14,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
+use crate::i18n::tr;
 use crate::{
     error::{ApiError, ApiResult},
     session::Session,
@@ -33,22 +34,34 @@ async fn find(app: &AppHandle) -> ApiResult<Option<tauri_plugin_updater::Update>
         return Ok(None);
     }
     let failed = |e: tauri_plugin_updater::Error| {
-        ApiError::new("update_failed", format!("Update-Prüfung fehlgeschlagen: {e}"))
+        ApiError::new(
+            "update_failed",
+            format!("{}: {e}", tr("Update-Prüfung fehlgeschlagen", "Checking for updates failed")),
+        )
     };
     app.updater().map_err(failed)?.check().await.map_err(failed)
 }
 
 pub async fn check(app: &AppHandle) -> ApiResult<Option<AvailableUpdate>> {
     let found = find(app).await?;
-    Ok(found.map(|u| AvailableUpdate { version: u.version.clone(), notes: u.body.clone() }))
+    Ok(found.map(|u| AvailableUpdate { version: u.version.clone(), notes: notes(&u) }))
+}
+
+/// `notes` are German; since 1.1.0, `notes_en` has the English ones beside them.
+fn notes(update: &tauri_plugin_updater::Update) -> Option<String> {
+    let english = update.raw_json.get("notes_en").and_then(|n| n.as_str());
+    match english {
+        Some(text) if !crate::i18n::german() => Some(text.to_owned()),
+        _ => update.body.clone(),
+    }
 }
 
 /// Installs the newest update and restarts. The vault locks first, so keys do
 /// not outlive the process any longer than needed.
 pub async fn install(app: &AppHandle) -> ApiResult<()> {
-    let update = find(app)
-        .await?
-        .ok_or_else(|| ApiError::new("update_failed", "Es gibt kein neues Update."))?;
+    let update = find(app).await?.ok_or_else(|| {
+        ApiError::new("update_failed", tr("Es gibt kein neues Update.", "There is no new update."))
+    })?;
     let emitter = app.clone();
     let done = Arc::new(AtomicI64::new(0));
     let last = AtomicI64::new(0);

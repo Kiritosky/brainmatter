@@ -6,5 +6,6 @@
 pub mod biometrics;
 pub mod bookmarks;
 pub mod keychain;
+pub mod locale;
 pub mod power;
 pub mod watch;

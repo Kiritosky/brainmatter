@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onDestroy, onMount } from 'svelte';
   import { Download, FileQuestion, X } from '@lucide/svelte';
   import { api, errorMessage, type Attachment } from '#lib/api.ts';
@@ -30,7 +31,7 @@
 
   async function save() {
     try {
-      if (await api.exportAttachment(attachment.id)) ws.notify(`„${attachment.filename}“ gespeichert. Diese Kopie ist nicht verschlüsselt.`);
+      if (await api.exportAttachment(attachment.id)) ws.notify(t(`„${attachment.filename}“ gespeichert. Diese Kopie ist nicht verschlüsselt.`, `Saved “${attachment.filename}”. This copy is not encrypted.`));
     } catch (e) {
       ws.notify(errorMessage(e));
     }
@@ -55,8 +56,8 @@
       <span class="min-w-0 truncate font-medium">{attachment.filename}</span>
       <span class="shrink-0 text-xs text-faint tabular-nums">{formatSize(attachment.size)}</span>
       <div class="flex-1"></div>
-      <button class="btn-ghost !h-7.5 text-xs" onclick={save}><Download size={13} /> Sichern unter …</button>
-      <button class="icon-btn" aria-label="Schließen" onclick={onclose}><X size={16} /></button>
+      <button class="btn-ghost !h-7.5 text-xs" onclick={save}><Download size={13} /> {t('Sichern unter …', 'Save as …')}</button>
+      <button class="icon-btn" aria-label={t('Schließen', 'Close')} onclick={onclose}><X size={16} /></button>
     </header>
 
     <div class="relative min-h-0 flex-1 bg-bg/40">
@@ -71,7 +72,7 @@
       {:else if kind === 'none'}
         <div class="flex h-full flex-col items-center justify-center gap-3 text-center">
           <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-raised text-faint"><FileQuestion size={22} /></div>
-          <p class="max-w-xs text-muted">Für diesen Dateityp gibt es keine Vorschau. Du kannst die Datei über „Sichern unter“ öffnen.</p>
+          <p class="max-w-xs text-muted">{t('Für diesen Dateityp gibt es keine Vorschau. Du kannst die Datei über „Sichern unter“ öffnen.', 'There is no preview for this kind of file. You can open it with “Save as”.')}</p>
         </div>
       {/if}
     </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { ArrowLeft, Fingerprint, HardDrive, ShieldCheck, Copy, Check } from '@lucide/svelte';
   import { api, errorMessage, type Status } from '#lib/api.ts';
   import Checkbox from '#lib/ui/Checkbox.svelte';
@@ -25,14 +26,14 @@
     const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^\w\s]/].filter((r) => r.test(password)).length;
     return Math.max(0, Math.min(4, Math.floor(password.length / 4) + classes - 2));
   });
-  const strengthLabel = ['Sehr schwach', 'Schwach', 'Okay', 'Gut', 'Stark'];
+  const strengthLabel = [t('Sehr schwach', 'Very weak'), t('Schwach', 'Weak'), t('Okay', 'Okay'), t('Gut', 'Good'), t('Stark', 'Strong')];
   const strengthColor = ['var(--color-danger)', 'var(--color-danger)', 'var(--color-warn)', 'var(--color-ok)', 'var(--color-ok)'];
 
   async function create(e: SubmitEvent) {
     e.preventDefault();
     error = null;
     if (password !== confirm) {
-      error = 'Die Passwörter stimmen nicht überein.';
+      error = t('Die Passwörter stimmen nicht überein.', 'The passwords do not match.');
       return;
     }
     busy = true;
@@ -95,16 +96,16 @@
     <div class="surface w-[430px] rounded-xl p-8" in:pop={{ duration: 300, y: 12 }}>
       {#if step === 'create'}
         <img src="/icon.png" alt="" class="mb-4 h-14 w-14" draggable="false" />
-        <h1 class="text-xl font-semibold tracking-tight">Willkommen bei Brainmatter</h1>
-        <p class="mt-1 mb-6 text-muted">Dein Wissen, lokal und verschlüsselt auf diesem Mac.</p>
+        <h1 class="text-xl font-semibold tracking-tight">{t('Willkommen bei Brainmatter', 'Welcome to Brainmatter')}</h1>
+        <p class="mt-1 mb-6 text-muted">{t('Dein Wissen, lokal und verschlüsselt auf diesem Mac.', 'What you know, local and encrypted on this Mac.')}</p>
         <form class="flex flex-col gap-3.5" onsubmit={create}>
           <label class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-muted">Dein Name</span>
+            <span class="text-xs font-medium text-muted">{t('Dein Name', 'Your name')}</span>
             <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-            <input class="field" bind:value={name} placeholder="z. B. Lasse" autofocus />
+            <input class="field" bind:value={name} placeholder={t('z. B. Lasse', 'e.g. Alex')} autofocus />
           </label>
           <label class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-muted">Master-Passwort</span>
+            <span class="text-xs font-medium text-muted">{t('Master-Passwort', 'Master password')}</span>
             <input class="field" type="password" bind:value={password} autocomplete="new-password" />
           </label>
           <div class="flex h-4 items-center gap-2.5">
@@ -115,68 +116,74 @@
             <span class="w-20 text-right text-[11px] text-faint">{password ? strengthLabel[strength] : ''}</span>
           </div>
           <label class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-muted">Passwort wiederholen</span>
+            <span class="text-xs font-medium text-muted">{t('Passwort wiederholen', 'Repeat the password')}</span>
             <input class="field" type="password" bind:value={confirm} autocomplete="new-password" />
           </label>
           <p class="text-xs leading-relaxed text-faint">
-            Ohne Passwort und Wiederherstellungsschlüssel sind die Daten nicht wiederherstellbar. Das ist Absicht.
+            {t('Ohne Passwort und Wiederherstellungsschlüssel sind die Daten nicht wiederherstellbar. Das ist Absicht.', 'Without the password and the recovery key, the data cannot be recovered. That is on purpose.')}
           </p>
           {#if error}<p class="text-danger" transition:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
           <button class="btn-primary mt-1" disabled={busy || !name.trim() || password.length < 8}>
-            {busy ? 'Tresor wird erstellt …' : 'Tresor erstellen'}
+            {busy ? t('Tresor wird erstellt …', 'Creating the vault …') : t('Tresor erstellen', 'Create vault')}
           </button>
         </form>
         <button class="mt-4 w-full text-center text-xs text-muted transition-colors hover:text-text" onclick={() => goTo('adopt')}>
-          Schon Brainmatter genutzt? Aus einem Backup übernehmen
+          {t('Schon Brainmatter genutzt? Aus einem Backup übernehmen', 'Used Brainmatter before? Take over a backup')}
         </button>
       {:else if step === 'adopt'}
         <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent"><HardDrive size={22} /></div>
-        <h1 class="text-xl font-semibold tracking-tight">Aus einem Backup übernehmen</h1>
+        <h1 class="text-xl font-semibold tracking-tight">{t('Aus einem Backup übernehmen', 'Take over a backup')}</h1>
         <p class="mt-1 mb-5 leading-relaxed text-muted">
-          Wähle den Ordner „Brainmatter-Backup“, etwa auf deinem externen Laufwerk. Das Master-Passwort von damals öffnet ihn, und das neueste Backup wird dein Tresor.
+          {t(
+            'Wähle den Ordner „Brainmatter-Backup“, etwa auf deinem externen Laufwerk. Das Master-Passwort von damals öffnet ihn, und das neueste Backup wird dein Tresor.',
+            'Choose the “Brainmatter-Backup” folder, on your external drive, say. The master password from back then opens it, and the newest backup becomes your vault.',
+          )}
         </p>
         <form class="flex flex-col gap-3.5" onsubmit={adopt}>
           <label class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-muted">Master-Passwort</span>
+            <span class="text-xs font-medium text-muted">{t('Master-Passwort', 'Master password')}</span>
             <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
             <input class="field" type="password" bind:value={password} autocomplete="current-password" autofocus />
           </label>
           {#if error}<p class="text-danger" transition:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
           <div class="mt-1 flex gap-2">
-            <button type="button" class="btn-ghost" aria-label="Zurück" onclick={() => goTo('create')}><ArrowLeft size={14} /></button>
-            <button class="btn-primary flex-1" disabled={busy || !password}>{busy ? 'Wird übernommen …' : 'Ordner wählen'}</button>
+            <button type="button" class="btn-ghost" aria-label={t('Zurück', 'Back')} onclick={() => goTo('create')}><ArrowLeft size={14} /></button>
+            <button class="btn-primary flex-1" disabled={busy || !password}>{busy ? t('Wird übernommen …', 'Taking over …') : t('Ordner wählen', 'Choose folder')}</button>
           </div>
         </form>
       {:else if step === 'recovery'}
         <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-ok/15 text-ok"><ShieldCheck size={24} /></div>
-        <h1 class="text-xl font-semibold tracking-tight">Dein Wiederherstellungsschlüssel</h1>
+        <h1 class="text-xl font-semibold tracking-tight">{t('Dein Wiederherstellungsschlüssel', 'Your recovery key')}</h1>
         <p class="mt-1 mb-5 leading-relaxed text-muted">
-          Falls du dein Passwort vergisst, ist das der einzige Weg zurück. Speichere ihn im Passwort-Manager oder drucke ihn aus.
-          Er wird <strong class="text-text">nur dieses eine Mal</strong> angezeigt.
+          {t(
+            'Falls du dein Passwort vergisst, ist das der einzige Weg zurück. Speichere ihn im Passwort-Manager oder drucke ihn aus.',
+            'If you forget your password, this is the only way back. Keep it in a password manager or print it.',
+          )}
+          {t('Er wird', 'It is shown')} <strong class="text-text">{t('nur dieses eine Mal', 'only this once')}</strong>{t(' angezeigt.', '.')}
         </p>
         <div class="selectable mb-3 rounded-xl border border-line bg-bg/60 px-4 py-3.5 text-center font-mono text-[14.5px] leading-7 tracking-wider">
           {recoveryKey}
         </div>
         <button class="btn-ghost mb-5 w-full" onclick={copyKey}>
-          {#if copied}<Check size={14} class="text-ok" /> Kopiert{:else}<Copy size={14} /> In die Zwischenablage kopieren{/if}
+          {#if copied}<Check size={14} class="text-ok" /> {t('Kopiert', 'Copied')}{:else}<Copy size={14} /> {t('In die Zwischenablage kopieren', 'Copy to the clipboard')}{/if}
         </button>
-        <div class="mb-5"><Checkbox bind:checked={saved}>Ich habe den Schlüssel sicher aufbewahrt.</Checkbox></div>
+        <div class="mb-5"><Checkbox bind:checked={saved}>{t('Ich habe den Schlüssel sicher aufbewahrt.', 'I have put the key somewhere safe.')}</Checkbox></div>
         <button class="btn-primary w-full" disabled={!saved}
           onclick={() => {
             recoveryKey = '';
             if (status.biometry_available) step = 'touchid';
             else ondone();
-          }}>Weiter</button>
+          }}>{t('Weiter', 'Continue')}</button>
       {:else}
         <div class="mb-4 flex h-12 w-12 items-center justify-center text-faint"><Fingerprint size={24} /></div>
-        <h1 class="text-xl font-semibold tracking-tight">Mit Touch ID entsperren?</h1>
+        <h1 class="text-xl font-semibold tracking-tight">{t('Mit Touch ID entsperren?', 'Unlock with Touch ID?')}</h1>
         <p class="mt-1 mb-6 leading-relaxed text-muted">
-          Statt des Passworts genügt dann dein Finger. Nach App-Updates fragt Brainmatter einmal nach dem Passwort.
+          {t('Statt des Passworts genügt dann dein Finger. Nach App-Updates fragt Brainmatter einmal nach dem Passwort.', 'Your finger is then enough instead of the password. After app updates, Brainmatter asks for the password once.')}
         </p>
         {#if error}<p class="mb-3 text-danger">{error}</p>{/if}
         <div class="flex gap-2">
-          <button class="btn-ghost flex-1" onclick={ondone}>Später</button>
-          <button class="btn-primary flex-1" disabled={busy} onclick={enableTouchId}>Touch ID aktivieren</button>
+          <button class="btn-ghost flex-1" onclick={ondone}>{t('Später', 'Later')}</button>
+          <button class="btn-primary flex-1" disabled={busy} onclick={enableTouchId}>{t('Touch ID aktivieren', 'Turn on Touch ID')}</button>
         </div>
       {/if}
     </div>

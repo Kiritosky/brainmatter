@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { ArrowLeft, Eye, EyeOff, Focus, FolderInput, FolderPlus, Pencil, Trash2 } from '@lucide/svelte';
   import type { Id, Project } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
@@ -53,24 +54,24 @@
 <svelte:window {onkeydowncapture} />
 
 <div class="fixed inset-0 z-40" role="presentation" onclick={onclose}></div>
-<div class="surface fixed z-50 rounded-xl p-1" style="left: {left}px; top: {top}px; width: {WIDTH}px" role="menu" aria-label="Projekt „{project.name}“" tabindex="-1"
+<div class="surface fixed z-50 rounded-xl p-1" style="left: {left}px; top: {top}px; width: {WIDTH}px" role="menu" aria-label={t(`Projekt „${project.name}“`, `Project “${project.name}”`)} tabindex="-1"
   bind:this={panel} bind:clientHeight={height} transition:pop={{ duration: 130, y: -3 }}>
   {#if moving}
-    <button class="menu-row text-muted" role="menuitem" onclick={() => (moving = false)}><ArrowLeft size={13} /> Verschieben nach …</button>
+    <button class="menu-row text-muted" role="menuitem" onclick={() => (moving = false)}><ArrowLeft size={13} /> {t('Verschieben nach …', 'Move to …')}</button>
     <div class="my-1 h-px bg-line-soft"></div>
-    <ProjectPicker exclude={(id) => !targets.some((t) => t.project.id === id)} top={project.parent_id ? 'Oberste Ebene' : undefined}
+    <ProjectPicker exclude={(id) => !targets.some((target) => target.project.id === id)} top={project.parent_id ? t('Oberste Ebene', 'Top level') : undefined}
       onpick={onmove} onclose={() => (moving = false)} />
   {:else}
-    <button class="menu-row" role="menuitem" onclick={onrename}><Pencil size={13} class="text-faint" /> Umbenennen</button>
-    <button class="menu-row" role="menuitem" onclick={onsubproject}><FolderPlus size={13} class="text-faint" /> Unterprojekt anlegen</button>
-    <button class="menu-row" role="menuitem" onclick={() => (moving = true)}><FolderInput size={13} class="text-faint" /> Verschieben nach …</button>
+    <button class="menu-row" role="menuitem" onclick={onrename}><Pencil size={13} class="text-faint" /> {t('Umbenennen', 'Rename')}</button>
+    <button class="menu-row" role="menuitem" onclick={onsubproject}><FolderPlus size={13} class="text-faint" /> {t('Unterprojekt anlegen', 'New subproject')}</button>
+    <button class="menu-row" role="menuitem" onclick={() => (moving = true)}><FolderInput size={13} class="text-faint" /> {t('Verschieben nach …', 'Move to …')}</button>
     <div class="my-1 h-px bg-line-soft"></div>
     <button class="menu-row" role="menuitem" onclick={() => (ws.toggleProjectHidden(project.id), onclose())}>
-      {#if ws.hiddenProjects.has(project.id)}<Eye size={13} class="text-faint" /> Einblenden{:else}<EyeOff size={13} class="text-faint" /> Ausblenden{/if}
+      {#if ws.hiddenProjects.has(project.id)}<Eye size={13} class="text-faint" /> {t('Einblenden', 'Show')}{:else}<EyeOff size={13} class="text-faint" /> {t('Ausblenden', 'Hide')}{/if}
     </button>
-    <button class="menu-row" role="menuitem" onclick={() => (ws.showOnlyProject(project.id), onclose())}><Focus size={13} class="text-faint" /> Nur dieses anzeigen</button>
+    <button class="menu-row" role="menuitem" onclick={() => (ws.showOnlyProject(project.id), onclose())}><Focus size={13} class="text-faint" /> {t('Nur dieses anzeigen', 'Show only this one')}</button>
     <div class="my-1 h-px bg-line-soft"></div>
-    <button class="menu-row hover:!bg-danger/12 hover:!text-danger" role="menuitem" onclick={ondelete}><Trash2 size={13} /> Löschen …</button>
+    <button class="menu-row hover:!bg-danger/12 hover:!text-danger" role="menuitem" onclick={ondelete}><Trash2 size={13} /> {t('Löschen …', 'Delete …')}</button>
   {/if}
 </div>
 

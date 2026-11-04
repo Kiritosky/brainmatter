@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onMount } from 'svelte';
   import { ArrowRight, Fingerprint } from '@lucide/svelte';
   import { api, errorMessage, isApiError, type Status } from '#lib/api.ts';
@@ -66,12 +67,12 @@
   <div class="flex w-[320px] flex-col items-center" in:pop={{ duration: 320, y: 10 }}>
     <img src="/icon.png" alt="" class="mb-5 h-20 w-20 drop-shadow-[0_12px_24px_rgba(0,0,0,0.45)]" draggable="false" />
     <h1 class="text-xl font-semibold tracking-tight">Brainmatter</h1>
-    <p class="mt-1 mb-7 text-muted">{waitingForFinger ? 'Leg deinen Finger auf den Sensor' : 'Gesperrt'}</p>
+    <p class="mt-1 mb-7 text-muted">{waitingForFinger ? t('Leg deinen Finger auf den Sensor', 'Place your finger on the sensor') : t('Gesperrt', 'Locked')}</p>
 
     {#if canTouchId && !useRecovery}
       <button
         class="mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-line bg-elevated text-text transition-colors duration-150 hover:bg-raised {waitingForFinger ? 'pulse' : ''}"
-        aria-label="Mit Touch ID entsperren"
+        aria-label={t('Mit Touch ID entsperren', 'Unlock with Touch ID')}
         onclick={touchId}>
         <Fingerprint size={26} />
       </button>
@@ -85,10 +86,10 @@
         {:else}
           <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
           <input bind:this={input} class="field w-full pr-11" type="password" bind:value={password}
-            placeholder="Master-Passwort" autocomplete="current-password" autofocus={!canTouchId} />
+            placeholder={t('Master-Passwort', 'Master password')} autocomplete="current-password" autofocus={!canTouchId} />
         {/if}
         <button class="icon-btn absolute top-1 right-1 !text-accent disabled:opacity-30"
-          aria-label="Entsperren" disabled={busy || (useRecovery ? !recovery : !password)}>
+          aria-label={t('Entsperren', 'Unlock')} disabled={busy || (useRecovery ? !recovery : !password)}>
           <ArrowRight size={16} class={busy ? 'animate-pulse' : ''} />
         </button>
       </div>
@@ -100,7 +101,7 @@
 
     <button class="mt-3 text-xs text-faint transition-colors hover:text-muted"
       onclick={() => ((useRecovery = !useRecovery), (error = null))}>
-      {useRecovery ? 'Doch mit Passwort entsperren' : 'Passwort vergessen?'}
+      {useRecovery ? t('Doch mit Passwort entsperren', 'Unlock with password instead') : t('Passwort vergessen?', 'Forgot your password?')}
     </button>
   </div>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { tick } from 'svelte';
   import { Plus } from '@lucide/svelte';
   import type { Id } from '#lib/api.ts';
@@ -11,7 +12,7 @@
     oncreate,
     onclose,
     top,
-    placeholder = 'Projekt suchen …',
+    placeholder = t('Projekt suchen …', 'Search projects …'),
   }: {
     /** Projects that cannot be chosen here. */
     exclude?: (id: Id) => boolean;
@@ -81,12 +82,12 @@
 <!-- svelte-ignore a11y_autofocus -- this appears because the user wants to pick something now -->
 <input class="w-full border-b border-line-soft bg-transparent px-2.5 pt-1.5 pb-2 text-[13px] outline-none placeholder:text-faint"
   {placeholder} aria-label={placeholder} autofocus bind:value={query} oninput={() => (index = 0)} {onkeydown} />
-<div class="max-h-52 overflow-y-auto pt-1" role="listbox" aria-label="Projekte" bind:this={list}>
+<div class="max-h-52 overflow-y-auto pt-1" role="listbox" aria-label={t('Projekte', 'Projects')} bind:this={list}>
   {#each options as option, i (option.create ? 'create' : (option.id ?? 'top'))}
     <button type="button" class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors duration-75 {i === index ? 'bg-text/8 text-text' : 'text-muted'}"
       role="option" aria-selected={i === index} onmouseenter={() => (index = i)} onclick={() => choose(option)}>
       {#if option.create}
-        <Plus size={12} class="shrink-0 text-faint" /> <span class="truncate">„{option.name}“ neu anlegen</span>
+        <Plus size={12} class="shrink-0 text-faint" /> <span class="truncate">{t(`„${option.name}“ neu anlegen`, `Create “${option.name}”`)}</span>
       {:else}
         {#if option.id}<span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(option.id)}"></span>{/if}
         <span class="truncate">{option.name}</span>
@@ -94,6 +95,6 @@
       {/if}
     </button>
   {:else}
-    <p class="px-2.5 py-2 text-xs text-faint">Kein Projekt gefunden.</p>
+    <p class="px-2.5 py-2 text-xs text-faint">{t('Kein Projekt gefunden.', 'No project found.')}</p>
   {/each}
 </div>

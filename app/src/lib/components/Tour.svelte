@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onMount, tick } from 'svelte';
   import { X } from '@lucide/svelte';
   import { TOUR, TOUR_SEEN_KEY } from '#lib/help.ts';
@@ -84,19 +85,19 @@
     : `left: ${viewport.width / 2}px; top: ${viewport.height / 2}px; width: 0; height: 0`}></div>
 
   <div class="surface card absolute rounded-xl p-4 outline-none" style="left: {position.left}px; top: {position.top}px; width: {CARD_WIDTH}px"
-    role="dialog" aria-label="Einführung" tabindex="-1" bind:this={card} bind:clientHeight={cardHeight}>
+    role="dialog" aria-label={t('Einführung', 'Introduction')} tabindex="-1" bind:this={card} bind:clientHeight={cardHeight}>
     <div class="flex items-start gap-2">
       <h2 class="min-w-0 flex-1 text-[15px] font-semibold tracking-tight">{step.title}</h2>
-      <button class="icon-btn -mt-1 -mr-1 shrink-0" aria-label="Einführung beenden" title="Einführung beenden (Esc)" onclick={finish}><X size={14} /></button>
+      <button class="icon-btn -mt-1 -mr-1 shrink-0" aria-label={t('Einführung beenden', 'End introduction')} title={t('Einführung beenden (Esc)', 'End introduction (Esc)')} onclick={finish}><X size={14} /></button>
     </div>
     <p class="mt-1 leading-relaxed text-muted">{step.text}</p>
     {#if step.keys}<p class="mt-2"><kbd class="kbd !h-6 !px-1.5 !text-xs">{step.keys}</kbd></p>{/if}
     <div class="mt-3.5 flex items-center gap-1.5">
-      <span class="flex-1 text-xs text-faint tabular-nums">{index + 1} von {TOUR.length}</span>
+      <span class="flex-1 text-xs text-faint tabular-nums">{t(`${index + 1} von ${TOUR.length}`, `${index + 1} of ${TOUR.length}`)}</span>
       {#if index > 0}
-        <button class="btn-ghost !h-7.5 text-xs" onclick={() => go(index - 1)}>Zurück</button>
+        <button class="btn-ghost !h-7.5 text-xs" onclick={() => go(index - 1)}>{t('Zurück', 'Back')}</button>
       {/if}
-      <button class="btn-primary !h-7.5 !px-3 text-xs" onclick={() => go(index + 1)}>{index === TOUR.length - 1 ? 'Fertig' : 'Weiter'}</button>
+      <button class="btn-primary !h-7.5 !px-3 text-xs" onclick={() => go(index + 1)}>{index === TOUR.length - 1 ? t('Fertig', 'Done') : t('Weiter', 'Next')}</button>
     </div>
   </div>
 </div>

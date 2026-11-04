@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onDestroy, onMount, untrack } from 'svelte';
   import Graph from 'graphology';
   import Sigma, { DEFAULT_STYLES } from 'sigma';
@@ -393,7 +394,7 @@
         r,
         depth: c.depth,
         color: project?.color ?? 'var(--color-faint)',
-        name: project?.name ?? 'Ohne Projekt',
+        name: project?.name ?? t('Ohne Projekt', 'No project'),
         labelled: r >= MIN_LABELLED_PX,
       });
     }
@@ -622,15 +623,15 @@
     }
     const began = performance.now();
     const step = (now: number) => {
-      const t = Math.min(1, (now - began) / motion);
-      const eased = 1 - (1 - t) ** 3;
+      const done = Math.min(1, (now - began) / motion);
+      const eased = 1 - (1 - done) ** 3;
       graph.updateEachNodeAttributes((id, a) => {
         const from = start.get(id);
         const to = target.get(id);
         if (!from || !to) return a;
         return { ...a, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
       });
-      if (t < 1) moveFrame = requestAnimationFrame(step);
+      if (done < 1) moveFrame = requestAnimationFrame(step);
       else finish();
     };
     moveFrame = requestAnimationFrame(step);
@@ -1101,7 +1102,7 @@
         <span class="group-label" style="left: {c.x}px; top: {c.y - c.r + 7}px; max-width: {c.r * 1.5}px; --group: {c.color}">{c.name}</span>
       {:else}
         <button class="group-label group-link" style="left: {c.x}px; top: {c.y - c.r + 7}px; max-width: {c.r * 1.5}px; --group: {c.color}"
-          title="„{c.name}“ öffnen" onclick={() => onopenproject(c.id)}>{c.name}</button>
+          title={t(`„${c.name}“ öffnen`, `Open “${c.name}”`)} onclick={() => onopenproject(c.id)}>{c.name}</button>
       {/if}
     {/if}
   {/each}
@@ -1126,10 +1127,10 @@
 
 {#if snapshot && snapshot.nodes.length > 0}
   <div class="glass-pill absolute right-4 bottom-4 z-10">
-    <button class="icon-btn" aria-label="Vergrößern" title="Vergrößern" onclick={() => renderer?.getCamera().zoomIn({ duration: 180 })}><Plus size={15} /></button>
-    <button class="icon-btn" aria-label="Verkleinern" title="Verkleinern" onclick={() => renderer?.getCamera().zoomOut({ duration: 180 })}><Minus size={15} /></button>
+    <button class="icon-btn" aria-label={t('Vergrößern', 'Zoom in')} title={t('Vergrößern', 'Zoom in')} onclick={() => renderer?.getCamera().zoomIn({ duration: 180 })}><Plus size={15} /></button>
+    <button class="icon-btn" aria-label={t('Verkleinern', 'Zoom out')} title={t('Verkleinern', 'Zoom out')} onclick={() => renderer?.getCamera().zoomOut({ duration: 180 })}><Minus size={15} /></button>
     <span class="mx-0.5 h-4 w-px bg-line"></span>
-    <button class="icon-btn" aria-label="Alles zeigen" title="Alles zeigen" onclick={() => renderer?.getCamera().reset({ duration: 300 })}><Maximize size={14} /></button>
+    <button class="icon-btn" aria-label={t('Alles zeigen', 'Show everything')} title={t('Alles zeigen', 'Show everything')} onclick={() => renderer?.getCamera().reset({ duration: 300 })}><Maximize size={14} /></button>
   </div>
 {/if}
 

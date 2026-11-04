@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::i18n::tr;
 use crate::{
     McpStatus,
     error::{ApiError, ApiResult},
@@ -75,7 +76,8 @@ pub async fn unlock_recovery(session: S<'_>, key: String) -> ApiResult<()> {
 #[tauri::command]
 pub async fn unlock_touch_id(session: S<'_>) -> ApiResult<()> {
     let session = session.inner().clone();
-    blocking(move || session.unlock_touch_id("Brainmatter entsperren")).await
+    blocking(move || session.unlock_touch_id(tr("Brainmatter entsperren", "unlock Brainmatter")))
+        .await
 }
 
 #[tauri::command]
@@ -319,10 +321,17 @@ fn parse_attachment(body: &[u8]) -> Option<(AttachmentMeta, &[u8])> {
 pub fn add_attachment(session: S<'_>, request: tauri::ipc::Request<'_>) -> ApiResult<Attachment> {
     let (engine, ctx) = session.engine()?;
     let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
-        return Err(ApiError::new("invalid", "Die Datei kam nicht als Binärdaten an."));
+        return Err(ApiError::new(
+            "invalid",
+            tr("Die Datei kam nicht als Binärdaten an.", "The file did not arrive as binary data."),
+        ));
     };
-    let (meta, file) = parse_attachment(body)
-        .ok_or_else(|| ApiError::new("invalid", "Die Datei kam unvollständig an."))?;
+    let (meta, file) = parse_attachment(body).ok_or_else(|| {
+        ApiError::new(
+            "invalid",
+            tr("Die Datei kam unvollständig an.", "The file arrived incomplete."),
+        )
+    })?;
     Ok(engine.add_attachment(&ctx, &meta.node, &meta.filename, meta.mime.as_deref(), file)?)
 }
 
@@ -413,9 +422,12 @@ pub fn link_files(
     let mut linked = 0;
     for target in picked.unwrap_or_default() {
         let path = target.into_path().map_err(ApiError::internal)?;
-        let text = path
-            .to_str()
-            .ok_or_else(|| ApiError::new("invalid", "Dieser Dateiname wird nicht unterstützt."))?;
+        let text = path.to_str().ok_or_else(|| {
+            ApiError::new(
+                "invalid",
+                tr("Dieser Dateiname wird nicht unterstützt.", "This file name is not supported."),
+            )
+        })?;
         let bookmark = bm_macos::bookmarks::create(&path);
         engine.add_file_link(&ctx, &node, text, None, bookmark.as_deref())?;
         linked += 1;
@@ -445,7 +457,10 @@ fn run_open(args: &[&std::ffi::OsStr]) -> ApiResult<()> {
     let status = std::process::Command::new("/usr/bin/open").args(args).status();
     match status {
         Ok(s) if s.success() => Ok(()),
-        _ => Err(ApiError::new("not_found", "Die Datei wurde nicht gefunden.")),
+        _ => Err(ApiError::new(
+            "not_found",
+            tr("Die Datei wurde nicht gefunden.", "The file was not found."),
+        )),
     }
 }
 
@@ -548,9 +563,12 @@ pub fn add_doc_source(
     };
     let Some(picked) = picked else { return Ok(None) };
     let path = picked.into_path().map_err(ApiError::internal)?;
-    let text = path
-        .to_str()
-        .ok_or_else(|| ApiError::new("invalid", "Dieser Dateiname wird nicht unterstützt."))?;
+    let text = path.to_str().ok_or_else(|| {
+        ApiError::new(
+            "invalid",
+            tr("Dieser Dateiname wird nicht unterstützt.", "This file name is not supported."),
+        )
+    })?;
     let bookmark = bm_macos::bookmarks::create(&path);
     let id = engine.add_doc_source(&ctx, &project, text, bookmark.as_deref())?;
     let report = engine.sync_doc_source(&ctx, &id, &path)?;
@@ -777,8 +795,12 @@ pub async fn import_markdown(
     let session = session.inner().clone();
     blocking(move || {
         let picked = app.state::<ImportFolder>().0.lock().map_err(ApiError::internal)?.take();
-        let path =
-            picked.ok_or_else(|| ApiError::new("invalid", "Bitte zuerst einen Ordner wählen."))?;
+        let path = picked.ok_or_else(|| {
+            ApiError::new(
+                "invalid",
+                tr("Bitte zuerst einen Ordner wählen.", "Please choose a folder first."),
+            )
+        })?;
         let (engine, ctx) = session.engine()?;
         Ok(engine.import_markdown(&ctx, &path)?)
     })
@@ -789,11 +811,19 @@ pub async fn import_markdown(
 
 fn registry_error(e: RegistryError) -> ApiError {
     match e {
-        RegistryError::DuplicateName(name) => {
-            ApiError::new("invalid", format!("Es gibt schon eine Verbindung namens „{name}“."))
+        RegistryError::DuplicateName(name) => ApiError::new(
+            "invalid",
+            match crate::i18n::german() {
+                true => format!("Es gibt schon eine Verbindung namens „{name}“."),
+                false => format!("There is a connection named “{name}” already."),
+            },
+        ),
+        RegistryError::EmptyName => {
+            ApiError::new("invalid", tr("Bitte einen Namen angeben.", "Please enter a name."))
         }
-        RegistryError::EmptyName => ApiError::new("invalid", "Bitte einen Namen angeben."),
-        RegistryError::NotFound => ApiError::new("not_found", "Verbindung nicht gefunden."),
+        RegistryError::NotFound => {
+            ApiError::new("not_found", tr("Verbindung nicht gefunden.", "Connection not found."))
+        }
         other => ApiError::internal(other),
     }
 }
@@ -876,7 +906,7 @@ pub fn connect_integration(
     require_unlocked(&session)?;
     let local = local_integrations(&status)?;
     let name = target.name();
-    let pending = format!("{name} (wird eingerichtet)");
+    let pending = format!("{name} ({})", tr("wird eingerichtet", "being set up"));
 
     // A leftover from an interrupted attempt must not block this one.
     if let Some(stale) = registry.list().into_iter().find(|c| c.name == pending) {

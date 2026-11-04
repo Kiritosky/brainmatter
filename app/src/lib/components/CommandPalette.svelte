@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang, t } from '#lib/i18n.ts';
   import { Activity, BookMarked, Compass, CornerDownLeft, Link2, ListChecks, ListFilter, Lock, Monitor, Moon, Plus, Search, Settings, Newspaper, Sun, Trash2 } from '@lucide/svelte';
   import { releases } from '#lib/changelog.ts';
   import { theme } from '#lib/theme.svelte.ts';
@@ -27,20 +28,20 @@
   };
 
   const COMMANDS: Command[] = [
-    { label: 'Neuer Eintrag', icon: Plus, hint: '⌘N', run: () => ws.createNode('Neuer Eintrag') },
-    { label: 'Aktivität zeigen', icon: Activity, run: panel('activity') },
-    { label: 'Prüfen', icon: ListChecks, run: panel('review') },
-    { label: 'Bibliothek öffnen', icon: BookMarked, run: panel('library') },
-    { label: 'Papierkorb öffnen', icon: Trash2, run: panel('trash') },
-    { label: 'Einstellungen', icon: Settings, hint: '⌘,', run: () => (ws.settingsOpen = true) },
-    { label: 'Neue Vorlage', icon: BookMarked, run: () => (ws.templateWizard = true) },
-    { label: 'Einführung starten', icon: Compass, run: () => (ws.tourOpen = true) },
-    { label: 'Was ist neu', icon: Newspaper, run: () => (ws.changelog = { heading: 'Alle Änderungen', items: releases }) },
-    { label: 'Filter zurücksetzen', icon: ListFilter, run: () => ws.clearFilters() },
-    { label: 'Helles Design', icon: Sun, run: setTheme('light') },
-    { label: 'Dunkles Design', icon: Moon, run: setTheme('dark') },
-    { label: 'Design wie macOS', icon: Monitor, run: setTheme('system') },
-    { label: 'Sperren', icon: Lock, hint: '⌘⇧L', run: () => api.lock() },
+    { label: t('Neuer Eintrag', 'New entry'), icon: Plus, hint: '⌘N', run: () => ws.createNode(t('Neuer Eintrag', 'New entry')) },
+    { label: t('Aktivität zeigen', 'Show activity'), icon: Activity, run: panel('activity') },
+    { label: t('Prüfen', 'Review'), icon: ListChecks, run: panel('review') },
+    { label: t('Bibliothek öffnen', 'Open library'), icon: BookMarked, run: panel('library') },
+    { label: t('Papierkorb öffnen', 'Open trash'), icon: Trash2, run: panel('trash') },
+    { label: t('Einstellungen', 'Settings'), icon: Settings, hint: '⌘,', run: () => (ws.settingsOpen = true) },
+    { label: t('Neue Vorlage', 'New template'), icon: BookMarked, run: () => (ws.templateWizard = true) },
+    { label: t('Einführung starten', 'Start the tour'), icon: Compass, run: () => (ws.tourOpen = true) },
+    { label: t('Was ist neu', 'What’s new'), icon: Newspaper, run: () => (ws.changelog = { heading: t('Alle Änderungen', 'All changes'), items: releases }) },
+    { label: t('Filter zurücksetzen', 'Reset filters'), icon: ListFilter, run: () => ws.clearFilters() },
+    { label: t('Helles Design', 'Light appearance'), icon: Sun, run: setTheme('light') },
+    { label: t('Dunkles Design', 'Dark appearance'), icon: Moon, run: setTheme('dark') },
+    { label: t('Design wie macOS', 'Appearance like macOS'), icon: Monitor, run: setTheme('system') },
+    { label: t('Sperren', 'Lock'), icon: Lock, hint: '⌘⇧L', run: () => api.lock() },
   ];
 
   const matches = (label: string) => label.toLowerCase().includes(text.trim().toLowerCase());
@@ -81,13 +82,13 @@
   });
 
   const RELATIONS = [
-    { value: 'related_to', label: 'verwandt mit' },
-    { value: 'part_of', label: 'Teil von' },
-    { value: 'depends_on', label: 'hängt ab von' },
-    { value: 'example_of', label: 'Beispiel für' },
-    { value: 'supports', label: 'stützt' },
-    { value: 'contradicts', label: 'widerspricht' },
-    { value: 'derived_from', label: 'abgeleitet von' },
+    { value: 'related_to', label: t('verwandt mit', 'related to') },
+    { value: 'part_of', label: t('Teil von', 'part of') },
+    { value: 'depends_on', label: t('hängt ab von', 'depends on') },
+    { value: 'example_of', label: t('Beispiel für', 'example of') },
+    { value: 'supports', label: t('stützt', 'supports') },
+    { value: 'contradicts', label: t('widerspricht', 'contradicts') },
+    { value: 'derived_from', label: t('abgeleitet von', 'derived from') },
   ];
 
   let list: HTMLDivElement | undefined = $state();
@@ -137,18 +138,18 @@
 </script>
 
 <div class="fixed inset-0 z-50 flex justify-center bg-black/45 pt-[13vh] backdrop-blur-[2px]" role="presentation" transition:fadeQuick onclick={close}>
-  <div class="surface h-fit w-[640px] rounded-xl" role="dialog" aria-label="Suche" tabindex="-1"
+  <div class="surface h-fit w-[640px] rounded-xl" role="dialog" aria-label={t('Suche', 'Search')} tabindex="-1"
     transition:pop onclick={(e) => e.stopPropagation()} {onkeydown}>
     <div class="flex items-center gap-3 border-b border-line-soft px-4">
       {#if mode === 'link'}<Link2 size={17} class="shrink-0 text-accent" />{:else}<Search size={17} class="shrink-0 text-faint" />{/if}
       <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
       <input
         class="h-13 min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-faint"
-        placeholder={mode === 'link' ? 'Verbinden mit …' : 'Suchen oder neuen Eintrag anlegen …'}
+        placeholder={mode === 'link' ? t('Verbinden mit …', 'Link to …') : t('Suchen oder neuen Eintrag anlegen …', 'Search, or create a new entry …')}
         bind:value={text}
         autofocus />
       {#if mode === 'link'}
-        <Select bind:value={relation} options={RELATIONS} label="Art der Beziehung" />
+        <Select bind:value={relation} options={RELATIONS} label={t('Art der Beziehung', 'Kind of relation')} />
       {/if}
     </div>
     <div class="max-h-[48vh] overflow-y-auto p-1.5" bind:this={list}>
@@ -161,11 +162,11 @@
           {#if opt.kind === 'project'}
             <span class="h-2 w-2 shrink-0 rounded-full" style="background: {ws.projectColor.get(opt.project.id)}"></span>
             <span class="min-w-0 flex-1 truncate font-medium">{opt.project.name}</span>
-            <span class="shrink-0 text-[11px] text-faint">Projekt</span>
+            <span class="shrink-0 text-[11px] text-faint">{t('Projekt', 'Project')}</span>
           {:else if opt.kind === 'command'}
             <span class="flex h-5 w-5 shrink-0 items-center justify-center text-faint"><opt.command.icon size={14} /></span>
             <span class="min-w-0 flex-1 truncate">{opt.command.label}</span>
-            {#if opt.command.hint}<span class="kbd shrink-0">{opt.command.hint}</span>{:else}<span class="shrink-0 text-[11px] text-faint">Aktion</span>{/if}
+            {#if opt.command.hint}<span class="kbd shrink-0">{opt.command.hint}</span>{:else}<span class="shrink-0 text-[11px] text-faint">{t('Aktion', 'Action')}</span>{/if}
           {:else if opt.kind === 'hit'}
             <span class="h-2 w-2 shrink-0 rounded-full" style="background: {KIND_COLORS[opt.hit.node.kind] ?? KIND_COLORS.note}"></span>
             <div class="min-w-0 flex-1">
@@ -173,7 +174,7 @@
                 <span class="truncate font-medium">{opt.hit.node.title}</span>
                 <span class="shrink-0 text-[11px] text-faint">{opt.hit.node.kind}</span>
                 {#if opt.hit.semantic}
-                  <span class="flex shrink-0 items-center gap-1 self-center text-[11px] text-accent" title="Passt vom Sinn her"><Newspaper size={10} /> ähnlich</span>
+                  <span class="flex shrink-0 items-center gap-1 self-center text-[11px] text-accent" title={t('Passt vom Sinn her', 'Close in meaning')}><Newspaper size={10} /> {t('ähnlich', 'similar')}</span>
                 {/if}
               </div>
               {#if opt.hit.snippet}
@@ -185,18 +186,21 @@
             {#if i === active}<CornerDownLeft size={13} class="shrink-0 text-faint" />{/if}
           {:else}
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-accent/15 text-accent"><Plus size={13} /></span>
-            <div class="min-w-0 flex-1 truncate">„<span class="font-medium">{text.trim()}</span>“ {mode === 'link' ? 'anlegen und verbinden' : 'neu anlegen'}</div>
+            <div class="min-w-0 flex-1 truncate">
+              {#if lang === 'de'}„<span class="font-medium">{text.trim()}</span>“ {mode === 'link' ? 'anlegen und verbinden' : 'neu anlegen'}
+              {:else}{mode === 'link' ? 'Create and link' : 'Create'} “<span class="font-medium">{text.trim()}</span>”{/if}
+            </div>
             <span class="kbd shrink-0">⌘↵</span>
           {/if}
         </button>
       {:else}
-        <div class="px-3 py-10 text-center text-faint">Noch keine Einträge. Tippe einen Titel, um den ersten anzulegen.</div>
+        <div class="px-3 py-10 text-center text-faint">{t('Noch keine Einträge. Tippe einen Titel, um den ersten anzulegen.', 'No entries yet. Type a title to create the first one.')}</div>
       {/each}
     </div>
     <footer class="flex items-center gap-4 border-t border-line-soft px-4 py-2 text-[11px] text-faint">
-      <span class="flex items-center gap-1.5"><span class="kbd">↑</span><span class="kbd">↓</span> Auswählen</span>
-      <span class="flex items-center gap-1.5"><span class="kbd">↵</span> {mode === 'link' ? 'Verbinden' : 'Öffnen'}</span>
-      <span class="ml-auto flex items-center gap-1.5"><span class="kbd">esc</span> Schließen</span>
+      <span class="flex items-center gap-1.5"><span class="kbd">↑</span><span class="kbd">↓</span> {t('Auswählen', 'Select')}</span>
+      <span class="flex items-center gap-1.5"><span class="kbd">↵</span> {mode === 'link' ? t('Verbinden', 'Link') : t('Öffnen', 'Open')}</span>
+      <span class="ml-auto flex items-center gap-1.5"><span class="kbd">esc</span> {t('Schließen', 'Close')}</span>
     </footer>
   </div>
 </div>

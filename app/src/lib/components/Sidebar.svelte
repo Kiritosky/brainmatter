@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { num, t } from '#lib/i18n.ts';
   import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import DeleteProjectDialog from './DeleteProjectDialog.svelte';
@@ -193,10 +194,10 @@
       data-tour="search"
       class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line-soft bg-bg/50 px-2.5 text-muted transition-colors duration-150 hover:border-line hover:text-text"
       onclick={() => (ws.palette = 'open')}>
-      <Search size={14} class="shrink-0" /> <span class="truncate">Suchen</span>
+      <Search size={14} class="shrink-0" /> <span class="truncate">{t('Suchen', 'Search')}</span>
       <span class="kbd ml-auto">⌘K</span>
     </button>
-    <button data-tour="new" class="btn-ghost !h-8 !w-8 shrink-0 !bg-bg/50 !px-0 text-muted hover:text-text" aria-label="Neuer Eintrag" title="Neuer Eintrag (⌘N)" onclick={() => ws.createNode('Neuer Eintrag')}>
+    <button data-tour="new" class="btn-ghost !h-8 !w-8 shrink-0 !bg-bg/50 !px-0 text-muted hover:text-text" aria-label={t('Neuer Eintrag', 'New entry')} title={t('Neuer Eintrag (⌘N)', 'New entry (⌘N)')} onclick={() => ws.createNode(t('Neuer Eintrag', 'New entry'))}>
       <Plus size={15} />
     </button>
   </div>
@@ -205,11 +206,11 @@
     <button
       class="nav-row {ws.view === null ? 'active' : ''}"
       onclick={() => ws.setView(null)}>
-      <Network size={14} class={ws.view === null ? 'text-accent' : ''} /> Alles
+      <Network size={14} class={ws.view === null ? 'text-accent' : ''} /> {t('Alles', 'All')}
     </button>
 
     {#if ws.favorites.length}
-      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">Favoriten</span></div>
+      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">{t('Favoriten', 'Favourites')}</span></div>
       {#each ws.favorites as favorite (favorite.id)}
         <button class="nav-row {ws.selected === favorite.id ? 'active' : ''}" onclick={() => ws.select(favorite.id, true)}>
           <Star size={13} class="shrink-0 fill-warn/70 text-warn" /> <span class="truncate">{favorite.title}</span>
@@ -218,14 +219,14 @@
     {/if}
 
     {#if ws.savedViews.length}
-      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">Ansichten</span></div>
+      <div class="mt-5 mb-1 pl-2"><span class="section-title !mb-0">{t('Ansichten', 'Views')}</span></div>
       {#each ws.savedViews as saved (saved.id)}
         <div class="group relative">
           <button class="nav-row w-full pr-7 {ws.activeSavedView === saved.id ? 'active' : ''}" onclick={() => ws.applySavedView(saved)}>
             <Bookmark size={13} class="shrink-0 {ws.activeSavedView === saved.id ? 'text-accent' : ''}" /> <span class="truncate">{saved.name}</span>
           </button>
           <button class="icon-btn absolute top-1/2 right-1 !h-6 !w-6 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-            aria-label="Ansicht löschen: {saved.name}" title="Ansicht löschen" onclick={() => ws.deleteSavedView(saved.id)}><X size={12} /></button>
+            aria-label={t(`Ansicht löschen: ${saved.name}`, `Delete view: ${saved.name}`)} title={t('Ansicht löschen', 'Delete view')} onclick={() => ws.deleteSavedView(saved.id)}><X size={12} /></button>
         </div>
       {/each}
     {/if}
@@ -241,14 +242,14 @@
       }}
       ondragleave={() => dropAt?.id === null && (dropAt = null)}
       ondrop={(e) => (e.preventDefault(), drop())}>
-      <span class="section-title !mb-0 flex-1">{dragging && byId.get(dragging)?.project.parent_id ? 'Hierher: oberste Ebene' : 'Projekte'}</span>
-      <button class="icon-btn !h-6 !w-6" aria-label="Neues Projekt" title="Neues Projekt" onclick={() => (creatingUnder = null)}><FolderPlus size={13} /></button>
+      <span class="section-title !mb-0 flex-1">{dragging && byId.get(dragging)?.project.parent_id ? t('Hierher: oberste Ebene', 'Here: top level') : t('Projekte', 'Projects')}</span>
+      <button class="icon-btn !h-6 !w-6" aria-label={t('Neues Projekt', 'New project')} title={t('Neues Projekt', 'New project')} onclick={() => (creatingUnder = null)}><FolderPlus size={13} /></button>
     </div>
 
     {#if creatingUnder === null}
       <form class="px-1 pb-1" onsubmit={createProject} in:pop={{ duration: 140, y: -3 }}>
         <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-        <input class="field !h-7.5 w-full" placeholder="Projektname" bind:value={newName} autofocus onblur={() => (creatingUnder = undefined)} />
+        <input class="field !h-7.5 w-full" placeholder={t('Projektname', 'Project name')} bind:value={newName} autofocus onblur={() => (creatingUnder = undefined)} />
       </form>
     {/if}
 
@@ -279,7 +280,7 @@
           {#if renaming === project.id}
             <div class="flex h-8 items-center pl-1">
               <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-              <input class="field !h-7 w-full" aria-label="Neuer Name" bind:value={renameValue} autofocus onblur={commitRename} onkeydown={onRenameKey}
+              <input class="field !h-7 w-full" aria-label={t('Neuer Name', 'New name')} bind:value={renameValue} autofocus onblur={commitRename} onkeydown={onRenameKey}
                 onfocus={(e) => e.currentTarget.select()} />
             </div>
           {:else}
@@ -294,7 +295,7 @@
           {#if hasChildren && renaming !== project.id}
             <button class="absolute top-1.5 flex h-5 w-5 items-center justify-center rounded text-faint transition-colors hover:bg-raised hover:text-text"
               style="left: {depth(project.id) * INDENT_PX + 2}px"
-              aria-label="{isCollapsed ? 'Ausklappen' : 'Einklappen'}: {project.name}" aria-expanded={!isCollapsed}
+              aria-label="{isCollapsed ? t('Ausklappen', 'Expand') : t('Einklappen', 'Collapse')}: {project.name}" aria-expanded={!isCollapsed}
               onclick={() => toggle(project.id)}>
               <ChevronRight size={13} class="transition-transform duration-150 ease-(--ease-out-soft) {isCollapsed ? '' : 'rotate-90'}" />
             </button>
@@ -302,16 +303,16 @@
           {#if renaming !== project.id}
             {@const isHidden = ws.hiddenProjects.has(project.id)}
             <button class="icon-btn absolute top-1 right-13 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-              aria-label="{isHidden ? 'Einblenden' : 'Ausblenden'}: {project.name}" aria-pressed={isHidden} title={isHidden ? 'Einblenden' : 'Ausblenden'}
+              aria-label="{isHidden ? t('Einblenden', 'Show') : t('Ausblenden', 'Hide')}: {project.name}" aria-pressed={isHidden} title={isHidden ? t('Einblenden', 'Show') : t('Ausblenden', 'Hide')}
               onclick={() => ws.toggleProjectHidden(project.id)}>
               {#if isHidden}<Eye size={12} />{:else}<EyeOff size={12} />{/if}
             </button>
             <button class="icon-btn absolute top-1 right-7 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-              aria-label="Unterprojekt in {project.name} anlegen" title="Unterprojekt" onclick={() => (reveal(project.id, true), (creatingUnder = project.id))}>
+              aria-label={t(`Unterprojekt in ${project.name} anlegen`, `New subproject in ${project.name}`)} title={t('Unterprojekt', 'Subproject')} onclick={() => (reveal(project.id, true), (creatingUnder = project.id))}>
               <Plus size={12} />
             </button>
             <button class="icon-btn absolute top-1 right-1 !h-6 !w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 {menu?.project.id === project.id ? '!opacity-100' : ''}"
-              aria-label="Mehr zu {project.name}" title="Mehr" aria-haspopup="menu" onclick={(e) => openMenu(project, e)}>
+              aria-label={t(`Mehr zu ${project.name}`, `More for ${project.name}`)} title={t('Mehr', 'More')} aria-haspopup="menu" onclick={(e) => openMenu(project, e)}>
               <Ellipsis size={13} />
             </button>
           {/if}
@@ -319,7 +320,7 @@
         {#if creatingUnder === project.id}
           <form class="py-1 pr-1" style="padding-left: {(depth(project.id) + 1) * INDENT_PX + 4}px" onsubmit={createProject} in:pop={{ duration: 140, y: -3 }}>
             <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-            <input class="field !h-7.5 w-full" placeholder="Unterprojekt" bind:value={newName} autofocus onblur={() => (creatingUnder = undefined)} />
+            <input class="field !h-7.5 w-full" placeholder={t('Unterprojekt', 'Subproject')} bind:value={newName} autofocus onblur={() => (creatingUnder = undefined)} />
           </form>
         {/if}
       </div>
@@ -328,10 +329,10 @@
     {#if ws.hiddenProjectCount}
       <div class="mt-1 flex items-center gap-1 pr-1 pl-2 text-xs text-faint" in:pop={{ duration: 140, y: -3 }}>
         <button class="flex h-6.5 min-w-0 flex-1 items-center gap-1.5 text-left transition-colors hover:text-text" aria-expanded={showHidden} onclick={() => (showHidden = !showHidden)}>
-          <EyeOff size={12} class="shrink-0" /> <span class="truncate">{ws.hiddenProjectCount} ausgeblendet</span>
+          <EyeOff size={12} class="shrink-0" /> <span class="truncate">{t(`${num(ws.hiddenProjectCount)} ausgeblendet`, `${num(ws.hiddenProjectCount)} hidden`)}</span>
           <ChevronRight size={12} class="shrink-0 transition-transform duration-150 ease-(--ease-out-soft) {showHidden ? 'rotate-90' : ''}" />
         </button>
-        <button class="shrink-0 transition-colors hover:text-text" onclick={() => ws.showAllProjects()}>Alle zeigen</button>
+        <button class="shrink-0 transition-colors hover:text-text" onclick={() => ws.showAllProjects()}>{t('Alle zeigen', 'Show all')}</button>
       </div>
     {/if}
 
@@ -341,7 +342,7 @@
         {#each ws.tagCounts.slice(0, MAX_TAGS) as { tag, count: uses } (tag)}
           {@const active = ws.filter.tags.includes(tag)}
           <button class="flex h-6 max-w-full items-center gap-1 rounded-md px-1.5 text-xs transition-colors {active ? 'bg-accent/15 text-text' : 'text-muted hover:bg-elevated hover:text-text'}"
-            aria-pressed={active} title="Im Graph filtern" onclick={() => ws.toggleFilter('tags', tag)}>
+            aria-pressed={active} title={t('Im Graph filtern', 'Filter the graph')} onclick={() => ws.toggleFilter('tags', tag)}>
             <span class="truncate">#{tag}</span><span class="text-[10px] text-faint tabular-nums">{uses}</span>
           </button>
         {/each}
@@ -352,14 +353,14 @@
   <div class="shrink-0 px-2 pb-1.5">
     {#if ws.update}
       <button class="nav-row !text-accent" in:pop={{ duration: 200, y: 4 }} onclick={() => (ws.settingsOpen = true)}>
-        <ArrowUpCircle size={14} /> Update auf {ws.update.version}
+        <ArrowUpCircle size={14} /> {t(`Update auf ${ws.update.version}`, `Update to ${ws.update.version}`)}
       </button>
     {/if}
     <button data-tour="library" class="nav-row {ws.panel === 'library' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'library' ? null : 'library'), ws.select(null))}>
-      <BookMarked size={14} class={ws.panel === 'library' ? 'text-accent' : ''} /> Bibliothek
+      <BookMarked size={14} class={ws.panel === 'library' ? 'text-accent' : ''} /> {t('Bibliothek', 'Library')}
     </button>
     <button class="nav-row {ws.panel === 'trash' ? 'active' : ''}" onclick={() => ((ws.panel = ws.panel === 'trash' ? null : 'trash'), ws.select(null))}>
-      <Trash2 size={14} class={ws.panel === 'trash' ? 'text-accent' : ''} /> Papierkorb
+      <Trash2 size={14} class={ws.panel === 'trash' ? 'text-accent' : ''} /> {t('Papierkorb', 'Trash')}
     </button>
   </div>
 
@@ -393,16 +394,16 @@
       {(userName ?? '?').slice(0, 1).toUpperCase()}
     </div>
     <span class="min-w-0 flex-1 truncate text-muted">{userName}</span>
-    <button data-tour="review" class="icon-btn relative {ws.panel === 'review' ? '!bg-raised !text-text' : ''}" aria-label="Prüfen" title="Prüfen"
+    <button data-tour="review" class="icon-btn relative {ws.panel === 'review' ? '!bg-raised !text-text' : ''}" aria-label={t('Prüfen', 'Review')} title={t('Prüfen', 'Review')}
       onclick={() => ((ws.panel = ws.panel === 'review' ? null : 'review'), ws.select(null))}>
       <ListChecks size={15} />
       {#if ws.unreviewed.length}
         <span class="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-ai" in:pop={{ duration: 160, y: 0 }}></span>
       {/if}
     </button>
-    <button class="icon-btn {ws.panel === 'activity' ? '!bg-raised !text-text' : ''}" aria-label="Aktivität" title="Aktivität"
+    <button class="icon-btn {ws.panel === 'activity' ? '!bg-raised !text-text' : ''}" aria-label={t('Aktivität', 'Activity')} title={t('Aktivität', 'Activity')}
       onclick={() => ((ws.panel = ws.panel === 'activity' ? null : 'activity'), ws.select(null))}><Activity size={15} /></button>
-    <button data-tour="settings" class="icon-btn" aria-label="Einstellungen" title="Einstellungen (⌘,)" onclick={() => (ws.settingsOpen = true)}><Settings size={15} /></button>
-    <button data-tour="lock" class="icon-btn" aria-label="Sperren" title="Sperren (⌘⇧L)" onclick={() => api.lock()}><Lock size={15} /></button>
+    <button data-tour="settings" class="icon-btn" aria-label={t('Einstellungen', 'Settings')} title={t('Einstellungen (⌘,)', 'Settings (⌘,)')} onclick={() => (ws.settingsOpen = true)}><Settings size={15} /></button>
+    <button data-tour="lock" class="icon-btn" aria-label={t('Sperren', 'Lock')} title={t('Sperren (⌘⇧L)', 'Lock (⌘⇧L)')} onclick={() => api.lock()}><Lock size={15} /></button>
   </footer>
 </nav>

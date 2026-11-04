@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale, t } from '#lib/i18n.ts';
   import { X } from '@lucide/svelte';
   import type { Release } from '#lib/changelog.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
@@ -8,7 +9,7 @@
 
   const when = (date: string) => {
     const parsed = new Date(date);
-    return isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+    return isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
   // Capture: Esc must close this and nothing behind it.
@@ -27,7 +28,7 @@
   <div class="surface flex max-h-full w-[560px] flex-col overflow-hidden rounded-xl" role="dialog" aria-label={heading} tabindex="-1" transition:pop onclick={(e) => e.stopPropagation()}>
     <header class="flex shrink-0 items-center gap-3 border-b border-line-soft py-3 pr-3 pl-5">
       <h2 class="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">{heading}</h2>
-      <button class="icon-btn" aria-label="Schließen" onclick={onclose}><X size={16} /></button>
+      <button class="icon-btn" aria-label={t('Schließen', 'Close')} onclick={onclose}><X size={16} /></button>
     </header>
     <div class="min-h-0 overflow-y-auto px-5 pt-4 pb-5">
       {#each items as release (release.version)}
@@ -40,7 +41,7 @@
           <div class="prose-bm selectable">{@html renderMarkdown(release.notes)}</div>
         </section>
       {:else}
-        <p class="py-6 text-center text-faint">Für diese Version gibt es keine Notizen.</p>
+        <p class="py-6 text-center text-faint">{t('Für diese Version gibt es keine Notizen.', 'There are no notes for this version.')}</p>
       {/each}
     </div>
   </div>

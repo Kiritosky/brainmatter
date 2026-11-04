@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { num, t } from '#lib/i18n.ts';
   import { ListFilter, X } from '@lucide/svelte';
   import { KIND_COLORS, ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
 
   const MAX_TAGS = 16;
   const DEPTHS: { value: number | null; label: string }[] = [
-    { value: null, label: 'Aus' },
+    { value: null, label: t('Aus', 'Off') },
     { value: 1, label: '1' },
     { value: 2, label: '2' },
     { value: 3, label: '3' },
@@ -28,7 +29,7 @@
   function saveView(e: SubmitEvent) {
     e.preventDefault();
     ws.saveCurrentView(viewName);
-    ws.notify(`Ansicht „${viewName.trim()}“ gespeichert`);
+    ws.notify(t(`Ansicht „${viewName.trim()}“ gespeichert`, `Saved view “${viewName.trim()}”`));
     viewName = '';
   }
 
@@ -44,7 +45,7 @@
 
 <div class="relative">
   <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs transition-colors {ws.activeFilters ? '!border-accent/50 text-accent' : 'text-muted hover:text-text'}"
-    aria-expanded={open} title="Graph filtern" onclick={() => (open = !open)}>
+    aria-expanded={open} title={t('Graph filtern', 'Filter the graph')} onclick={() => (open = !open)}>
     <ListFilter size={13} /> Filter
     {#if ws.activeFilters}
       <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent/20 px-1 text-[10px] font-semibold tabular-nums">{ws.activeFilters}</span>
@@ -53,11 +54,11 @@
 
   {#if open}
     <div class="fixed inset-0 z-30" role="presentation" onclick={() => (open = false)}></div>
-    <div class="surface absolute bottom-10 left-0 z-40 w-80 rounded-xl p-3" role="dialog" aria-label="Graph filtern" tabindex="-1" transition:pop={{ duration: 150, y: 6 }}>
+    <div class="surface absolute bottom-10 left-0 z-40 w-80 rounded-xl p-3" role="dialog" aria-label={t('Graph filtern', 'Filter the graph')} tabindex="-1" transition:pop={{ duration: 150, y: 6 }}>
       <div class="mb-2.5 flex items-center">
-        <span class="flex-1 text-xs text-muted tabular-nums">{shown} von {ws.graph?.nodes.length ?? 0} Einträgen</span>
+        <span class="flex-1 text-xs text-muted tabular-nums">{t(`${num(shown)} von ${num(ws.graph?.nodes.length ?? 0)} Einträgen`, `${num(shown)} of ${num(ws.graph?.nodes.length ?? 0)} entries`)}</span>
         {#if ws.activeFilters}
-          <button class="flex items-center gap-1 text-xs text-faint transition-colors hover:text-text" onclick={() => ws.clearFilters()}><X size={12} /> Zurücksetzen</button>
+          <button class="flex items-center gap-1 text-xs text-faint transition-colors hover:text-text" onclick={() => ws.clearFilters()}><X size={12} /> {t('Zurücksetzen', 'Reset')}</button>
         {/if}
       </div>
 
@@ -70,9 +71,9 @@
       {/snippet}
 
       {#if ws.projects.length > 1}
-        <div class="section-title">Projekte</div>
+        <div class="section-title">{t('Projekte', 'Projects')}</div>
         {#if ws.projects.length > SEARCH_FROM}
-          <input class="field mb-1.5 !h-7 w-full text-xs" placeholder="Projekt suchen" aria-label="Projekt suchen" bind:value={projectQuery} />
+          <input class="field mb-1.5 !h-7 w-full text-xs" placeholder={t('Projekt suchen', 'Search projects')} aria-label={t('Projekt suchen', 'Search projects')} bind:value={projectQuery} />
         {/if}
         <div class="mb-3 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
           {#each ws.projects.filter((p) => p.project.name.toLowerCase().includes(projectQuery.trim().toLowerCase())) as { project } (project.id)}
@@ -81,7 +82,7 @@
         </div>
       {/if}
 
-      <div class="section-title">Art</div>
+      <div class="section-title">{t('Art', 'Kind')}</div>
       <div class="mb-3 flex flex-wrap gap-1">
         {#each kinds as kind (kind)}
           {@render chip(kind, ws.filter.kinds.includes(kind), () => ws.toggleFilter('kinds', kind), KIND_COLORS[kind] ?? KIND_COLORS.note)}
@@ -98,7 +99,7 @@
       {/if}
 
       {#if authors.length > 1}
-        <div class="section-title">Geschrieben von</div>
+        <div class="section-title">{t('Geschrieben von', 'Written by')}</div>
         <div class="mb-3 flex flex-wrap gap-1">
           {#each authors as actor (actor.id)}
             {@render chip(actor.name, ws.filter.actors.includes(actor.id), () => ws.toggleFilter('actors', actor.id), actor.kind === 'ai' ? 'var(--color-ai)' : undefined)}
@@ -106,19 +107,19 @@
         </div>
       {/if}
 
-      <div class="section-title">Nur die Nachbarschaft</div>
+      <div class="section-title">{t('Nur die Nachbarschaft', 'Only the neighbourhood')}</div>
       <div class="flex items-center gap-2">
         <div class="flex gap-1">
           {#each DEPTHS as depth (depth.label)}
             {@render chip(depth.label, ws.neighbourhood === depth.value, () => (ws.neighbourhood = depth.value))}
           {/each}
         </div>
-        <span class="text-xs text-faint">{ws.selected ? 'Verbindungen um die Auswahl' : 'Wähle zuerst einen Eintrag'}</span>
+        <span class="text-xs text-faint">{ws.selected ? t('Verbindungen um die Auswahl', 'Links around the selection') : t('Wähle zuerst einen Eintrag', 'Select an entry first')}</span>
       </div>
 
       <form class="mt-3 flex gap-1.5 border-t border-line-soft pt-3" onsubmit={saveView}>
-        <input class="field !h-7.5 min-w-0 flex-1 text-xs" placeholder="Name für diese Ansicht" aria-label="Name für diese Ansicht" bind:value={viewName} />
-        <button class="btn-ghost !h-7.5 shrink-0 text-xs" disabled={!viewName.trim()}>Speichern</button>
+        <input class="field !h-7.5 min-w-0 flex-1 text-xs" placeholder={t('Name für diese Ansicht', 'Name for this view')} aria-label={t('Name für diese Ansicht', 'Name for this view')} bind:value={viewName} />
+        <button class="btn-ghost !h-7.5 shrink-0 text-xs" disabled={!viewName.trim()}>{t('Speichern', 'Save')}</button>
       </form>
     </div>
   {/if}

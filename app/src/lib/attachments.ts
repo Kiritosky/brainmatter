@@ -1,6 +1,7 @@
 // Helpers for showing attachments. Their type comes from whoever added the file
 // (possibly an AI), so only an explicit list of types is ever rendered, and a
 // blob only gets the type it is rendered as: HTML can never run.
+import { locale } from '#lib/i18n.ts';
 import { api, type Attachment } from './api';
 
 export const MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024;
@@ -20,7 +21,7 @@ export function previewKind(mime: string): PreviewKind {
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB`;
+  return `${(bytes / (1024 * 1024)).toLocaleString(locale, { maximumFractionDigits: 1 })} MB`;
 }
 
 /** Decrypts into a blob URL for images and PDFs. The caller revokes it. */

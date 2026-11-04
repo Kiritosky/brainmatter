@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onMount, tick, untrack } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { Check, CornerDownLeft, Fingerprint, FolderOpen, Lock, Zap } from '@lucide/svelte';
@@ -31,7 +32,7 @@
   const pickable = $derived.by(() => {
     const query = pickerQuery.trim().toLowerCase();
     const found = projects.map((p) => ({ id: p.project.id as Id | null, name: p.project.name })).filter((p) => p.name.toLowerCase().includes(query));
-    return query ? found : [{ id: null, name: 'Ohne Projekt' }, ...found];
+    return query ? found : [{ id: null, name: t('Ohne Projekt', 'No project') }, ...found];
   });
 
   async function openPicker() {
@@ -158,25 +159,25 @@
       <div class="flex flex-1 items-center gap-4 px-5">
         <div class="flex h-11 w-11 shrink-0 items-center justify-center text-faint"><Lock size={20} /></div>
         <div class="min-w-0 flex-1">
-          <div class="font-medium">Brainmatter ist gesperrt</div>
-          <div class="truncate text-xs {error ? 'text-danger' : 'text-faint'}">{error ?? 'Zum Festhalten erst entsperren.'}</div>
+          <div class="font-medium">{t('Brainmatter ist gesperrt', 'Brainmatter is locked')}</div>
+          <div class="truncate text-xs {error ? 'text-danger' : 'text-faint'}">{error ?? t('Zum Festhalten erst entsperren.', 'Unlock first to capture.')}</div>
         </div>
         {#if status.touch_id_enrolled}
           <button class="btn-primary shrink-0" disabled={unlocking} onclick={unlock}><Fingerprint size={15} /> Touch ID</button>
         {:else}
-          <button class="btn-primary shrink-0" onclick={() => api.showMainWindow()}>Öffnen</button>
+          <button class="btn-primary shrink-0" onclick={() => api.showMainWindow()}>{t('Öffnen', 'Open')}</button>
         {/if}
       </div>
     {:else if saved}
       <div class="flex flex-1 items-center justify-center gap-2.5 font-medium text-ok" in:pop={{ duration: 180, y: 0 }}>
-        <span class="flex h-6 w-6 items-center justify-center rounded-full bg-ok/15"><Check size={14} /></span> Festgehalten
+        <span class="flex h-6 w-6 items-center justify-center rounded-full bg-ok/15"><Check size={14} /></span> {t('Festgehalten', 'Captured')}
       </div>
     {:else if picking}
       <!-- In place of the text, because a popup could not leave this small window. -->
       <div class="flex min-h-0 flex-1 flex-col" in:pop={{ duration: 120, y: 2 }}>
-        <input class="w-full shrink-0 border-b border-line-soft bg-transparent px-4 py-2.5 outline-none placeholder:text-faint" placeholder="Projekt suchen …" aria-label="Projekt suchen"
+        <input class="w-full shrink-0 border-b border-line-soft bg-transparent px-4 py-2.5 outline-none placeholder:text-faint" placeholder={t('Projekt suchen …', 'Search projects …')} aria-label={t('Projekt suchen', 'Search projects')}
           bind:this={pickerField} bind:value={pickerQuery} oninput={() => (pickerIndex = 0)} />
-        <div class="min-h-0 flex-1 overflow-y-auto p-1" role="listbox" aria-label="Projekte">
+        <div class="min-h-0 flex-1 overflow-y-auto p-1" role="listbox" aria-label={t('Projekte', 'Projects')}>
           {#each pickable as option, i (option.id ?? 'none')}
             <button class="flex w-full items-center gap-2 rounded-md px-3 py-1 text-left transition-colors {i === pickerIndex ? 'bg-text/8 text-text' : 'text-muted'}"
               role="option" aria-selected={i === pickerIndex} onmouseenter={() => (pickerIndex = i)} onclick={() => pick(option.id)}>
@@ -184,7 +185,7 @@
               {#if option.id === project}<Check size={13} class="ml-auto shrink-0 text-accent" />{/if}
             </button>
           {:else}
-            <div class="px-3 py-1 text-faint">Kein Projekt gefunden</div>
+            <div class="px-3 py-1 text-faint">{t('Kein Projekt gefunden', 'No project found')}</div>
           {/each}
         </div>
       </div>
@@ -193,8 +194,8 @@
         <Zap size={16} class="mt-0.5 shrink-0 text-accent" />
         <textarea
           class="h-full min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-snug outline-none placeholder:text-faint"
-          placeholder="Was willst du festhalten?"
-          aria-label="Neuer Eintrag"
+          placeholder={t('Was willst du festhalten?', 'What do you want to capture?')}
+          aria-label={t('Neuer Eintrag', 'New entry')}
           bind:this={field}
           bind:value={text}></textarea>
       </div>
@@ -202,13 +203,13 @@
         {#if error}
           <span class="truncate text-danger">{error}</span>
         {:else}
-          <button class="flex min-w-0 items-center gap-1.5 rounded transition-colors hover:text-text" title="Projekt wählen" onclick={openPicker}>
-            <FolderOpen size={12} class="shrink-0" /> <span class="max-w-40 truncate">{projectName ?? 'Ohne Projekt'}</span> <span class="kbd shrink-0">⌘P</span>
+          <button class="flex min-w-0 items-center gap-1.5 rounded transition-colors hover:text-text" title={t('Projekt wählen', 'Choose project')} onclick={openPicker}>
+            <FolderOpen size={12} class="shrink-0" /> <span class="max-w-40 truncate">{projectName ?? t('Ohne Projekt', 'No project')}</span> <span class="kbd shrink-0">⌘P</span>
           </button>
         {/if}
-        <span class="ml-auto flex items-center gap-1.5"><span class="kbd">⇧↵</span> Neue Zeile</span>
-        <span class="flex items-center gap-1.5"><span class="kbd"><CornerDownLeft size={10} /></span> Sichern</span>
-        <span class="flex items-center gap-1.5"><span class="kbd">esc</span> Schließen</span>
+        <span class="ml-auto flex items-center gap-1.5"><span class="kbd">⇧↵</span> {t('Neue Zeile', 'New line')}</span>
+        <span class="flex items-center gap-1.5"><span class="kbd"><CornerDownLeft size={10} /></span> {t('Sichern', 'Save')}</span>
+        <span class="flex items-center gap-1.5"><span class="kbd">esc</span> {t('Schließen', 'Close')}</span>
       </footer>
     {/if}
   </div>

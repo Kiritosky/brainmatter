@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale, num, t } from '#lib/i18n.ts';
   import { onDestroy } from 'svelte';
   import { Pause, Play, X } from '@lucide/svelte';
   import { createdAt, type GraphNode } from '#lib/api.ts';
@@ -30,7 +31,7 @@
     return lo;
   });
 
-  const label = $derived(new Date(until).toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' }));
+  const label = $derived(new Date(until).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }));
 
   let track: HTMLDivElement | undefined = $state();
   let playing = $state(false);
@@ -78,12 +79,12 @@
 </script>
 
 <div class="glass-pill w-full gap-2 !px-1.5" in:pop={{ duration: 180, y: 8 }}>
-  <button class="icon-btn shrink-0" aria-label={playing ? 'Anhalten' : 'Abspielen'} title={playing ? 'Anhalten' : 'Wachstum abspielen'} onclick={() => (playing ? pause() : play())}>
+  <button class="icon-btn shrink-0" aria-label={playing ? t('Anhalten', 'Pause') : t('Abspielen', 'Play')} title={playing ? t('Anhalten', 'Pause') : t('Wachstum abspielen', 'Play the growth')} onclick={() => (playing ? pause() : play())}>
     {#if playing}<Pause size={14} />{:else}<Play size={14} />{/if}
   </button>
 
   <div class="group relative flex h-7 min-w-0 flex-1 cursor-pointer items-center" bind:this={track}
-    role="slider" tabindex="0" aria-label="Zeitpunkt" aria-valuemin={start} aria-valuemax={end} aria-valuenow={Math.round(until)} aria-valuetext={label}
+    role="slider" tabindex="0" aria-label={t('Zeitpunkt', 'Point in time')} aria-valuemin={start} aria-valuemax={end} aria-valuenow={Math.round(until)} aria-valuetext={label}
     {onpointerdown}
     onpointermove={(e) => e.buttons && seek(e)}
     {onkeydown}>
@@ -95,7 +96,7 @@
 
   <div class="w-34 shrink-0 text-right text-[11px] leading-tight tabular-nums">
     <div class="font-medium text-text">{label}</div>
-    <div class="text-faint">{count} von {born.length} Einträgen</div>
+    <div class="text-faint">{t(`${num(count)} von ${num(born.length)} Einträgen`, `${num(count)} of ${num(born.length)} entries`)}</div>
   </div>
-  <button class="icon-btn shrink-0" aria-label="Zeitregler schließen" title="Zeitregler schließen" onclick={onclose}><X size={14} /></button>
+  <button class="icon-btn shrink-0" aria-label={t('Zeitregler schließen', 'Close time slider')} title={t('Zeitregler schließen', 'Close time slider')} onclick={onclose}><X size={14} /></button>
 </div>

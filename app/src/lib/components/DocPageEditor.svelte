@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { Check } from '@lucide/svelte';
   import { api, errorMessage, type Node } from '#lib/api.ts';
@@ -34,12 +35,12 @@
 
   async function completeTitles(prefix: string) {
     const hits = await api.search(prefix, { limit: 8 });
-    return hits.map((h) => h.node.title).filter((t) => t !== draft.title);
+    return hits.map((h) => h.node.title).filter((title) => title !== draft.title);
   }
 
   async function pasteFile(file: File) {
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      ws.notify(`„${file.name}“ ist zu groß. Anhänge dürfen höchstens 200 MB haben.`);
+      ws.notify(t(`„${file.name}“ ist zu groß. Anhänge dürfen höchstens 200 MB haben.`, `“${file.name}” is too large. Attachments can be 200 MB at most.`));
       return null;
     }
     try {
@@ -56,14 +57,14 @@
 <main class="min-w-0 flex-1" in:pop={{ duration: 140, y: 2 }}>
   <header class="sticky top-0 z-10 -mx-2 mb-3 flex h-10 items-center gap-2 bg-bg px-2">
     <span class="text-xs text-faint" aria-live="polite">
-      {#if draft.inFlight || draft.dirty}Speichert …{:else}Gespeichert{/if}
+      {#if draft.inFlight || draft.dirty}{t('Speichert …', 'Saving …')}{:else}{t('Gespeichert', 'Saved')}{/if}
     </span>
-    <span class="min-w-0 flex-1 truncate text-xs text-faint"><kbd class="kbd">/</kbd> Formate <kbd class="ml-2 kbd">⌘B</kbd> Fett <kbd class="ml-2 kbd">⌘I</kbd> Kursiv <kbd class="ml-2 kbd">[[</kbd> Verweis</span>
-    <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={finish}><Check size={13} /> Fertig</button>
+    <span class="min-w-0 flex-1 truncate text-xs text-faint"><kbd class="kbd">/</kbd> {t('Formate', 'Formats')} <kbd class="ml-2 kbd">⌘B</kbd> {t('Fett', 'Bold')} <kbd class="ml-2 kbd">⌘I</kbd> {t('Kursiv', 'Italic')} <kbd class="ml-2 kbd">[[</kbd> {t('Verweis', 'Link')}</span>
+    <button class="btn-ghost !h-7.5 shrink-0 text-xs" onclick={finish}><Check size={13} /> {t('Fertig', 'Done')}</button>
   </header>
 
   <input class="mb-3 w-full bg-transparent text-[26px] leading-tight font-semibold tracking-tight outline-none placeholder:text-faint"
-    placeholder="Titel der Seite" aria-label="Titel der Seite" bind:this={titleField} bind:value={draft.title}
+    placeholder={t('Titel der Seite', 'Page title')} aria-label={t('Titel der Seite', 'Page title')} bind:this={titleField} bind:value={draft.title}
     oninput={() => draft.changed()}
     onkeydown={(e) => {
       if (e.key === 'Enter') {

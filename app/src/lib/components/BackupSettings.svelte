@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale, num, plural, t } from '#lib/i18n.ts';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { Archive, CircleCheck, FileDown, FolderInput, HardDrive, History, LoaderCircle, RefreshCw, TriangleAlert, Undo2 } from '@lucide/svelte';
@@ -123,71 +124,78 @@
       undone = true;
     });
 
-  const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n.toLocaleString('de-DE')} ${many}`);
   function coming(p: ImportSummary) {
-    const parts = [count(p.entries, 'neuer Eintrag', 'neue Einträge')];
-    if (p.projects) parts.push(count(p.projects, 'neues Projekt', 'neue Projekte'));
-    if (p.links) parts.push(count(p.links, 'Verbindung aus dem Export', 'Verbindungen aus dem Export'));
-    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} und ${parts.at(-1)}` : parts[0];
-    return `Aus „${p.folder}“ ${p.entries === 1 && parts.length === 1 ? 'kommt' : 'kommen'} ${list}.`;
+    const parts = [plural(p.entries, ['neuer Eintrag', 'neue Einträge'], ['new entry', 'new entries'])];
+    if (p.projects) parts.push(plural(p.projects, ['neues Projekt', 'neue Projekte'], ['new project', 'new projects']));
+    if (p.links) parts.push(plural(p.links, ['Verbindung aus dem Export', 'Verbindungen aus dem Export'], ['link from the export', 'links from the export']));
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} ${t('und', 'and')} ${parts.at(-1)}` : parts[0];
+    return t(
+      `Aus „${p.folder}“ ${p.entries === 1 && parts.length === 1 ? 'kommt' : 'kommen'} ${list}.`,
+      `“${p.folder}” brings ${list}.`,
+    );
   }
   const REASONS: Record<ImportSkipReason, string> = {
-    too_large: 'zu groß',
-    not_text: 'kein lesbarer Text',
-    too_many: 'mehr als 50.000 Dateien',
-    same_title: 'Titel doppelt im Ordner',
-    long_title: 'Titel zu lang',
+    too_large: t('zu groß', 'too large'),
+    not_text: t('kein lesbarer Text', 'no readable text'),
+    too_many: t(`mehr als ${num(50_000)} Dateien`, `more than ${num(50_000)} files`),
+    same_title: t('Titel doppelt im Ordner', 'title twice in the folder'),
+    long_title: t('Titel zu lang', 'title too long'),
   };
 
   const when = (ms: number) =>
-    new Date(ms).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    new Date(ms).toLocaleString(locale, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 </script>
 
 <h2 class="mb-1 text-lg font-semibold">Backups</h2>
-<p class="mb-5 text-muted">Verschlüsselte Sicherungen deiner Einträge. Sie liegen neben dem Tresor und schützen vor Bedienfehlern und beschädigten Daten. Gegen den Verlust des Macs hilft eine Kopie an einem zweiten Ort.</p>
+<p class="mb-5 text-muted">
+  {t(
+    'Verschlüsselte Sicherungen deiner Einträge. Sie liegen neben dem Tresor und schützen vor Bedienfehlern und beschädigten Daten. Gegen den Verlust des Macs hilft eine Kopie an einem zweiten Ort.',
+    'Encrypted copies of your entries. They sit next to the vault and protect against mistakes and damaged data. Against losing the Mac, a copy in a second place helps.',
+  )}
+</p>
 
 <div class="card">
   <div class="row">
     <div class="flex-1">
-      <div>Automatisch sichern</div>
-      <div class="text-xs text-faint">Täglich, wenn sich etwas geändert hat. Bleiben: 7 Tage und 4 Wochen.</div>
+      <div>{t('Automatisch sichern', 'Back up automatically')}</div>
+      <div class="text-xs text-faint">{t('Täglich, wenn sich etwas geändert hat. Bleiben: 7 Tage und 4 Wochen.', 'Daily, when something has changed. Kept: 7 days and 4 weeks.')}</div>
     </div>
-    <Toggle checked={settings.auto_backup} label="Automatisch sichern" onchange={(v) => onsave({ auto_backup: v })} />
+    <Toggle checked={settings.auto_backup} label={t('Automatisch sichern', 'Back up automatically')} onchange={(v) => onsave({ auto_backup: v })} />
   </div>
   <div class="row border-t border-line-soft">
     <HardDrive size={15} class="shrink-0 text-faint" />
     <div class="min-w-0 flex-1">
-      <div>Zweiter Ort</div>
+      <div>{t('Zweiter Ort', 'Second place')}</div>
       {#if status?.copy}
         {@const copy = status.copy}
         <div class="selectable truncate text-xs text-faint" title={copy.folder}>{copy.folder}</div>
         {#if copy.error}
           <div class="mt-0.5 text-xs text-danger">{copy.error}</div>
         {:else if !copy.reachable}
-          <div class="mt-0.5 text-xs text-warn">Nicht verbunden. Die Kopie wird nachgeholt, sobald der Ort wieder da ist.</div>
+          <div class="mt-0.5 text-xs text-warn">{t('Nicht verbunden. Die Kopie wird nachgeholt, sobald der Ort wieder da ist.', 'Not connected. The copy catches up as soon as the place is back.')}</div>
         {:else if copy.newest}
-          <div class="mt-0.5 text-xs text-faint tabular-nums">Stand: {when(copy.newest)}</div>
+          <div class="mt-0.5 text-xs text-faint tabular-nums">{t('Stand:', 'As of')} {when(copy.newest)}</div>
         {/if}
       {:else}
-        <div class="text-xs text-faint">Jedes Backup auch auf ein externes Laufwerk oder in einen anderen Ordner, mit allem, was ein neuer Mac zum Wiederherstellen braucht.</div>
+        <div class="text-xs text-faint">{t('Jedes Backup auch auf ein externes Laufwerk oder in einen anderen Ordner, mit allem, was ein neuer Mac zum Wiederherstellen braucht.', 'Every backup also on an external drive or in another folder, with all a new Mac needs to restore it.')}</div>
       {/if}
       {#if copyError}
         <div class="mt-0.5 text-xs text-danger" role="alert" in:pop={{ duration: 160, y: -3 }}>{copyError}</div>
       {/if}
     </div>
     {#if status?.copy}
-      <button class="btn-ghost !h-7 shrink-0 text-xs" disabled={copyBusy} onclick={removeCopy}>Entfernen</button>
+      <button class="btn-ghost !h-7 shrink-0 text-xs" disabled={copyBusy} onclick={removeCopy}>{t('Entfernen', 'Remove')}</button>
     {/if}
-    <button class="btn-ghost !h-7 shrink-0 text-xs" aria-label="Zweiten Ort für Backups wählen" disabled={copyBusy || status?.running} onclick={chooseCopy}>
-      {#if copyBusy}<LoaderCircle size={13} class="animate-spin" /> Kopiere …{:else}{status?.copy ? 'Ändern' : 'Ort wählen'}{/if}
+    <button class="btn-ghost !h-7 shrink-0 text-xs" aria-label={t('Zweiten Ort für Backups wählen', 'Choose a second place for backups')} disabled={copyBusy || status?.running} onclick={chooseCopy}>
+      {#if copyBusy}<LoaderCircle size={13} class="animate-spin" /> {t('Kopiere …', 'Copying …')}{:else}{status?.copy ? t('Ändern', 'Change') : t('Ort wählen', 'Choose place')}{/if}
     </button>
   </div>
 </div>
 
 <div class="mt-7 mb-1.5 flex items-center">
-  <h3 class="section-title !mb-0 flex-1">Vorhandene Backups</h3>
+  <h3 class="section-title !mb-0 flex-1">{t('Vorhandene Backups', 'Backups')}</h3>
   <button class="btn-ghost !h-7 text-xs" disabled={busy || status?.running} onclick={() => run(api.backupNow)}>
-    <RefreshCw size={13} class={busy || status?.running ? 'animate-spin' : ''} /> Jetzt sichern
+    <RefreshCw size={13} class={busy || status?.running ? 'animate-spin' : ''} /> {t('Jetzt sichern', 'Back up now')}
   </button>
 </div>
 
@@ -208,73 +216,81 @@
             <div class="text-xs text-faint tabular-nums">{formatSize(b.size)}</div>
           </div>
           <button class="btn-ghost !h-7 text-xs" onclick={() => ((restoring = restoring === b.name ? null : b.name), (password = ''), (error = null))}>
-            <History size={13} /> Wiederherstellen
+            <History size={13} /> {t('Wiederherstellen', 'Restore')}
           </button>
         </div>
         {#if restoring === b.name}
           <form class="border-t border-line-soft px-4 py-3" onsubmit={restore} in:pop={{ duration: 160, y: -3 }}>
             <p class="mb-2.5 text-xs leading-relaxed text-muted">
-              Alles wird auf diesen Stand zurückgesetzt, und Brainmatter sperrt sich danach. Der jetzige Stand wird vorher als eigenes Backup gesichert, du kannst also zurück.
+              {t(
+                'Alles wird auf diesen Stand zurückgesetzt, und Brainmatter sperrt sich danach. Der jetzige Stand wird vorher als eigenes Backup gesichert, du kannst also zurück.',
+                'Everything goes back to this point, and Brainmatter locks afterwards. The current state is saved as a backup of its own first, so you can go back.',
+              )}
             </p>
             <div class="flex gap-2">
               <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-              <input class="field flex-1" type="password" placeholder="Master-Passwort" aria-label="Master-Passwort" bind:value={password} autofocus />
-              <button class="btn-danger" disabled={busy || !password}>Zurücksetzen</button>
+              <input class="field flex-1" type="password" placeholder={t('Master-Passwort', 'Master password')} aria-label={t('Master-Passwort', 'Master password')} bind:value={password} autofocus />
+              <button class="btn-danger" disabled={busy || !password}>{t('Zurücksetzen', 'Restore')}</button>
             </div>
           </form>
         {/if}
       </div>
     {:else}
-      <div class="px-4 py-7 text-center text-faint">Noch keine Backups. Das erste entsteht automatisch, sobald du etwas änderst.</div>
+      <div class="px-4 py-7 text-center text-faint">{t('Noch keine Backups. Das erste entsteht automatisch, sobald du etwas änderst.', 'No backups yet. The first one is made by itself once you change something.')}</div>
     {/each}
   </div>
 {/if}
 
-<h3 class="section-title mt-7">Exportieren</h3>
+<h3 class="section-title mt-7">{t('Exportieren', 'Export')}</h3>
 <div class="card">
   <div class="row">
     <FileDown size={15} class="shrink-0 text-faint" />
     <div class="min-w-0 flex-1">
-      <div>Als Markdown exportieren</div>
-      <div class="text-xs text-faint">Eine Datei pro Eintrag in Ordnern nach Projekt, dazu alle Anhänge. Der Papierkorb bleibt draußen.</div>
+      <div>{t('Als Markdown exportieren', 'Export as Markdown')}</div>
+      <div class="text-xs text-faint">{t('Eine Datei pro Eintrag in Ordnern nach Projekt, dazu alle Anhänge. Der Papierkorb bleibt draußen.', 'One file per entry, in folders by project, plus all attachments. The trash stays out.')}</div>
     </div>
-    <button class="btn-ghost !h-7 shrink-0 text-xs" onclick={() => ((exporting = !exporting), (exportPassword = ''), (exportError = null), (exported = null))}>Exportieren</button>
+    <button class="btn-ghost !h-7 shrink-0 text-xs" onclick={() => ((exporting = !exporting), (exportPassword = ''), (exportError = null), (exported = null))}>{t('Exportieren', 'Export')}</button>
   </div>
   {#if exporting}
     <form class="border-t border-line-soft px-4 py-3" onsubmit={runExport} in:pop={{ duration: 160, y: -3 }}>
       <p class="mb-2.5 text-xs leading-relaxed text-warn">
-        <TriangleAlert size={13} class="mr-1 inline align-[-2px]" />Der Export ist nicht verschlüsselt. Jeder mit Zugriff auf den Ordner kann alles lesen.
+        <TriangleAlert size={13} class="mr-1 inline align-[-2px]" />{t('Der Export ist nicht verschlüsselt. Jeder mit Zugriff auf den Ordner kann alles lesen.', 'The export is not encrypted. Anyone with access to the folder can read all of it.')}
       </p>
       {#if exportError}
         <p class="mb-2.5 text-xs text-danger" role="alert">{exportError}</p>
       {/if}
       <div class="flex gap-2">
         <!-- svelte-ignore a11y_autofocus -- focus belongs in this field -->
-        <input class="field flex-1" type="password" placeholder="Master-Passwort" aria-label="Master-Passwort für den Export" bind:value={exportPassword} autofocus />
-        <button class="btn-primary shrink-0" disabled={busy || !exportPassword}>Ordner wählen</button>
+        <input class="field flex-1" type="password" placeholder={t('Master-Passwort', 'Master password')} aria-label={t('Master-Passwort für den Export', 'Master password for the export')} bind:value={exportPassword} autofocus />
+        <button class="btn-primary shrink-0" disabled={busy || !exportPassword}>{t('Ordner wählen', 'Choose folder')}</button>
       </div>
     </form>
   {/if}
   {#if exported}
     <div class="border-t border-line-soft px-4 py-3 text-xs" in:pop={{ duration: 160, y: -3 }}>
-      <div class="flex items-center gap-1.5 text-ok"><CircleCheck size={13} /> {exported.entries} Einträge und {exported.attachments} Anhänge exportiert</div>
+      <div class="flex items-center gap-1.5 text-ok"><CircleCheck size={13} /> {t(`${num(exported.entries)} Einträge und ${num(exported.attachments)} Anhänge exportiert`, `Exported ${num(exported.entries)} entries and ${num(exported.attachments)} attachments`)}</div>
       <div class="selectable mt-1 break-all text-faint">{exported.folder}</div>
       {#if exported.failed_attachments.length}
-        <div class="mt-1 text-warn">Nicht lesbar: {exported.failed_attachments.join(', ')}</div>
+        <div class="mt-1 text-warn">{t('Nicht lesbar:', 'Could not read:')} {exported.failed_attachments.join(', ')}</div>
       {/if}
     </div>
   {/if}
 </div>
 
-<h3 class="section-title mt-7">Importieren</h3>
+<h3 class="section-title mt-7">{t('Importieren', 'Import')}</h3>
 <div class="card">
   <div class="row">
     <FolderInput size={15} class="shrink-0 text-faint" />
     <div class="min-w-0 flex-1">
-      <div>Markdown importieren</div>
-      <div class="text-xs text-faint">Ein Ordner aus Obsidian, Logseq oder einem Export von Brainmatter. Ordner werden Projekte, Front Matter wird zu Tags und Art, Links zwischen den Dateien zu Verbindungen.</div>
+      <div>{t('Markdown importieren', 'Import Markdown')}</div>
+      <div class="text-xs text-faint">
+        {t(
+          'Ein Ordner aus Obsidian, Logseq oder einem Export von Brainmatter. Ordner werden Projekte, Front Matter wird zu Tags und Art, Links zwischen den Dateien zu Verbindungen.',
+          'A folder from Obsidian, Logseq or a Brainmatter export. Folders become projects, front matter becomes tags and kind, links between the files become links.',
+        )}
+      </div>
     </div>
-    <button class="btn-ghost !h-7 shrink-0 text-xs" aria-label="Ordner zum Importieren wählen" disabled={busy} onclick={chooseFolder}>Ordner wählen</button>
+    <button class="btn-ghost !h-7 shrink-0 text-xs" aria-label={t('Ordner zum Importieren wählen', 'Choose a folder to import')} disabled={busy} onclick={chooseFolder}>{t('Ordner wählen', 'Choose folder')}</button>
   </div>
   {#if importError}
     <div class="border-t border-line-soft px-4 py-3 text-xs text-danger" role="alert" in:pop={{ duration: 160, y: -3 }}>{importError}</div>
@@ -284,29 +300,33 @@
       {#if preview.entries}
         <p class="leading-relaxed">{coming(preview)}</p>
       {:else}
-        <p class="leading-relaxed">In „{preview.folder}“ ist nichts Neues.</p>
+        <p class="leading-relaxed">{t(`In „${preview.folder}“ ist nichts Neues.`, `Nothing new in “${preview.folder}”.`)}</p>
       {/if}
       {#if preview.existing}
-        <p class="mt-1 text-faint">{count(preview.existing, 'Eintrag gibt', 'Einträge gibt')} es schon. {preview.existing === 1 ? 'Er bleibt' : 'Sie bleiben'}, wie {preview.existing === 1 ? 'er ist' : 'sie sind'}.</p>
+        <p class="mt-1 text-faint">
+          {preview.existing === 1
+            ? t('1 Eintrag gibt es schon. Er bleibt, wie er ist.', '1 entry is already here. It stays as it is.')
+            : t(`${num(preview.existing)} Einträge gibt es schon. Sie bleiben, wie sie sind.`, `${num(preview.existing)} entries are already here. They stay as they are.`)}
+        </p>
       {/if}
       {#if preview.skipped_count}
         <details class="mt-1 text-warn">
-          <summary class="cursor-default">{count(preview.skipped_count, 'Datei bleibt', 'Dateien bleiben')} draußen</summary>
+          <summary class="cursor-default">{plural(preview.skipped_count, ['Datei bleibt', 'Dateien bleiben'], ['file stays', 'files stay'])} {t('draußen', 'out')}</summary>
           <ul class="selectable mt-1 space-y-0.5 text-faint">
             {#each preview.skipped as file (file.path)}
               <li class="break-all">{file.path} <span class="text-muted">· {REASONS[file.reason]}</span></li>
             {/each}
             {#if preview.skipped_count > preview.skipped.length}
-              <li>und {(preview.skipped_count - preview.skipped.length).toLocaleString('de-DE')} weitere</li>
+              <li>{t(`und ${num(preview.skipped_count - preview.skipped.length)} weitere`, `and ${num(preview.skipped_count - preview.skipped.length)} more`)}</li>
             {/if}
           </ul>
         </details>
       {/if}
       <div class="mt-3 flex justify-end gap-2">
-        <button class="btn-ghost !h-7 text-xs" disabled={busy} onclick={() => (preview = null)}>Abbrechen</button>
+        <button class="btn-ghost !h-7 text-xs" disabled={busy} onclick={() => (preview = null)}>{t('Abbrechen', 'Cancel')}</button>
         {#if preview.entries}
           <button class="btn-primary !h-7 text-xs" disabled={busy} onclick={runImport}>
-            {#if importing}<LoaderCircle size={13} class="animate-spin" /> Importiere …{:else}Importieren{/if}
+            {#if importing}<LoaderCircle size={13} class="animate-spin" /> {t('Importiere …', 'Importing …')}{:else}{t('Importieren', 'Import')}{/if}
           </button>
         {/if}
       </div>
@@ -315,11 +335,15 @@
   {#if imported}
     <div class="flex items-center gap-2 border-t border-line-soft px-4 py-3 text-xs" in:pop={{ duration: 160, y: -3 }}>
       {#if undone}
-        <span class="flex-1 text-muted">Import von „{imported.folder}“ rückgängig gemacht.</span>
+        <span class="flex-1 text-muted">{t(`Import von „${imported.folder}“ rückgängig gemacht.`, `Undid the import of “${imported.folder}”.`)}</span>
       {:else}
-        <span class="flex flex-1 items-center gap-1.5 text-ok"><CircleCheck size={13} /> {count(imported.entries, 'Eintrag', 'Einträge')} aus „{imported.folder}“ importiert</span>
+        <span class="flex flex-1 items-center gap-1.5 text-ok"><CircleCheck size={13} />
+          {t(
+            `${plural(imported.entries, ['Eintrag', 'Einträge'], ['entry', 'entries'])} aus „${imported.folder}“ importiert`,
+            `Imported ${plural(imported.entries, ['Eintrag', 'Einträge'], ['entry', 'entries'])} from “${imported.folder}”`,
+          )}</span>
         {#if imported.change_set}
-          <button class="btn-ghost !h-7 shrink-0 text-xs" disabled={busy} onclick={undoImport}><Undo2 size={13} /> Rückgängig</button>
+          <button class="btn-ghost !h-7 shrink-0 text-xs" disabled={busy} onclick={undoImport}><Undo2 size={13} /> {t('Rückgängig', 'Undo')}</button>
         {/if}
       {/if}
     </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang, num, plural, t } from '#lib/i18n.ts';
   import { onDestroy, onMount } from 'svelte';
   import { ChevronRight, Clock, Network } from '@lucide/svelte';
   import { api, createdAt, errorMessage, type GraphNode, type Id, type Status } from '#lib/api.ts';
@@ -27,13 +28,13 @@
 
   const MAIN_VIEWS: { value: 'graph' | 'docs'; label: string }[] = [
     { value: 'graph', label: 'Graph' },
-    { value: 'docs', label: 'Doku' },
+    { value: 'docs', label: t('Doku', 'Docs') },
   ];
 
   const COLOR_MODES: { value: ColorMode; label: string }[] = [
-    { value: 'project', label: 'Projekt' },
-    { value: 'kind', label: 'Art' },
-    { value: 'theme', label: 'Thema' },
+    { value: 'project', label: t('Projekt', 'Project') },
+    { value: 'kind', label: t('Art', 'Kind') },
+    { value: 'theme', label: t('Thema', 'Topic') },
   ];
 
   const suggested = $derived(ws.suggestions.map((s) => s.node.id));
@@ -70,7 +71,7 @@
     try {
       await api.link(src, dst);
       const title = (id: Id) => ws.graph?.nodes.find((n) => n.id === id)?.title ?? '';
-      ws.notify(`„${title(src)}“ mit „${title(dst)}“ verbunden`);
+      ws.notify(t(`„${title(src)}“ mit „${title(dst)}“ verbunden`, `Linked “${title(src)}” to “${title(dst)}”`));
     } catch (e) {
       ws.notify(errorMessage(e));
     }
@@ -96,7 +97,7 @@
       ws.settingsOpen = true;
     } else if (mod && e.key === 'n') {
       e.preventDefault();
-      ws.createNode('Neuer Eintrag');
+      ws.createNode(t('Neuer Eintrag', 'New entry'));
     } else if (mod && e.key === 'l' && !e.shiftKey && ws.selected) {
       e.preventDefault();
       ws.palette = 'link';
@@ -134,7 +135,7 @@
 
   <main class="canvas relative flex min-h-0 min-w-0 flex-col border-l border-line-soft" bind:clientWidth={mainWidth}>
     <header class="relative z-10 flex h-11 shrink-0 items-center gap-1 px-4 text-muted" data-tauri-drag-region>
-      <button class="shrink-0 rounded px-1 transition-colors hover:text-text {ws.view === null ? 'text-text' : ''}" onclick={() => ws.setView(null)}>Alles</button>
+      <button class="shrink-0 rounded px-1 transition-colors hover:text-text {ws.view === null ? 'text-text' : ''}" onclick={() => ws.setView(null)}>{t('Alles', 'All')}</button>
       {#each ws.breadcrumb as p (p.id)}
         <ChevronRight size={13} class="shrink-0 text-faint" />
         <button class="min-w-0 truncate rounded px-1 transition-colors hover:text-text {p.id === ws.view ? 'font-medium text-text' : ''}" onclick={() => ws.setView(p.id)}>{p.name}</button>
@@ -142,10 +143,10 @@
       <div class="h-full min-w-2 flex-1" data-tauri-drag-region></div>
       {#if ws.graph && ws.main === 'graph' && !narrow}
         {@const edges = ws.graph.edges.filter((e) => !ws.hiddenNodes.has(e.src) && !ws.hiddenNodes.has(e.dst)).length}
-        <span class="shrink-0 text-[11px] text-faint tabular-nums">{ws.hiddenNodes.size ? `${ws.graph.nodes.length - ws.hiddenNodes.size} von ${ws.graph.nodes.length}` : ws.graph.nodes.length} Einträge · {edges} Verbindungen</span>
+        <span class="shrink-0 text-[11px] text-faint tabular-nums">{ws.hiddenNodes.size ? t(`${num(ws.graph.nodes.length - ws.hiddenNodes.size)} von ${num(ws.graph.nodes.length)}`, `${num(ws.graph.nodes.length - ws.hiddenNodes.size)} of ${num(ws.graph.nodes.length)}`) : num(ws.graph.nodes.length)} {t('Einträge', 'entries')} · {plural(edges, ['Verbindung', 'Verbindungen'], ['link', 'links'])}</span>
       {/if}
       {#if ws.view}
-        <div class="ml-3 w-36 shrink-0"><Segmented bind:value={ws.main} options={MAIN_VIEWS} label="Ansicht" /></div>
+        <div class="ml-3 w-36 shrink-0"><Segmented bind:value={ws.main} options={MAIN_VIEWS} label={t('Ansicht', 'View')} /></div>
       {/if}
     </header>
 
@@ -177,13 +178,13 @@
         <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2" data-tour="tools">
           {#if !narrow}
             <div class="w-56">
-              <Segmented value={ws.colorMode} options={COLOR_MODES} label="Einfärben nach" onchange={(m) => ws.setColorMode(m)} />
+              <Segmented value={ws.colorMode} options={COLOR_MODES} label={t('Einfärben nach', 'Colour by')} onchange={(m) => ws.setColorMode(m)} />
             </div>
           {/if}
           <GraphFilter />
           {#if until === null}
-            <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs text-muted transition-colors hover:text-text" aria-label="Zeitregler" title="Das Wachstum des Graphen ansehen" onclick={openTimeSlider}>
-              <Clock size={13} />{#if !tight}<span>Zeitregler</span>{/if}
+            <button class="glass-pill !h-8 gap-1.5 !px-2.5 text-xs text-muted transition-colors hover:text-text" aria-label={t('Zeitregler', 'Timeline')} title={t('Das Wachstum des Graphen ansehen', 'Watch the graph grow')} onclick={openTimeSlider}>
+              <Clock size={13} />{#if !tight}<span>{t('Zeitregler', 'Timeline')}</span>{/if}
             </button>
           {/if}
         </div>
@@ -205,12 +206,17 @@
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div class="pointer-events-auto flex max-w-sm flex-col items-center text-center" in:pop={{ duration: 320, y: 10 }}>
             <Network size={26} class="mb-4 text-faint" />
-            <h2 class="text-base font-semibold tracking-tight">{ws.currentProject ? `„${ws.currentProject.name}“ ist noch leer` : 'Dein Graph ist noch leer'}</h2>
+            <h2 class="text-base font-semibold tracking-tight">{ws.currentProject ? t(`„${ws.currentProject.name}“ ist noch leer`, `“${ws.currentProject.name}” is still empty`) : t('Dein Graph ist noch leer', 'Your graph is still empty')}</h2>
             <p class="mt-2 leading-relaxed text-muted">
-              Lege mit <kbd class="kbd">⌘N</kbd> einen Eintrag an oder suche mit <kbd class="kbd">⌘K</kbd>.
-              Mit <code class="rounded bg-raised px-1 font-mono text-xs">[[Titel]]</code> im Text verbindest du Einträge.
+              {#if lang === 'de'}
+                Lege mit <kbd class="kbd">⌘N</kbd> einen Eintrag an oder suche mit <kbd class="kbd">⌘K</kbd>.
+                Mit <code class="rounded bg-raised px-1 font-mono text-xs">[[Titel]]</code> im Text verbindest du Einträge.
+              {:else}
+                Create an entry with <kbd class="kbd">⌘N</kbd> or search with <kbd class="kbd">⌘K</kbd>.
+                Write <code class="rounded bg-raised px-1 font-mono text-xs">[[Title]]</code> in the text to link entries.
+              {/if}
             </p>
-            <button class="btn-primary mt-5" onclick={() => ws.createNode('Neuer Eintrag')}>Ersten Eintrag anlegen</button>
+            <button class="btn-primary mt-5" onclick={() => ws.createNode(t('Neuer Eintrag', 'New entry'))}>{t('Ersten Eintrag anlegen', 'Create the first entry')}</button>
           </div>
         </div>
       {/if}

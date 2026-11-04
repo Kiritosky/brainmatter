@@ -4,11 +4,13 @@
 mod commands;
 mod docs_watch;
 pub mod error;
+pub mod i18n;
 pub mod integrations;
 mod perf;
 pub mod session;
 mod updates;
 
+use crate::i18n::tr;
 use std::{
     sync::{
         Arc,
@@ -160,9 +162,16 @@ fn apply_settings(app: &AppHandle, settings: &Settings) {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Brainmatter öffnen", true, None::<&str>)?;
-    let lock = MenuItem::with_id(app, "lock", "Sperren", true, Some("CmdOrCtrl+Shift+L"))?;
-    let quit = MenuItem::with_id(app, "quit", "Beenden", true, Some("CmdOrCtrl+Q"))?;
+    let open = MenuItem::with_id(
+        app,
+        "open",
+        tr("Brainmatter öffnen", "Open Brainmatter"),
+        true,
+        None::<&str>,
+    )?;
+    let lock =
+        MenuItem::with_id(app, "lock", tr("Sperren", "Lock"), true, Some("CmdOrCtrl+Shift+L"))?;
+    let quit = MenuItem::with_id(app, "quit", tr("Beenden", "Quit"), true, Some("CmdOrCtrl+Q"))?;
     let sep = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&open, &lock, &sep, &quit])?;
 
@@ -195,7 +204,11 @@ pub fn run() {
         .init();
 
     // Measuring runs beside an installed copy, which would otherwise take over.
-    let builder = tauri::Builder::default();
+    // The web view learns the language before its first script.
+    let language = tauri::plugin::Builder::<tauri::Wry>::new("language")
+        .js_init_script(i18n::script())
+        .build();
+    let builder = tauri::Builder::default().plugin(language);
     let builder = if perf::script().is_some() {
         builder
     } else {

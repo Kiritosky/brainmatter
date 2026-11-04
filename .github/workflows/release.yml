@@ -47,6 +47,14 @@ jobs:
             echo "CHANGELOG.md has no entry for $code" >&2
             exit 1
           fi
+          awk -v v="$code" '
+            /^## / { on = (index($0, "## " v " ") == 1 || $0 == "## " v); next }
+            on { print }
+          ' CHANGELOG.en.md > notes.en.md
+          if ! grep -q '[^[:space:]]' notes.en.md; then
+            echo "CHANGELOG.en.md has no entry for $code" >&2
+            exit 1
+          fi
 
       - name: Install frontend dependencies
         working-directory: app
@@ -89,7 +97,8 @@ jobs:
             --arg signature "$(cat "$bundle/macos/Brainmatter.app.tar.gz.sig")" \
             --arg url "$url" \
             --rawfile notes notes.md \
-            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
+            --rawfile notes_en notes.en.md \
+            '{version: $version, notes: $notes, notes_en: $notes_en, pub_date: $pub_date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
             > latest.json
 
       - name: Publish the release
@@ -97,7 +106,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bundle=target/release/bundle
-          { cat notes.md; sed "s/VERSION/${VERSION#v}/" .github/release-footer.md; } > release.md
+          {
+            cat notes.en.md
+            printf '\n<details>\n<summary>Deutsch</summary>\n\n'
+            cat notes.md
+            printf '\n</details>\n'
+            sed "s/VERSION/${VERSION#v}/" .github/release-footer.md
+          } > release.md
           gh release create "$VERSION" --notes-file release.md --verify-tag \
             "$bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
             "$bundle/macos/Brainmatter.app.tar.gz" \

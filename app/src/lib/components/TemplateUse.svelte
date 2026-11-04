@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { Check, Copy, FilePlus } from '@lucide/svelte';
   import { api, errorMessage, type Id } from '#lib/api.ts';
   import { ws } from '#lib/workspace.svelte.ts';
@@ -33,24 +34,24 @@
   }
 </script>
 
-<div class="section-title mt-7">Verwenden</div>
+<div class="section-title mt-7">{t('Verwenden', 'Use')}</div>
 <div class="card p-3">
   {#if names.length}
     <div class="mb-3 flex flex-col gap-1.5">
       {#each names as name (name)}
         <label class="flex items-center gap-2.5">
           <span class="w-24 shrink-0 truncate text-xs text-muted" title={name}>{name}</span>
-          <input class="field !h-7.5 min-w-0 flex-1" bind:value={values[name]} aria-label="Wert für {name}" />
+          <input class="field !h-7.5 min-w-0 flex-1" bind:value={values[name]} aria-label={t(`Wert für ${name}`, `Value for ${name}`)} />
         </label>
       {/each}
     </div>
   {/if}
   <pre class="selectable max-h-48 overflow-auto rounded-lg border border-line-soft bg-bg/50 p-2.5 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-muted">{filled}</pre>
   <div class="mt-2.5 flex items-center gap-1.5">
-    <span class="min-w-0 flex-1 truncate text-xs text-faint">{open ? `${open} Platzhalter noch offen` : names.length ? 'Alles ausgefüllt' : 'Ohne Platzhalter'}</span>
+    <span class="min-w-0 flex-1 truncate text-xs text-faint">{open ? t(`${open} Platzhalter noch offen`, `${open} ${open === 1 ? 'placeholder' : 'placeholders'} left`) : names.length ? t('Alles ausgefüllt', 'All filled in') : t('Ohne Platzhalter', 'No placeholders')}</span>
     <button class="btn-ghost !h-7 shrink-0 text-xs" onclick={copy}>
-      {#if copied}<Check size={13} class="text-ok" /> Kopiert{:else}<Copy size={13} /> Kopieren{/if}
+      {#if copied}<Check size={13} class="text-ok" /> {t('Kopiert', 'Copied')}{:else}<Copy size={13} /> {t('Kopieren', 'Copy')}{/if}
     </button>
-    <button class="btn-primary !h-7 shrink-0 !px-2.5 text-xs" onclick={createEntry}><FilePlus size={13} /> Als Eintrag anlegen</button>
+    <button class="btn-primary !h-7 shrink-0 !px-2.5 text-xs" onclick={createEntry}><FilePlus size={13} /> {t('Als Eintrag anlegen', 'Create as entry')}</button>
   </div>
 </div>

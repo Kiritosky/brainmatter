@@ -1,6 +1,8 @@
-// What changed in each version. CHANGELOG.md is built into the app, so this also
+// What changed in each version. The changelogs are built into the app, so this also
 // works offline and always matches the installed version.
-import source from '../../../CHANGELOG.md?raw';
+import german from '../../../CHANGELOG.md?raw';
+import english from '../../../CHANGELOG.en.md?raw';
+import { lang } from '#lib/i18n.ts';
 
 export interface Release {
   version: string;
@@ -34,7 +36,7 @@ export function isNewer(a: string, b: string): boolean {
   return false;
 }
 
-export const releases = parseChangelog(source);
+export const releases = parseChangelog(lang === 'de' ? german : english);
 
 /** Versions newer than `seen`, up to and including `current`. */
 export function releasesSince(seen: string | null, current: string): Release[] {

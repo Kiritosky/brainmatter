@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale, t } from '#lib/i18n.ts';
   import { tick, untrack } from 'svelte';
   import { ArrowLeft, ArrowRight, ArrowDown, ArrowUp, BookOpen, FilePlus, FileText, FolderSync, Pencil, Plus, Search, Trash2, TriangleAlert, X } from '@lucide/svelte';
   import { api, errorMessage, type DocPage, type DocSource, type Id, type NodeDetail, type SearchHit } from '#lib/api.ts';
@@ -45,7 +46,7 @@
     return first?.[1] === title ? body.slice(first[0].length) : body;
   }
   const html = $derived(
-    current ? renderMarkdown(withoutTitle(current.node.body, current.node.title), (t) => titles.has(t.toLowerCase())) : '',
+    current ? renderMarkdown(withoutTitle(current.node.body, current.node.title), (title) => titles.has(title.toLowerCase())) : '',
   );
 
   async function act(fn: () => Promise<unknown>) {
@@ -131,7 +132,7 @@
 
   async function newPage(parent: Id | null = null) {
     await act(async () => {
-      const node = await api.createDocPage(project, 'Neue Seite', parent);
+      const node = await api.createDocPage(project, t('Neue Seite', 'New page'), parent);
       currentId = node.id;
       editing = 'title';
     });
@@ -158,23 +159,23 @@
     }
   }
 
-  const fmt = (ms: number) => new Date(ms).toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+  const fmt = (ms: number) => new Date(ms).toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' });
   // Snippets mark matches with **…**.
   const parts = (s: string) => s.split('**').map((text, i) => ({ text, mark: i % 2 === 1 }));
 </script>
 
 <div class="absolute inset-0 z-20 grid bg-bg" style="grid-template-columns: 248px minmax(0, 1fr)">
-  <nav class="flex min-h-0 flex-col border-r border-line-soft" aria-label="Seiten">
+  <nav class="flex min-h-0 flex-col border-r border-line-soft" aria-label={t('Seiten', 'Pages')}>
     <div class="flex items-center gap-1.5 px-3 pt-1 pb-2">
       <div class="relative min-w-0 flex-1">
         <Search size={13} class="absolute top-2 left-2 text-faint" />
-        <input class="field !h-7.5 w-full !pl-7 text-xs" placeholder="In der Doku suchen" aria-label="In der Doku suchen" bind:value={query} />
+        <input class="field !h-7.5 w-full !pl-7 text-xs" placeholder={t('In der Doku suchen', 'Search the docs')} aria-label={t('In der Doku suchen', 'Search the docs')} bind:value={query} />
       </div>
-      <button class="icon-btn shrink-0" aria-label="Neue Seite" title="Neue Seite" onclick={() => newPage()}><FilePlus size={15} /></button>
+      <button class="icon-btn shrink-0" aria-label={t('Neue Seite', 'New page')} title={t('Neue Seite', 'New page')} onclick={() => newPage()}><FilePlus size={15} /></button>
     </div>
 
     {#if tagCounts.length}
-      <div class="flex max-h-20 flex-wrap gap-1 overflow-y-auto px-3 pb-2" role="group" aria-label="Nach Tag filtern">
+      <div class="flex max-h-20 flex-wrap gap-1 overflow-y-auto px-3 pb-2" role="group" aria-label={t('Nach Tag filtern', 'Filter by tag')}>
         {#each tagCounts as [tag, count] (tag)}
           <button class="chip transition-colors {tagFilter === tag ? '!border-accent/40 !bg-raised !text-text' : 'hover:!border-faint hover:text-text'}"
             aria-pressed={tagFilter === tag} onclick={() => (tagFilter = tagFilter === tag ? null : tag)}>
@@ -194,7 +195,7 @@
             </div>
           </button>
         {:else}
-          <p class="px-2 py-6 text-center text-xs text-faint">Nichts gefunden.</p>
+          <p class="px-2 py-6 text-center text-xs text-faint">{t('Nichts gefunden.', 'Nothing found.')}</p>
         {/each}
       {:else}
         {#each shown as p (p.node.id)}
@@ -208,9 +209,9 @@
             </button>
             {#if !p.read_only && !tagFilter}
               <div class="absolute top-1 right-1 flex items-center rounded-md bg-elevated opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                <button class="icon-btn !h-6 !w-6" aria-label="„{p.node.title}“ nach oben" title="Nach oben" disabled={position === 0} onclick={() => move(p, -1)}><ArrowUp size={12} /></button>
-                <button class="icon-btn !h-6 !w-6" aria-label="„{p.node.title}“ nach unten" title="Nach unten" disabled={position === list.length - 1} onclick={() => move(p, 1)}><ArrowDown size={12} /></button>
-                <button class="icon-btn !h-6 !w-6" aria-label="Unterseite von „{p.node.title}“" title="Unterseite" onclick={() => newPage(p.node.id)}><Plus size={12} /></button>
+                <button class="icon-btn !h-6 !w-6" aria-label={t(`„${p.node.title}“ nach oben`, `Move “${p.node.title}” up`)} title={t('Nach oben', 'Up')} disabled={position === 0} onclick={() => move(p, -1)}><ArrowUp size={12} /></button>
+                <button class="icon-btn !h-6 !w-6" aria-label={t(`„${p.node.title}“ nach unten`, `Move “${p.node.title}” down`)} title={t('Nach unten', 'Down')} disabled={position === list.length - 1} onclick={() => move(p, 1)}><ArrowDown size={12} /></button>
+                <button class="icon-btn !h-6 !w-6" aria-label={t(`Unterseite von „${p.node.title}“`, `Subpage of “${p.node.title}”`)} title={t('Unterseite', 'Subpage')} onclick={() => newPage(p.node.id)}><Plus size={12} /></button>
               </div>
             {/if}
           </div>
@@ -219,19 +220,19 @@
     </div>
 
     <div class="border-t border-line-soft p-2">
-      <div class="flex items-center pl-1.5" title="Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein. Speicherst du dort, ist die Seite einen Moment später auch hier.">
-        <span class="section-title !mb-0 flex-1">Aus Dateien</span>
-        <button class="icon-btn !h-6 !w-6" aria-label="Doku-Ordner einbinden" title="Doku-Ordner einbinden" onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={13} /></button>
-        <button class="icon-btn !h-6 !w-6" aria-label="Markdown-Datei einbinden" title="Markdown-Datei einbinden" onclick={() => act(() => api.addDocSource(project, false))}><FilePlus size={13} /></button>
+      <div class="flex items-center pl-1.5" title={t('Bindet z. B. den docs-Ordner eines Repos schreibgeschützt ein. Speicherst du dort, ist die Seite einen Moment später auch hier.', 'Mirrors a repo’s docs folder, say, read-only. Save a file there, and the page is here a moment later.')}>
+        <span class="section-title !mb-0 flex-1">{t('Aus Dateien', 'From files')}</span>
+        <button class="icon-btn !h-6 !w-6" aria-label={t('Doku-Ordner einbinden', 'Mirror a docs folder')} title={t('Doku-Ordner einbinden', 'Mirror a docs folder')} onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={13} /></button>
+        <button class="icon-btn !h-6 !w-6" aria-label={t('Markdown-Datei einbinden', 'Mirror a Markdown file')} title={t('Markdown-Datei einbinden', 'Mirror a Markdown file')} onclick={() => act(() => api.addDocSource(project, false))}><FilePlus size={13} /></button>
       </div>
       {#each sources as s (s.id)}
         <div class="group flex items-center gap-1.5 rounded-md py-1 pr-0.5 pl-1.5 hover:bg-elevated" title={s.path}>
           {#if unreachable.includes(s.path)}
-            <span title="Gerade nicht erreichbar. Die Seiten bleiben, bis der Ordner wieder da ist."><TriangleAlert size={12} class="shrink-0 text-warn" /></span>
+            <span title={t('Gerade nicht erreichbar. Die Seiten bleiben, bis der Ordner wieder da ist.', 'Out of reach right now. The pages stay until the folder is back.')}><TriangleAlert size={12} class="shrink-0 text-warn" /></span>
           {/if}
           <span class="min-w-0 flex-1 truncate text-xs text-muted">{s.path.split('/').pop()}</span>
           <span class="text-[11px] text-faint tabular-nums">{s.pages}</span>
-          <button class="text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus-visible:opacity-100" aria-label="„{s.path.split('/').pop()}“ nicht mehr einbinden" title="Nicht mehr einbinden. Die Dateien bleiben."
+          <button class="text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger focus-visible:opacity-100" aria-label={t(`„${s.path.split('/').pop()}“ nicht mehr einbinden`, `Stop mirroring “${s.path.split('/').pop()}”`)} title={t('Nicht mehr einbinden. Die Dateien bleiben.', 'Stop mirroring. The files stay.')}
             onclick={() => act(() => api.removeDocSource(s.id))}><X size={13} /></button>
         </div>
       {/each}
@@ -253,22 +254,22 @@
             <div class="mt-2 flex min-h-7.5 flex-wrap items-center gap-x-3 gap-y-1">
               <p class="min-w-0 flex-1 basis-48 text-xs text-faint">
                 {#if page.read_only}
-                  <span>Aus der Datei <code class="font-mono">{page.source_path}</code>, nur dort änderbar.</span>
+                  <span>{t('Aus der Datei', 'From the file')} <code class="font-mono">{page.source_path}</code>{t(', nur dort änderbar.', '; change it there.')}</span>
                 {/if}
-                <span>Stand {fmt(current.node.updated_at)}</span>
+                <span>{t('Stand', 'As of')} {fmt(current.node.updated_at)}</span>
               </p>
               {#if !current.read_only}
                 <div class="flex shrink-0 items-center gap-1">
-                  <button class="btn-ghost !h-7.5 text-xs" onclick={() => (editing = 'body')}><Pencil size={13} /> Bearbeiten</button>
-                  <button class="icon-btn hover:!text-danger" aria-label="In den Papierkorb" title="In den Papierkorb" onclick={() => act(() => api.deleteNode(page.node.id))}><Trash2 size={14} /></button>
+                  <button class="btn-ghost !h-7.5 text-xs" onclick={() => (editing = 'body')}><Pencil size={13} /> {t('Bearbeiten', 'Edit')}</button>
+                  <button class="icon-btn hover:!text-danger" aria-label={t('In den Papierkorb', 'Move to trash')} title={t('In den Papierkorb', 'Move to trash')} onclick={() => act(() => api.deleteNode(page.node.id))}><Trash2 size={14} /></button>
                 </div>
               {/if}
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-1">
               {#each current.node.tags as tag (tag)}
                 <span class="chip">
-                  <button class="transition-colors hover:text-accent" title="Nach #{tag} filtern" onclick={() => (tagFilter = tag)}>#{tag}</button>
-                  <button class="-mr-0.5 text-faint transition-colors hover:text-danger" aria-label="Tag {tag} entfernen" onclick={() => act(() => api.updateNode(page.node.id, { tags_remove: [tag] }))}><X size={11} /></button>
+                  <button class="transition-colors hover:text-accent" title={t(`Nach #${tag} filtern`, `Filter by #${tag}`)} onclick={() => (tagFilter = tag)}>#{tag}</button>
+                  <button class="-mr-0.5 text-faint transition-colors hover:text-danger" aria-label={t(`Tag ${tag} entfernen`, `Remove tag ${tag}`)} onclick={() => act(() => api.updateNode(page.node.id, { tags_remove: [tag] }))}><X size={11} /></button>
                 </span>
               {/each}
               <TagInput exclude={current.node.tags} onadd={(tag) => act(() => api.updateNode(page.node.id, { tags_add: [tag] }))} />
@@ -288,13 +289,13 @@
             <div class="mt-12 grid grid-cols-2 gap-3 border-t border-line-soft pt-5">
               {#if previous}
                 <button class="group rounded-xl border border-line-soft p-3 text-left transition-colors hover:border-line hover:bg-elevated" onclick={() => open(previous.node.id)}>
-                  <span class="flex items-center gap-1.5 text-xs text-faint"><ArrowLeft size={12} /> Zurück</span>
+                  <span class="flex items-center gap-1.5 text-xs text-faint"><ArrowLeft size={12} /> {t('Zurück', 'Previous')}</span>
                   <span class="mt-0.5 block truncate font-medium">{previous.node.title}</span>
                 </button>
               {:else}<span></span>{/if}
               {#if next}
                 <button class="rounded-xl border border-line-soft p-3 text-right transition-colors hover:border-line hover:bg-elevated" onclick={() => open(next.node.id)}>
-                  <span class="flex items-center justify-end gap-1.5 text-xs text-faint">Weiter <ArrowRight size={12} /></span>
+                  <span class="flex items-center justify-end gap-1.5 text-xs text-faint">{t('Weiter', 'Next')} <ArrowRight size={12} /></span>
                   <span class="mt-0.5 block truncate font-medium">{next.node.title}</span>
                 </button>
               {/if}
@@ -305,8 +306,8 @@
         {/if}
 
         {#if headings.length > 1 && !editing}
-          <aside class="sticky top-4 hidden h-fit w-44 shrink-0 @3xl:block" aria-label="Auf dieser Seite">
-            <div class="section-title">Auf dieser Seite</div>
+          <aside class="sticky top-4 hidden h-fit w-44 shrink-0 @3xl:block" aria-label={t('Auf dieser Seite', 'On this page')}>
+            <div class="section-title">{t('Auf dieser Seite', 'On this page')}</div>
             {#each headings as h (h.id)}
               <button class="block w-full truncate py-1 text-left text-xs text-muted transition-colors hover:text-text"
                 style="padding-left: {(h.level - 1) * 10}px" title={h.title}
@@ -319,11 +320,11 @@
       <div class="flex h-full items-center justify-center">
         <div class="flex max-w-sm flex-col items-center text-center" in:pop={{ duration: 280, y: 10 }}>
           <div class="mb-4 flex h-14 w-14 items-center justify-center text-faint"><BookOpen size={26} /></div>
-          <h2 class="text-base font-semibold tracking-tight">Noch keine Doku für „{ws.currentProject?.name}“</h2>
-          <p class="mt-2 leading-relaxed text-muted">Schreibe Seiten direkt hier, oder binde den Doku-Ordner eines Repos ein. Verbundene KIs können beides lesen.</p>
+          <h2 class="text-base font-semibold tracking-tight">{t(`Noch keine Doku für „${ws.currentProject?.name}“`, `No docs for “${ws.currentProject?.name}” yet`)}</h2>
+          <p class="mt-2 leading-relaxed text-muted">{t('Schreibe Seiten direkt hier, oder binde den Doku-Ordner eines Repos ein. Verbundene KIs können beides lesen.', 'Write pages right here, or mirror a repo’s docs folder. Connected AI clients can read both.')}</p>
           <div class="mt-5 flex gap-2">
-            <button class="btn-primary" onclick={() => newPage()}>Erste Seite anlegen</button>
-            <button class="btn-ghost" onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={14} /> Ordner einbinden</button>
+            <button class="btn-primary" onclick={() => newPage()}>{t('Erste Seite anlegen', 'Create the first page')}</button>
+            <button class="btn-ghost" onclick={() => act(() => api.addDocSource(project, true))}><FolderSync size={14} /> {t('Ordner einbinden', 'Mirror a folder')}</button>
           </div>
         </div>
       </div>

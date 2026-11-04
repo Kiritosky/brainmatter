@@ -1,6 +1,24 @@
 # Was ist neu
 
-Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl.
+Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
+
+## 1.1.0 · 2026-11-04
+
+Brainmatter spricht jetzt auch Englisch, holt deine Notizen aus anderen Apps und sichert sich auf Wunsch an einem zweiten Ort.
+
+### Neu
+- **Englisch:** Die App folgt der Sprache von macOS. Steht Deutsch in den Systemeinstellungen an erster Stelle, bleibt alles deutsch, sonst ist sie englisch.
+- **Markdown importieren:** Ein Ordner aus Obsidian, Logseq oder einem Brainmatter-Export wird zu Einträgen. Ordner werden Projekte, Front Matter wird zu Tags und Art, Links zwischen den Dateien werden Verbindungen. Vorher siehst du, was kommt, und der ganze Import lässt sich mit einem Klick zurücknehmen. Zu finden unter Einstellungen → Backups.
+- **Backups an einem zweiten Ort:** Jedes Backup landet auf Wunsch auch auf einem externen Laufwerk oder in einem anderen Ordner. Ist das Laufwerk gerade nicht da, holt Brainmatter die Kopie nach, sobald es wieder angeschlossen ist.
+- **Auf einem neuen Mac weitermachen:** Beim Einrichten „Aus einem Backup übernehmen“ wählen, den Ordner zeigen und mit dem Master-Passwort von damals öffnen.
+- **Doku folgt ihren Dateien live:** Eingebundene Doku-Ordner aktualisieren sich, sobald du dort speicherst, nicht erst beim Öffnen der Doku.
+
+### Verbessert
+- **Große Tresore:** Entsperren und Suchen sind bei 50.000 Einträgen schneller, und eine Änderung lädt nur noch, was sie betrifft, statt des ganzen Graphen.
+- Große Graphen zeigen ihre Einträge zuerst und die Linien einen Moment später.
+
+### Behoben
+- Links und Verweise unterschieden bei Umlauten zwischen Groß- und Kleinschreibung, etwa bei „Ärger“ und „ärger“.
 
 ## 1.0.0 · 2026-11-02
 

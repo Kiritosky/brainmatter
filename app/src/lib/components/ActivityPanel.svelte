@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang, locale, t } from '#lib/i18n.ts';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import {
@@ -17,6 +18,7 @@
   import Segmented from '#lib/ui/Segmented.svelte';
   import { avatarStyle, tint } from '#lib/ui/tint.ts';
   import { pop } from '#lib/ui/motion.ts';
+  import { summary as readable } from '#lib/summaries.ts';
 
   let { userName }: { userName: string | null } = $props();
 
@@ -36,10 +38,10 @@
 
   function dayLabel(ms: number) {
     const key = dayKey(ms);
-    if (key === dayKey(now)) return 'Heute';
-    if (key === dayKey(now - 86_400_000)) return 'Gestern';
+    if (key === dayKey(now)) return t('Heute', 'Today');
+    if (key === dayKey(now - 86_400_000)) return t('Gestern', 'Yesterday');
     const sameYear = new Date(ms).getFullYear() === new Date(now).getFullYear();
-    return new Date(ms).toLocaleDateString('de-DE', {
+    return new Date(ms).toLocaleDateString(locale, {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -84,7 +86,7 @@
     } catch (e) {
       ws.notify(
         isApiError(e) && e.code === 'conflict'
-          ? 'Das wurde danach noch geändert. Nimm zuerst die neuere Änderung zurück.'
+          ? t('Das wurde danach noch geändert. Nimm zuerst die neuere Änderung zurück.', 'This was changed again later. Undo the newer change first.')
           : errorMessage(e),
       );
     }
@@ -92,19 +94,19 @@
 
   async function open(id: string) {
     await ws.select(id, true);
-    if (!ws.detail) ws.notify('Dieser Eintrag liegt im Papierkorb.');
+    if (!ws.detail) ws.notify(t('Dieser Eintrag liegt im Papierkorb.', 'This entry is in the trash.'));
   }
 
   function ago(ms: number) {
     const s = Math.max(0, Math.round((now - ms) / 1000));
-    if (s < 60) return 'gerade eben';
-    if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
-    if (s < 86_400) return `vor ${Math.round(s / 3600)} Std.`;
-    return new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+    if (s < 60) return t('gerade eben', 'just now');
+    if (s < 3600) return t(`vor ${Math.round(s / 60)} Min.`, `${Math.round(s / 60)} min ago`);
+    if (s < 86_400) return t(`vor ${Math.round(s / 3600)} Std.`, `${Math.round(s / 3600)} h ago`);
+    return new Date(ms).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) + t(' Uhr', '');
   }
 
   const fullTime = (ms: number) =>
-    new Date(ms).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+    new Date(ms).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
 
   /** Icon and colour of the small badge on the avatar. */
   function action(summary: string): { icon: typeof Undo2; color: string } {
@@ -120,22 +122,22 @@
 
   /** Splits `„Titel“ bearbeitet` so the title can be emphasised and clicked. */
   function parts(summary: string) {
-    const m = /^(.*?)„(.+)“(.*)$/.exec(summary);
+    const m = (lang === 'de' ? /^(.*?)„(.+)“(.*)$/ : /^(.*?)“(.+)”(.*)$/).exec(summary);
     return m ? { before: m[1], title: m[2], after: m[3] } : { before: summary, title: null, after: '' };
   }
 
   const FILTERS: { value: Filter; label: string }[] = [
-    { value: 'all', label: 'Alle' },
-    { value: 'ai', label: 'KI' },
-    { value: 'me', label: 'Ich' },
+    { value: 'all', label: t('Alle', 'All') },
+    { value: 'ai', label: t('KI', 'AI') },
+    { value: 'me', label: t('Ich', 'Me') },
   ];
 </script>
 
 <aside class="flex h-full w-100 flex-col border-l border-line bg-panel">
   <header class="px-4 pt-3 pb-3" data-tauri-drag-region>
     <div class="mb-3 flex items-center">
-      <h2 class="flex-1 text-[15px] font-semibold tracking-tight">Aktivität</h2>
-      <button class="icon-btn -mr-1" aria-label="Schließen" onclick={() => (ws.panel = null)}><X size={15} /></button>
+      <h2 class="flex-1 text-[15px] font-semibold tracking-tight">{t('Aktivität', 'Activity')}</h2>
+      <button class="icon-btn -mr-1" aria-label={t('Schließen', 'Close')} onclick={() => (ws.panel = null)}><X size={15} /></button>
     </div>
     <Segmented bind:value={filter} options={FILTERS} label="Filter" />
   </header>
@@ -148,7 +150,7 @@
         </h3>
         {#each day.entries as { change_set: c, nodes }, i (c.id)}
           {@const a = action(c.summary)}
-          {@const p = parts(c.summary)}
+          {@const p = parts(readable(c.summary))}
           {@const ai = isAi(c)}
           <article
             class="group relative flex gap-3 rounded-xl px-2 py-2 transition-colors duration-150 hover:bg-elevated/70"
@@ -182,7 +184,7 @@
                 <span aria-hidden="true">·</span>
                 <time title={fullTime(c.at)}>{ago(c.at)}</time>
                 {#if c.reverted_by}
-                  <span class="ml-0.5 rounded bg-raised px-1.5 py-px text-[10px] text-muted no-underline">zurückgenommen</span>
+                  <span class="ml-0.5 rounded bg-raised px-1.5 py-px text-[10px] text-muted no-underline">{t('zurückgenommen', 'undone')}</span>
                 {/if}
               </p>
               {#if nodes.length > 1}
@@ -202,7 +204,7 @@
               <button
                 class="absolute top-2 right-2 inline-flex h-7 items-center gap-1 rounded-md border border-line bg-raised px-2 text-[11px] text-muted opacity-0 shadow-sm transition-[opacity,color] duration-150 group-hover:opacity-100 hover:text-text focus-visible:opacity-100"
                 onclick={() => revert(c)}>
-                <Undo2 size={12} /> Rückgängig
+                <Undo2 size={12} /> {t('Rückgängig', 'Undo')}
               </button>
             {/if}
           </article>
@@ -214,11 +216,11 @@
           <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-elevated text-faint">
             {#if filter === 'ai'}<Bot size={20} />{:else}<History size={20} />{/if}
           </div>
-          <p class="font-medium">{filter === 'ai' ? 'Noch keine KI-Aktivität' : 'Noch keine Aktivität'}</p>
+          <p class="font-medium">{filter === 'ai' ? t('Noch keine KI-Aktivität', 'No AI activity yet') : t('Noch keine Aktivität', 'No activity yet')}</p>
           <p class="mt-1 text-xs leading-relaxed text-faint">
             {filter === 'ai'
-              ? 'Sobald eine KI etwas schreibt, erscheint es hier und lässt sich zurücknehmen.'
-              : 'Änderungen an Einträgen, Verbindungen und Projekten erscheinen hier.'}
+              ? t('Sobald eine KI etwas schreibt, erscheint es hier und lässt sich zurücknehmen.', 'Once an AI client writes something, it shows up here and can be undone.')
+              : t('Änderungen an Einträgen, Verbindungen und Projekten erscheinen hier.', 'Changes to entries, links and projects show up here.')}
           </p>
         </div>
       {/if}

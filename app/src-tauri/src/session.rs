@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::error::{ApiError, ApiResult};
+use crate::i18n::tr;
 
 const KEYCHAIN_SERVICE: &str =
     if cfg!(debug_assertions) { "app.brainmatter.dev" } else { "app.brainmatter" };
@@ -269,10 +270,16 @@ impl Session {
         check_password(password)?;
         let name = user_name.trim();
         if name.is_empty() {
-            return Err(ApiError::new("invalid", "Bitte einen Namen angeben."));
+            return Err(ApiError::new(
+                "invalid",
+                tr("Bitte einen Namen angeben.", "Please enter a name."),
+            ));
         }
         if !matches!(*self.state.lock(), State::NoVault) {
-            return Err(ApiError::new("vault_exists", "Es gibt bereits einen Tresor."));
+            return Err(ApiError::new(
+                "vault_exists",
+                tr("Es gibt bereits einen Tresor.", "There is a vault already."),
+            ));
         }
         let (vault, keys, recovery) = Vault::create(&self.dir, password, self.kdf.clone())?;
         let engine = open_engine(&self.dir, &vault, &keys)?;
@@ -285,13 +292,19 @@ impl Session {
     /// unlocks it. Copying goes on to that place. Slow: blocking thread.
     pub fn adopt_backup(&self, folder: &Path, password: &str) -> ApiResult<()> {
         if !matches!(*self.state.lock(), State::NoVault) {
-            return Err(ApiError::new("vault_exists", "Es gibt bereits einen Tresor."));
+            return Err(ApiError::new(
+                "vault_exists",
+                tr("Es gibt bereits einen Tresor.", "There is a vault already."),
+            ));
         }
         let source = mirror::target_in(folder);
         if !Vault::exists(&source) {
             return Err(ApiError::new(
                 "not_a_backup",
-                "In diesem Ordner liegt kein Backup von Brainmatter.",
+                tr(
+                    "In diesem Ordner liegt kein Backup von Brainmatter.",
+                    "There is no Brainmatter backup in this folder.",
+                ),
             ));
         }
         let keys = Vault::load(&source)?.unlock_with_password(password)?;
@@ -322,7 +335,13 @@ impl Session {
 
     pub fn unlock_recovery(&self, key: &str) -> ApiResult<()> {
         let key = RecoveryKey::parse(key).ok_or_else(|| {
-            ApiError::new("wrong_recovery_key", "Der Schlüssel ist unvollständig oder vertippt.")
+            ApiError::new(
+                "wrong_recovery_key",
+                tr(
+                    "Der Schlüssel ist unvollständig oder vertippt.",
+                    "The key is incomplete or mistyped.",
+                ),
+            )
         })?;
         let vault = self.locked_vault()?;
         let keys = vault.unlock_with_recovery(&key)?;
@@ -337,7 +356,10 @@ impl Session {
         let account = vault
             .keychain_account()
             .ok_or_else(|| {
-                ApiError::new("touch_id_not_enrolled", "Touch ID ist nicht eingerichtet.")
+                ApiError::new(
+                    "touch_id_not_enrolled",
+                    tr("Touch ID ist nicht eingerichtet.", "Touch ID is not set up."),
+                )
             })?
             .to_string();
         biometrics::authenticate(reason)
@@ -461,7 +483,10 @@ impl Session {
             let session = self.clone();
             let name = client.to_string();
             std::thread::spawn(move || {
-                let reason = format!("„{name}“ möchte auf Brainmatter zugreifen");
+                let reason = match crate::i18n::german() {
+                    true => format!("„{name}“ möchte auf Brainmatter zugreifen"),
+                    false => format!("“{name}” wants to access Brainmatter"),
+                };
                 if let Err(e) = session.unlock_touch_id(&reason) {
                     tracing::info!("unlock for {name} refused: {}", e.code);
                     session.prompt_blocked_until.lock().insert(name, now_ms() + PROMPT_COOLDOWN_MS);
@@ -539,7 +564,10 @@ impl Session {
         if settings.backup_copy.is_some() {
             let (db, key) = self.db_and_key()?;
             if self.backup_running.swap(true, Ordering::SeqCst) {
-                return Err(ApiError::new("busy", "Es läuft bereits ein Backup."));
+                return Err(ApiError::new(
+                    "busy",
+                    tr("Es läuft bereits ein Backup.", "A backup is running already."),
+                ));
             }
             // Something to copy, if there is no backup yet.
             let first = match backups::list(&self.backup_dir()) {
@@ -567,7 +595,10 @@ impl Session {
     pub fn backup_now(&self) -> ApiResult<BackupInfo> {
         let (db, key) = self.db_and_key()?;
         if self.backup_running.swap(true, Ordering::SeqCst) {
-            return Err(ApiError::new("busy", "Es läuft bereits ein Backup."));
+            return Err(ApiError::new(
+                "busy",
+                tr("Es läuft bereits ein Backup.", "A backup is running already."),
+            ));
         }
         let result = backups::create(&db, &key, &self.backup_dir());
         *self.backup_error.lock() = result.as_ref().err().map(ToString::to_string);
@@ -641,17 +672,24 @@ impl Session {
     /// is the most far-reaching action in the app. Slow: blocking thread.
     pub fn restore_backup(&self, name: &str, password: &str) -> ApiResult<()> {
         if self.backup_running.load(Ordering::SeqCst) {
-            return Err(ApiError::new("busy", "Es läuft gerade ein Backup."));
+            return Err(ApiError::new(
+                "busy",
+                tr("Es läuft gerade ein Backup.", "A backup is running right now."),
+            ));
         }
         let vault = Vault::load(&self.dir)?;
         let keys = vault.unlock_with_password(password)?;
         // Checked before locking, so a bad backup does not interrupt the user.
         let source = self.backup_dir().join(name);
         if !backups::list(&self.backup_dir())?.iter().any(|b| b.name == name) {
-            return Err(ApiError::new("not_found", "Dieses Backup gibt es nicht mehr."));
+            return Err(ApiError::new(
+                "not_found",
+                tr("Dieses Backup gibt es nicht mehr.", "This backup no longer exists."),
+            ));
         }
-        backups::verify(&source, &keys.db_key())
-            .map_err(|_| ApiError::new("corrupt", "Dieses Backup ist beschädigt."))?;
+        backups::verify(&source, &keys.db_key()).map_err(|_| {
+            ApiError::new("corrupt", tr("Dieses Backup ist beschädigt.", "This backup is damaged."))
+        })?;
 
         // Files of an open database must not be swapped underneath it, and
         // running commands or AI calls can still hold the engine.
@@ -669,7 +707,10 @@ impl Session {
             if Instant::now() >= deadline {
                 break Err(ApiError::new(
                     "busy",
-                    "Die Datenbank war noch in Benutzung und wurde nicht ersetzt. Bitte noch einmal versuchen.",
+                    tr(
+                        "Die Datenbank war noch in Benutzung und wurde nicht ersetzt. Bitte noch einmal versuchen.",
+                        "The database was still in use and was not replaced. Please try again.",
+                    ),
                 ));
             }
             std::thread::sleep(Duration::from_millis(20));
@@ -754,7 +795,10 @@ impl Session {
 
     pub fn remove_model(&self) -> ApiResult<()> {
         if matches!(*self.download.lock(), Download::Running(_)) {
-            return Err(ApiError::new("invalid", "Der Download läuft noch."));
+            return Err(ApiError::new(
+                "invalid",
+                tr("Der Download läuft noch.", "The download is still running."),
+            ));
         }
         if let State::Unlocked(u) = &mut *self.state.lock() {
             u.indexer = None;
@@ -849,12 +893,21 @@ impl Session {
     /// Fresh header from disk; Argon2 then runs without holding the state lock.
     fn locked_vault(&self) -> ApiResult<Vault> {
         if self.restoring.load(Ordering::SeqCst) {
-            return Err(ApiError::new("busy", "Das Backup wird gerade wiederhergestellt."));
+            return Err(ApiError::new(
+                "busy",
+                tr(
+                    "Das Backup wird gerade wiederhergestellt.",
+                    "The backup is being restored right now.",
+                ),
+            ));
         }
         match *self.state.lock() {
             State::Locked => Ok(Vault::load(&self.dir)?),
             State::Unlocked(_) => Err(ApiError::new("already_unlocked", "Bereits entsperrt.")),
-            State::NoVault => Err(ApiError::new("no_vault", "Es gibt noch keinen Tresor.")),
+            State::NoVault => Err(ApiError::new(
+                "no_vault",
+                tr("Es gibt noch keinen Tresor.", "There is no vault yet."),
+            )),
         }
     }
 
@@ -922,7 +975,13 @@ fn open_engine(dir: &Path, vault: &Vault, keys: &VaultKeys) -> ApiResult<Engine>
 
 fn check_password(password: &str) -> ApiResult<()> {
     if password.chars().count() < MIN_PASSWORD {
-        return Err(ApiError::new("invalid", "Das Passwort braucht mindestens 8 Zeichen."));
+        return Err(ApiError::new(
+            "invalid",
+            tr(
+                "Das Passwort braucht mindestens 8 Zeichen.",
+                "The password needs at least 8 characters.",
+            ),
+        ));
     }
     Ok(())
 }

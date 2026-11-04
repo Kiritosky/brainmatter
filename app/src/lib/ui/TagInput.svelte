@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { ws } from '#lib/workspace.svelte.ts';
 
   // Adding a tag: what exists already is offered, so that one word stays one tag.
@@ -38,10 +39,10 @@
 </script>
 
 <div class="relative">
-  <input class="h-6 w-24 rounded-md bg-transparent px-1 text-xs text-muted outline-none placeholder:text-faint focus:bg-elevated" placeholder="+ Tag" aria-label="Tag hinzufügen"
+  <input class="h-6 w-24 rounded-md bg-transparent px-1 text-xs text-muted outline-none placeholder:text-faint focus:bg-elevated" placeholder="+ Tag" aria-label={t('Tag hinzufügen', 'Add tag')}
     bind:value={text} {onkeydown} oninput={() => ((index = -1), (open = true))} onfocus={() => (open = true)} onblur={() => (open = false)} />
   {#if open && suggestions.length}
-    <div class="surface absolute top-7 left-0 z-50 w-44 rounded-lg p-1" role="listbox" aria-label="Vorhandene Tags">
+    <div class="surface absolute top-7 left-0 z-50 w-44 rounded-lg p-1" role="listbox" aria-label={t('Vorhandene Tags', 'Existing tags')}>
       {#each suggestions as tag, i (tag)}
         <!-- On mousedown, because the click would come after the field lost focus. -->
         <button type="button" class="flex w-full rounded-md px-2 py-1 text-left text-xs transition-colors duration-75 {i === index ? 'bg-text/8 text-text' : 'text-muted hover:bg-text/5'}"

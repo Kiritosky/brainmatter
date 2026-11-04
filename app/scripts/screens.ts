@@ -8,7 +8,7 @@ const BASE = process.env.BM_URL ?? 'http://localhost:5173';
 const out = process.argv[2] ?? '/tmp/bm-shots';
 
 const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
+const context = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'de-DE' });
 const errors: string[] = [];
 // Past every release, so the "what's new" dialog is not in the way. It gets its
 // own context at the end.
@@ -1039,7 +1039,7 @@ try {
 
 // The first start shows around once, and the help page has what it showed and the AI's tools.
 {
-  const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
+  const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'de-DE' });
   await fresh.addInitScript(() => localStorage.setItem('bm.seenVersion', '99.0.0'));
   const tour = await fresh.newPage();
   tour.on('pageerror', (e) => errors.push(`tour: ${e.message}`));
@@ -1137,7 +1137,7 @@ try {
 
 // After an update the app says once what changed, back to the last seen version.
 {
-  const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark' });
+  const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'de-DE' });
   await fresh.addInitScript(() => {
     if (!localStorage.getItem('bm.seenVersion')) localStorage.setItem('bm.seenVersion', '0.2.0');
     localStorage.setItem('bm.tourSeen', '1');
@@ -1167,6 +1167,100 @@ try {
     errors.push(`what is new failed: ${(e as Error).message.split('\n')[0]}`);
   }
   await fresh.close();
+}
+
+// The same app in English. The mock's entries and its error messages stay German;
+// these words only ever come from the app itself.
+{
+  const en = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'en-US' });
+  await en.addInitScript(() => {
+    localStorage.setItem('bm.seenVersion', '99.0.0');
+    localStorage.setItem('bm.tourSeen', '1');
+  });
+  const page = await en.newPage();
+  page.on('pageerror', (e) => errors.push(`english: ${e.message}`));
+  const UI_WORDS =
+    '\\b(Einstellungen|Papierkorb|Bibliothek|Aktivität|Einträge|Eintrag|Verbindungen?|Schließen|Suchen|Sperren|Entsperren|Abbrechen|Speichern|Zurück|Weiter|Fertig|Wiederherstellen|Prüfen|Ansicht|Vorlagen?|Hilfe|Allgemein|Projekte|Neue[rs]?|Ohne|Alles|Gesperrt|Passwort|ungeprüft|anlegen|wählen|verbinden)\\b';
+  const german = async (where: string) => {
+    const found = await page.evaluate((source) => {
+      const words = new RegExp(source, 'g');
+      const hits = new Set<string>();
+      const look = (text: string | null) => text?.match(words)?.forEach((w) => hits.add(`${w} in “${text.trim().slice(0, 60)}”`));
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) look(node.textContent);
+      for (const el of document.querySelectorAll('[aria-label], [title], [placeholder]')) {
+        for (const attr of ['aria-label', 'title', 'placeholder']) look(el.getAttribute(attr));
+      }
+      return [...hits];
+    }, UI_WORDS);
+    for (const hit of found) errors.push(`german in english, ${where}: ${hit}`);
+  };
+  try {
+    await page.goto(`${BASE}/?mock=fresh`);
+    await page.getByText('Welcome to Brainmatter').waitFor();
+    await german('onboarding');
+    await page.getByPlaceholder('e.g. Alex').fill('Alex');
+    await page.locator('input[type=password]').nth(0).fill('Correct-Horse-9!');
+    await page.locator('input[type=password]').nth(1).fill('Correct-Horse-9!');
+    await page.getByRole('button', { name: 'Create vault' }).click();
+    await page.getByText('Your recovery key').waitFor();
+    await german('recovery key');
+    await page.getByText('I have put the key somewhere safe.').click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByText('Unlock with Touch ID?').waitFor();
+    await german('touch id');
+    await page.getByRole('button', { name: 'Later' }).click();
+    await page.getByText('Your graph is still empty').waitFor();
+    await german('empty workspace');
+
+    await page.goto(BASE);
+    await page.getByPlaceholder('Master password').fill('demo1234');
+    await german('lock screen');
+    await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+    await page.getByText(/entries ·/).waitFor();
+    await page.waitForTimeout(400);
+    await german('workspace');
+    await shot(page, '90-english');
+
+    for (const panel of ['Review', 'Activity']) {
+      await page.getByRole('button', { name: panel, exact: true }).click();
+      await page.waitForTimeout(300);
+      await german(panel);
+      await page.getByRole('button', { name: panel, exact: true }).click();
+    }
+    for (const panel of ['Library', 'Trash']) {
+      await page.getByRole('button', { name: panel, exact: true }).click();
+      await page.waitForTimeout(300);
+      await german(panel);
+    }
+    await page.getByLabel('Close').first().click();
+
+    await page.keyboard.press('Meta+k');
+    await page.getByRole('dialog', { name: 'Search' }).waitFor();
+    await german('search');
+    await page.getByPlaceholder('Search, or create a new entry …').fill('Brainmatter');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Enter');
+    await page.getByLabel('Title').waitFor();
+    await page.waitForTimeout(300);
+    await german('entry');
+    await page.getByLabel('Close').first().click();
+
+    await page.keyboard.press('Meta+,');
+    const settings = page.getByRole('dialog', { name: 'Settings' });
+    for (const tab of ['General', 'Graph', 'Locking', 'Password & key', 'Backups', 'Search by meaning', 'AI connections', 'Help']) {
+      await settings.getByRole('button', { name: tab, exact: true }).click();
+      await page.waitForTimeout(250);
+      await german(`settings, ${tab}`);
+    }
+    await settings.getByRole('radio', { name: 'For AI' }).click();
+    await german('settings, help for AI');
+    await page.keyboard.press('Escape');
+  } catch (e) {
+    await shot(page, 'zz-english-failure');
+    errors.push(`english failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await en.close();
 }
 
 await browser.close();

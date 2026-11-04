@@ -1,6 +1,7 @@
 //! Errors as the UI sees them: a stable `code` to branch on, a German message
 //! to show, and candidates for ambiguous or unknown references.
 
+use crate::i18n::tr;
 use bm_core::{CoreError, VaultError, mirror::MirrorError, model::NodeBrief};
 use bm_macos::keychain::KeychainError;
 use serde::Serialize;
@@ -21,7 +22,7 @@ impl ApiError {
     }
 
     pub fn locked() -> Self {
-        Self::new("locked", "Brainmatter ist gesperrt.")
+        Self::new("locked", tr("Brainmatter ist gesperrt.", "Brainmatter is locked."))
     }
 
     pub fn internal(e: impl std::fmt::Display) -> Self {
@@ -35,19 +36,29 @@ impl From<CoreError> for ApiError {
         match e {
             CoreError::NotFound { kind, reference, suggestions } => Self {
                 code: "not_found",
-                message: format!("{kind} „{reference}“ nicht gefunden"),
+                message: match crate::i18n::german() {
+                    true => format!("{kind} „{reference}“ nicht gefunden"),
+                    false => format!("{kind} “{reference}” not found"),
+                },
                 candidates: suggestions,
             },
             CoreError::Ambiguous { reference, candidates } => Self {
                 code: "ambiguous",
-                message: format!("„{reference}“ ist mehrdeutig"),
+                message: match crate::i18n::german() {
+                    true => format!("„{reference}“ ist mehrdeutig"),
+                    false => format!("“{reference}” is ambiguous"),
+                },
                 candidates,
             },
             CoreError::Invalid(m) => Self::new("invalid", m),
             CoreError::Conflict(m) => Self::new("conflict", m),
-            CoreError::CorruptBlob(_) => {
-                Self::new("corrupt", "Die Datei ist beschädigt oder wurde verändert.")
-            }
+            CoreError::CorruptBlob(_) => Self::new(
+                "corrupt",
+                tr(
+                    "Die Datei ist beschädigt oder wurde verändert.",
+                    "The file is damaged or was tampered with.",
+                ),
+            ),
             other => Self::internal(other),
         }
     }
@@ -56,16 +67,23 @@ impl From<CoreError> for ApiError {
 impl From<VaultError> for ApiError {
     fn from(e: VaultError) -> Self {
         match e {
-            VaultError::WrongPassword => Self::new("wrong_password", "Falsches Passwort."),
-            VaultError::WrongRecoveryKey => {
-                Self::new("wrong_recovery_key", "Der Wiederherstellungsschlüssel passt nicht.")
+            VaultError::WrongPassword => {
+                Self::new("wrong_password", tr("Falsches Passwort.", "Wrong password."))
             }
+            VaultError::WrongRecoveryKey => Self::new(
+                "wrong_recovery_key",
+                tr(
+                    "Der Wiederherstellungsschlüssel passt nicht.",
+                    "The recovery key does not match.",
+                ),
+            ),
             VaultError::SlotMissing(_) | VaultError::WrongSlotKey(_) => {
                 Self::new("touch_id_reenroll", "Touch ID muss neu eingerichtet werden.")
             }
-            VaultError::AlreadyExists(_) => {
-                Self::new("vault_exists", "Es gibt bereits einen Tresor.")
-            }
+            VaultError::AlreadyExists(_) => Self::new(
+                "vault_exists",
+                tr("Es gibt bereits einen Tresor.", "There is a vault already."),
+            ),
             other => Self::internal(other),
         }
     }
@@ -76,24 +94,45 @@ impl From<MirrorError> for ApiError {
         match e {
             MirrorError::OtherVault => Self::new(
                 "other_vault",
-                "In diesem Ordner liegt das Backup eines anderen Tresors. Bitte einen anderen wählen.",
+                tr(
+                    "In diesem Ordner liegt das Backup eines anderen Tresors. Bitte einen anderen wählen.",
+                    "This folder holds the backup of another vault. Please choose another one.",
+                ),
             ),
             MirrorError::SameFolder => Self::new(
                 "invalid",
-                "Das ist der Ordner des Tresors selbst. Bitte einen anderen Ort wählen.",
+                tr(
+                    "Das ist der Ordner des Tresors selbst. Bitte einen anderen Ort wählen.",
+                    "This is the vault's own folder. Please choose another place.",
+                ),
             ),
-            MirrorError::Empty => {
-                Self::new("not_a_backup", "In diesem Ordner liegt noch kein Backup.")
-            }
-            MirrorError::Damaged => {
-                Self::new("corrupt", "Keines der Backups in diesem Ordner ist lesbar.")
-            }
-            MirrorError::VaultExists => Self::new("vault_exists", "Es gibt bereits einen Tresor."),
+            MirrorError::Empty => Self::new(
+                "not_a_backup",
+                tr(
+                    "In diesem Ordner liegt noch kein Backup.",
+                    "There is no backup in this folder yet.",
+                ),
+            ),
+            MirrorError::Damaged => Self::new(
+                "corrupt",
+                tr(
+                    "Keines der Backups in diesem Ordner ist lesbar.",
+                    "None of the backups in this folder can be read.",
+                ),
+            ),
+            MirrorError::VaultExists => Self::new(
+                "vault_exists",
+                tr("Es gibt bereits einen Tresor.", "There is a vault already."),
+            ),
             MirrorError::Vault(e) => e.into(),
             MirrorError::Core(e) => e.into(),
-            MirrorError::Io(e) => {
-                Self::new("io", format!("In den Ordner lässt sich nicht schreiben: {e}"))
-            }
+            MirrorError::Io(e) => Self::new(
+                "io",
+                match crate::i18n::german() {
+                    true => format!("In den Ordner lässt sich nicht schreiben: {e}"),
+                    false => format!("The folder cannot be written to: {e}"),
+                },
+            ),
         }
     }
 }
@@ -103,7 +142,10 @@ impl From<KeychainError> for ApiError {
         match e {
             KeychainError::NotAccessible => Self::new(
                 "touch_id_reenroll",
-                "Nach einem Update bitte einmal mit Passwort entsperren; Touch ID wird danach neu eingerichtet.",
+                tr(
+                    "Nach einem Update bitte einmal mit Passwort entsperren; Touch ID wird danach neu eingerichtet.",
+                    "After an update, please unlock once with your password; Touch ID is set up again afterwards.",
+                ),
             ),
             other => Self::internal(other),
         }

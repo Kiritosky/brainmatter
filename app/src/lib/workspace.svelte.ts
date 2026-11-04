@@ -1,4 +1,5 @@
 // Shared UI state of the unlocked workspace.
+import { t } from '#lib/i18n.ts';
 import {
   api,
   errorMessage,
@@ -346,7 +347,7 @@ class Workspace {
     const updated = seen ? isNewer(current, seen) : (this.graph?.nodes.length ?? 0) > 0;
     if (!updated) return;
     const items = releasesSince(seen, current);
-    if (items.length && prefs.values.whatsNew) this.changelog = { heading: 'Was ist neu', items };
+    if (items.length && prefs.values.whatsNew) this.changelog = { heading: t('Was ist neu', 'What’s new'), items };
   }
 
   stop() {

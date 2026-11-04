@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { flip } from 'svelte/animate';
   import { Check, CheckCheck, Link2Off, ShieldCheck, X } from '@lucide/svelte';
   import { api, errorMessage, type NodeBrief } from '#lib/api.ts';
@@ -11,8 +12,8 @@
   let orphans = $state.raw<NodeBrief[]>([]);
 
   const TABS: { value: Tab; label: string }[] = [
-    { value: 'unreviewed', label: 'Ungeprüft' },
-    { value: 'orphans', label: 'Unverbunden' },
+    { value: 'unreviewed', label: t('Ungeprüft', 'Unreviewed') },
+    { value: 'orphans', label: t('Unverbunden', 'Unlinked') },
   ];
 
   $effect(() => {
@@ -34,17 +35,17 @@
 <aside class="flex h-full w-100 flex-col border-l border-line bg-panel">
   <header class="px-4 pt-3 pb-3" data-tauri-drag-region>
     <div class="mb-3 flex items-center">
-      <h2 class="flex-1 text-[15px] font-semibold tracking-tight">Prüfen</h2>
-      <button class="icon-btn -mr-1" aria-label="Schließen" onclick={() => (ws.panel = null)}><X size={15} /></button>
+      <h2 class="flex-1 text-[15px] font-semibold tracking-tight">{t('Prüfen', 'Review')}</h2>
+      <button class="icon-btn -mr-1" aria-label={t('Schließen', 'Close')} onclick={() => (ws.panel = null)}><X size={15} /></button>
     </div>
-    <Segmented bind:value={tab} options={TABS} label="Liste" />
+    <Segmented bind:value={tab} options={TABS} label={t('Liste', 'List')} />
   </header>
 
   <div class="flex-1 overflow-y-auto px-2 pb-3">
     {#if tab === 'unreviewed' && items.length > 1}
       <div class="flex justify-end px-1 pb-1">
         <button class="btn-ghost !h-7 text-xs" onclick={() => markReviewed(items.map((n) => n.id))}>
-          <CheckCheck size={13} /> Alle als geprüft markieren
+          <CheckCheck size={13} /> {t('Alle als geprüft markieren', 'Mark all as reviewed')}
         </button>
       </div>
     {/if}
@@ -55,7 +56,7 @@
         <button class="min-w-0 flex-1 truncate text-left" onclick={() => ws.select(n.id, true)}>{n.title}</button>
         {#if tab === 'unreviewed'}
           <button class="icon-btn !h-6.5 !w-6.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:!text-ok"
-            aria-label="Als geprüft markieren" title="Als geprüft markieren" onclick={() => markReviewed([n.id])}><Check size={14} /></button>
+            aria-label={t('Als geprüft markieren', 'Mark as reviewed')} title={t('Als geprüft markieren', 'Mark as reviewed')} onclick={() => markReviewed([n.id])}><Check size={14} /></button>
         {:else}
           <span class="shrink-0 text-[11px] text-faint">{n.kind}</span>
         {/if}
@@ -65,9 +66,11 @@
         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-ok/12 text-ok">
           {#if tab === 'unreviewed'}<ShieldCheck size={20} />{:else}<Link2Off size={20} />{/if}
         </div>
-        <div class="font-medium">{tab === 'unreviewed' ? 'Alles geprüft' : 'Alles verbunden'}</div>
+        <div class="font-medium">{tab === 'unreviewed' ? t('Alles geprüft', 'All reviewed') : t('Alles verbunden', 'All linked')}</div>
         <p class="mt-1 text-xs leading-relaxed text-muted">
-          {tab === 'unreviewed' ? 'Hier landen Einträge, die eine KI geschrieben hat, bis du sie gesehen hast.' : 'Hier landen Einträge ohne jede Verbindung.'}
+          {tab === 'unreviewed'
+            ? t('Hier landen Einträge, die eine KI geschrieben hat, bis du sie gesehen hast.', 'Entries an AI client wrote land here until you have seen them.')
+            : t('Hier landen Einträge ohne jede Verbindung.', 'Entries without any link land here.')}
         </p>
       </div>
     {/each}

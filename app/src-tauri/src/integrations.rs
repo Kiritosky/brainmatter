@@ -6,6 +6,7 @@
 //! than replaced, a pristine backup is kept, and writes are atomic. The files
 //! end up containing a token, so they are written with mode 0600.
 
+use crate::i18n::tr;
 use std::{
     fs,
     io::Write,
@@ -57,18 +58,48 @@ impl Target {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum SetupError {
-    #[error("{0} enthält kein gültiges Format und wurde nicht verändert: {1}")]
     Unparseable(PathBuf, String),
-    #[error("Die Bridge (brainmatter-mcp) fehlt: {0}")]
     BridgeMissing(PathBuf),
-    #[error("Claude Code wurde auf diesem Mac nicht gefunden.")]
     ClaudeNotFound,
-    #[error("Claude Code meldet einen Fehler: {0}")]
     Cli(String),
-    #[error("{0}: {1}")]
     Io(PathBuf, std::io::Error),
+}
+
+impl std::error::Error for SetupError {}
+
+impl std::fmt::Display for SetupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let de = crate::i18n::german();
+        match self {
+            Self::Unparseable(path, why) if de => write!(
+                f,
+                "{} enthält kein gültiges Format und wurde nicht verändert: {why}",
+                path.display()
+            ),
+            Self::Unparseable(path, why) => {
+                write!(
+                    f,
+                    "{} is not in a valid format and was left as it was: {why}",
+                    path.display()
+                )
+            }
+            Self::BridgeMissing(path) if de => {
+                write!(f, "Die Bridge (brainmatter-mcp) fehlt: {}", path.display())
+            }
+            Self::BridgeMissing(path) => {
+                write!(f, "The bridge (brainmatter-mcp) is missing: {}", path.display())
+            }
+            Self::ClaudeNotFound if de => {
+                f.write_str("Claude Code wurde auf diesem Mac nicht gefunden.")
+            }
+            Self::ClaudeNotFound => f.write_str("Claude Code was not found on this Mac."),
+            Self::Cli(why) if de => write!(f, "Claude Code meldet einen Fehler: {why}"),
+            Self::Cli(why) => write!(f, "Claude Code reports an error: {why}"),
+            Self::Io(path, e) => write!(f, "{}: {e}", path.display()),
+        }
+    }
 }
 
 /// Where to look; injectable so tests never touch real configuration.
@@ -107,9 +138,18 @@ impl Integrations {
             Target::Codex => self.home.join(".codex").exists(),
         };
         let unavailable_reason = if !installed {
-            Some(format!("{} ist auf diesem Mac nicht installiert.", target.name()))
+            Some(match crate::i18n::german() {
+                true => format!("{} ist auf diesem Mac nicht installiert.", target.name()),
+                false => format!("{} is not installed on this Mac.", target.name()),
+            })
         } else if target.needs_bridge() && !self.bridge.is_file() {
-            Some("Die Bridge (brainmatter-mcp) fehlt noch.".to_string())
+            Some(
+                tr(
+                    "Die Bridge (brainmatter-mcp) fehlt noch.",
+                    "The bridge (brainmatter-mcp) is missing.",
+                )
+                .to_string(),
+            )
         } else {
             None
         };
@@ -262,7 +302,7 @@ impl Integrations {
                 Some(_) => break,
                 None if started.elapsed() > CLI_TIMEOUT => {
                     let _ = child.kill();
-                    return Err(SetupError::Cli("Zeitüberschreitung".into()));
+                    return Err(SetupError::Cli(tr("Zeitüberschreitung", "Timed out").into()));
                 }
                 None => std::thread::sleep(Duration::from_millis(50)),
             }
@@ -294,7 +334,12 @@ fn set_json_server(path: &Path, entry: Option<Value>) -> Result<(), SetupError> 
         serde_json::from_slice(raw.as_deref().unwrap_or_default())
             .map_err(|e| SetupError::Unparseable(path.to_owned(), e.to_string()))?
     };
-    let bad_shape = || SetupError::Unparseable(path.to_owned(), "unerwartete Struktur".into());
+    let bad_shape = || {
+        SetupError::Unparseable(
+            path.to_owned(),
+            tr("unerwartete Struktur", "unexpected structure").into(),
+        )
+    };
     let object = root.as_object_mut().ok_or_else(bad_shape)?;
     let servers = object
         .entry("mcpServers")
@@ -345,7 +390,10 @@ fn set_codex_server(path: &Path, server: Option<(&str, &str, &str)>) -> Result<(
                 })
                 .as_table_mut()
                 .ok_or_else(|| {
-                    SetupError::Unparseable(path.to_owned(), "mcp_servers ist keine Tabelle".into())
+                    SetupError::Unparseable(
+                        path.to_owned(),
+                        tr("mcp_servers ist keine Tabelle", "mcp_servers is not a table").into(),
+                    )
                 })?;
             let mut env = InlineTable::new();
             env.insert("BRAINMATTER_TOKEN", token.into());

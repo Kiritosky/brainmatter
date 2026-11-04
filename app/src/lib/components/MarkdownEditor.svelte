@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '#lib/i18n.ts';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { Annotation, EditorSelection, EditorState, Transaction } from '@codemirror/state';
   import { EditorView, keymap, placeholder as placeholderExt } from '@codemirror/view';
@@ -6,7 +7,7 @@
   import { markdown } from '@codemirror/lang-markdown';
   import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
   import { acceptCompletion, autocompletion, pickedCompletion, startCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
-  import { tags as t } from '@lezer/highlight';
+  import { tags } from '@lezer/highlight';
   import { FORMAT_COMMANDS, PLACEHOLDER_COMMAND, findFormatCommands, formatInsertion, type FormatCommand } from '#lib/format-commands.ts';
 
   let {
@@ -46,16 +47,16 @@
   let view: EditorView | undefined;
 
   const highlight = HighlightStyle.define([
-    { tag: t.heading1, fontSize: '1.35em', fontWeight: '650' },
-    { tag: t.heading2, fontSize: '1.18em', fontWeight: '650' },
-    { tag: t.heading3, fontWeight: '600' },
-    { tag: t.strong, fontWeight: '650' },
-    { tag: t.emphasis, fontStyle: 'italic' },
-    { tag: t.link, color: 'var(--color-accent)' },
-    { tag: t.url, color: 'var(--color-faint)' },
-    { tag: t.monospace, fontFamily: 'var(--font-mono)', color: '#f5c451' },
-    { tag: t.quote, color: 'var(--color-muted)' },
-    { tag: [t.processingInstruction, t.meta], color: 'var(--color-faint)' },
+    { tag: tags.heading1, fontSize: '1.35em', fontWeight: '650' },
+    { tag: tags.heading2, fontSize: '1.18em', fontWeight: '650' },
+    { tag: tags.heading3, fontWeight: '600' },
+    { tag: tags.strong, fontWeight: '650' },
+    { tag: tags.emphasis, fontStyle: 'italic' },
+    { tag: tags.link, color: 'var(--color-accent)' },
+    { tag: tags.url, color: 'var(--color-faint)' },
+    { tag: tags.monospace, fontFamily: 'var(--font-mono)', color: '#f5c451' },
+    { tag: tags.quote, color: 'var(--color-muted)' },
+    { tag: [tags.processingInstruction, tags.meta], color: 'var(--color-faint)' },
   ]);
 
   const theme = EditorView.theme({
@@ -173,7 +174,7 @@
           syntaxHighlighting(highlight),
           EditorView.lineWrapping,
           autocompletion({ override: [slashSource, wikilinkSource], icons: false }),
-          placeholderExt('Schreib einfach los. / zeigt alle Formate, [[ verlinkt andere Einträge.'),
+          placeholderExt(t('Schreib einfach los. / zeigt alle Formate, [[ verlinkt andere Einträge.', 'Just start writing. / shows all formats, [[ links other entries.')),
           theme,
           EditorView.domEventHandlers({
             paste(event, editor) {

@@ -1,4 +1,7 @@
 // What `/` offers in the editor, for anyone who does not know Markdown by heart.
+// Aliases hold both languages, since people type the words they know.
+
+import { t } from '#lib/i18n.ts';
 
 export interface FormatCommand {
   name: string;
@@ -19,35 +22,35 @@ export interface FormatCommand {
 }
 
 export const FORMAT_COMMANDS: FormatCommand[] = [
-  { name: 'Überschrift 1', aliases: ['h1', 'titel', 'heading'], hint: '#', before: '# ', block: true },
-  { name: 'Überschrift 2', aliases: ['h2', 'heading'], hint: '##', before: '## ', block: true },
-  { name: 'Überschrift 3', aliases: ['h3', 'heading'], hint: '###', before: '### ', block: true },
-  { name: 'Liste', aliases: ['aufzählung', 'punkte', 'bullet', 'ul'], hint: '-', before: '- ', block: true },
-  { name: 'Nummerierte Liste', aliases: ['zahlen', 'ol', 'numbered'], hint: '1.', before: '1. ', block: true },
-  { name: 'Aufgabe', aliases: ['todo', 'checkbox', 'task', 'haken'], hint: '- [ ]', before: '- [ ] ', block: true },
-  { name: 'Zitat', aliases: ['quote', 'hinweis'], hint: '>', before: '> ', block: true },
-  { name: 'Code-Block', aliases: ['code', 'snippet', 'pre'], hint: '```', before: '```\n', after: '\n```', block: true },
+  { name: t('Überschrift 1', 'Heading 1'), aliases: ['h1', 'titel', 'heading', 'title'], hint: '#', before: '# ', block: true },
+  { name: t('Überschrift 2', 'Heading 2'), aliases: ['h2', 'heading'], hint: '##', before: '## ', block: true },
+  { name: t('Überschrift 3', 'Heading 3'), aliases: ['h3', 'heading'], hint: '###', before: '### ', block: true },
+  { name: t('Liste', 'List'), aliases: ['aufzählung', 'punkte', 'bullet', 'ul', 'list'], hint: '-', before: '- ', block: true },
+  { name: t('Nummerierte Liste', 'Numbered list'), aliases: ['zahlen', 'ol', 'numbered', 'nummeriert'], hint: '1.', before: '1. ', block: true },
+  { name: t('Aufgabe', 'Task'), aliases: ['todo', 'checkbox', 'task', 'haken', 'aufgabe'], hint: '- [ ]', before: '- [ ] ', block: true },
+  { name: t('Zitat', 'Quote'), aliases: ['quote', 'hinweis', 'zitat'], hint: '>', before: '> ', block: true },
+  { name: t('Code-Block', 'Code block'), aliases: ['code', 'snippet', 'pre'], hint: '```', before: '```\n', after: '\n```', block: true },
   {
-    name: 'Tabelle',
-    aliases: ['table', 'spalten'],
+    name: t('Tabelle', 'Table'),
+    aliases: ['table', 'spalten', 'tabelle', 'columns'],
     hint: '| |',
     before: '| ',
-    placeholder: 'Spalte',
-    after: ' | Spalte |\n| --- | --- |\n|  |  |',
+    placeholder: t('Spalte', 'Column'),
+    after: ` | ${t('Spalte', 'Column')} |\n| --- | --- |\n|  |  |`,
     block: true,
   },
-  { name: 'Trennlinie', aliases: ['linie', 'hr', 'divider'], hint: '---', before: '---\n', block: true },
-  { name: 'Fett', aliases: ['bold', 'stark'], hint: '**', before: '**', placeholder: 'fett', after: '**' },
-  { name: 'Kursiv', aliases: ['italic', 'schräg'], hint: '*', before: '*', placeholder: 'kursiv', after: '*' },
-  { name: 'Code im Text', aliases: ['inline', 'mono'], hint: '`', before: '`', placeholder: 'code', after: '`' },
-  { name: 'Link', aliases: ['url', 'web'], hint: '[ ]( )', before: '[', placeholder: 'Text', after: '](https://)' },
-  { name: 'Verweis auf Eintrag', aliases: ['wikilink', 'verknüpfen', 'eintrag'], hint: '[[ ]]', before: '[[', completes: true },
+  { name: t('Trennlinie', 'Divider'), aliases: ['linie', 'hr', 'divider', 'line'], hint: '---', before: '---\n', block: true },
+  { name: t('Fett', 'Bold'), aliases: ['bold', 'stark', 'fett'], hint: '**', before: '**', placeholder: t('fett', 'bold'), after: '**' },
+  { name: t('Kursiv', 'Italic'), aliases: ['italic', 'schräg', 'kursiv'], hint: '*', before: '*', placeholder: t('kursiv', 'italic'), after: '*' },
+  { name: t('Code im Text', 'Inline code'), aliases: ['inline', 'mono'], hint: '`', before: '`', placeholder: 'code', after: '`' },
+  { name: 'Link', aliases: ['url', 'web'], hint: '[ ]( )', before: '[', placeholder: t('Text', 'text'), after: '](https://)' },
+  { name: t('Verweis auf Eintrag', 'Link to entry'), aliases: ['wikilink', 'verknüpfen', 'eintrag', 'entry'], hint: '[[ ]]', before: '[[', completes: true },
 ];
 
 /** What a template adds to the list. */
 export const PLACEHOLDER_COMMAND: FormatCommand = {
-  name: 'Platzhalter',
-  aliases: ['variable', 'vorlage', 'template'],
+  name: t('Platzhalter', 'Placeholder'),
+  aliases: ['variable', 'vorlage', 'template', 'platzhalter'],
   hint: '{{ }}',
   before: '{{',
   placeholder: 'name',
