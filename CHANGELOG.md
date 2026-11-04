@@ -10,6 +10,10 @@ Deine KIs greifen jetzt von selbst zu Brainmatter, statt jede Sitzung bei null a
 - **Brainmatter als Gedächtnis:** Beim Verbinden schreibt Brainmatter auf Wunsch eine kurze Regel in die Anweisungen der KI: `~/.claude/CLAUDE.md` für Claude Code, `~/.codex/AGENTS.md` für Codex, `~/.cursor/rules` für Cursor. Dann schlägt sie vor jeder Aufgabe nach und sichert Entscheidungen, Erkenntnisse und deine Korrekturen von selbst. Für Claude Desktop und jede andere KI mit MCP gibt es die Regel zum Kopieren. Bestehende Verbindungen bekommen dafür einen Schalter unter Einstellungen → KI-Verbindungen.
 - **Klarere Hinweise für jede KI:** Der MCP-Server sagt jeder verbundenen KI genauer, wann sie nachschlagen und wann sie speichern soll.
 
+### Behoben
+- Die Suche nach Sinn nutzt eine Bibliothek ohne die bekannten Sicherheitslücken beim Lesen von ZIP-Dateien.
+- Die Fehlermeldungen im Browser-Demo folgen jetzt der Sprache der Oberfläche.
+
 ## 1.1.0 · 2026-11-04
 
 Brainmatter spricht jetzt auch Englisch, holt deine Notizen aus anderen Apps und sichert sich auf Wunsch an einem zweiten Ort.
@@ -29,7 +33,6 @@ Brainmatter spricht jetzt auch Englisch, holt deine Notizen aus anderen Apps und
 
 ### Behoben
 - Links und Verweise unterschieden bei Umlauten zwischen Groß- und Kleinschreibung, etwa bei „Ärger“ und „ärger“.
-- Die Fehlermeldungen im Browser-Demo folgen jetzt der Sprache der Oberfläche.
 
 ## 1.0.0 · 2026-11-02
 
