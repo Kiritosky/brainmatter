@@ -31,7 +31,9 @@ const BODY: &str = "Dieser Eintrag beschreibt eine Entscheidung im Projekt. Wir 
 
 /// Raising one of these should be a decision, not something that happens unnoticed.
 const BUDGETS: &[(&str, usize)] = &[
-    ("all tool definitions", 3000),
+    // Raised from 3000 for the three skill tools, about 210 tokens. The other
+    // descriptions were terse already; shortening them further would drop guidance.
+    ("all tool definitions", 3150),
     // Raised from 350 so that every model is told to save what others will need.
     ("server instructions", 380),
     ("search (default)", 450),
