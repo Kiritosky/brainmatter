@@ -6,7 +6,7 @@ Brainmatter holds what people would rather keep private, and lets AI tools read 
 
 ## Reporting a vulnerability
 
-Please use [GitHub's private reporting](https://github.com/Kiritosky/brainmatter/security/advisories/new), not a public issue. Say what an attacker needs (local access, a connected AI client, a crafted note …) and what they get.
+Please use [GitHub's private reporting](https://github.com/Kiritosky/brainmatter/security/advisories/new), or write to [brainmatter.dev@icloud.com](mailto:brainmatter.dev@icloud.com), not a public issue. Say what an attacker needs (local access, a connected AI client, a crafted note …) and what they get.
 
 Only the latest release is supported. Updates are signed and install from inside the app.
 
