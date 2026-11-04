@@ -8,6 +8,8 @@
 //! - Front matter (or Logseq properties) give tags and the kind. A Brainmatter export also
 //!   brings its typed links and further projects.
 //! - Links to other files of the folder, as Markdown links or by path, become `[[Title]]`.
+//! - A folder with a `SKILL.md` that has a description is a skill, with the other files
+//!   in it as its files, as Brainmatter's export and other tools keep skills.
 
 use std::{
     collections::HashMap,
@@ -20,8 +22,8 @@ use serde_json::Value;
 
 use crate::{
     error::Result,
-    model::{DOC_KIND, TEMPLATE_KIND, WIKILINK_RELATION},
-    wikilinks,
+    model::{DOC_KIND, SKILL_KIND, TEMPLATE_KIND, WIKILINK_RELATION},
+    skills, wikilinks,
 };
 
 /// More than this is not a folder of notes.
@@ -78,6 +80,23 @@ pub struct PlannedNote {
     pub projects: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedSkill {
+    /// Of its `SKILL.md`, relative to the folder imported.
+    pub path: String,
+    /// The folder its own folder is in.
+    pub folder: usize,
+    pub title: String,
+    pub description: String,
+    pub body: String,
+    /// Projects by name, from a Brainmatter export.
+    pub projects: Vec<String>,
+    /// Path inside the skill folder and content.
+    pub files: Vec<(String, Vec<u8>)>,
+    /// Has the display title Brainmatter's export writes.
+    from_brainmatter: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ImportPlan {
     /// Whether the folder is an export of Brainmatter: then its folders are the projects
@@ -85,6 +104,7 @@ pub struct ImportPlan {
     pub brainmatter_export: bool,
     pub folders: Vec<PlannedFolder>,
     pub notes: Vec<PlannedNote>,
+    pub skills: Vec<PlannedSkill>,
     pub skipped: Vec<SkippedFile>,
 }
 
@@ -98,7 +118,9 @@ pub fn plan(root: &Path) -> Result<ImportPlan> {
     let mut plan =
         ImportPlan { folders: vec![PlannedFolder { name, parent: None }], ..Default::default() };
     let mut files = Vec::new();
-    walk(root, root, 0, &mut plan, &mut files)?;
+    if !take_skill(root, root, 0, &mut plan)? {
+        walk(root, root, 0, &mut plan, &mut files)?;
+    }
 
     // Titles first: links between the files are rewritten to them.
     let mut read = Vec::new();
@@ -140,7 +162,10 @@ pub fn plan(root: &Path) -> Result<ImportPlan> {
         read.iter().map(|(_, _, n)| wikilinks::fold(&n.title)).collect();
     let links = Links { root, by_path, by_stem, titles };
 
-    plan.brainmatter_export = !read.is_empty() && read.iter().all(|(_, _, n)| n.from_brainmatter);
+    plan.brainmatter_export = match read.is_empty() {
+        false => read.iter().all(|(_, _, n)| n.from_brainmatter),
+        true => !plan.skills.is_empty() && plan.skills.iter().all(|s| s.from_brainmatter),
+    };
     for (path, folder, note) in read {
         let dir = path.parent().unwrap_or(root);
         let body = links.rewrite(&note.body, dir);
@@ -176,7 +201,9 @@ fn walk(
         // Links are not followed: they may lead anywhere, or in a circle.
         let Ok(kind) = entry.file_type() else { continue };
         if kind.is_dir() {
-            if IGNORED_FOLDERS.iter().any(|i| i.eq_ignore_ascii_case(&name)) {
+            if IGNORED_FOLDERS.iter().any(|i| i.eq_ignore_ascii_case(&name))
+                || take_skill(root, &path, folder, plan)?
+            {
                 continue;
             }
             plan.folders
@@ -196,6 +223,84 @@ fn walk(
         }
     }
     Ok(())
+}
+
+/// Plans `dir` as a skill if it is one; `false` leaves it to be read as notes. A skill
+/// over the limits is skipped as too large.
+fn take_skill(root: &Path, dir: &Path, folder: usize, plan: &mut ImportPlan) -> Result<bool> {
+    let mut skill_file = None;
+    for entry in fs::read_dir(dir)?.filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.eq_ignore_ascii_case(skills::SKILL_FILE)
+            && entry.file_type().is_ok_and(|t| t.is_file())
+        {
+            skill_file = Some(entry.path());
+            break;
+        }
+    }
+    let Some(skill_file) = skill_file else { return Ok(false) };
+    let Ok(text) = fs::read_to_string(&skill_file) else { return Ok(false) };
+    let parsed = skills::parse(&text);
+    if parsed.description.is_empty() {
+        return Ok(false);
+    }
+    let dir_name = dir.file_name().map(|n| n.to_string_lossy().trim().to_string());
+    let from_brainmatter = parsed.title.is_some();
+    let title = [parsed.title, parsed.name, dir_name]
+        .into_iter()
+        .flatten()
+        .find(|t| !crate::templates::slug(t).is_empty());
+    let Some(title) = title else { return Ok(false) };
+
+    let path = relative_name(root, &skill_file);
+    let mut files = Vec::new();
+    let mut size = text.len() as u64;
+    if !skill_files(dir, dir, &skill_file, &mut files, &mut size)? {
+        plan.skipped.push(SkippedFile { path, reason: SkipReason::TooLarge });
+        return Ok(true);
+    }
+    plan.skills.push(PlannedSkill {
+        path,
+        folder,
+        title,
+        description: parsed.description,
+        body: parsed.body,
+        projects: parsed.projects,
+        files,
+        from_brainmatter,
+    });
+    Ok(true)
+}
+
+/// Reads the files of a skill folder; `false` once they are over the limits.
+fn skill_files(
+    base: &Path,
+    dir: &Path,
+    skill_file: &Path,
+    files: &mut Vec<(String, Vec<u8>)>,
+    size: &mut u64,
+) -> Result<bool> {
+    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else { continue };
+        if entry.file_name().to_string_lossy().starts_with('.') || path == skill_file {
+            continue;
+        }
+        if kind.is_dir() {
+            if !skill_files(base, &path, skill_file, files, size)? {
+                return Ok(false);
+            }
+        } else if kind.is_file() {
+            *size += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            if files.len() + 2 > skills::MAX_FILES || *size > skills::MAX_SKILL_BYTES {
+                return Ok(false);
+            }
+            files.push((relative_name(base, &path), fs::read(&path)?));
+        }
+    }
+    Ok(true)
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -260,7 +365,9 @@ fn parse(text: &str, fallback_title: &str) -> Parsed {
     let kind =
         text_of("kind").or_else(|| text_of("type")).map(|k| k.trim().to_lowercase()).filter(|k| {
             match from_brainmatter {
-                true => !k.is_empty() && k != TEMPLATE_KIND && k != DOC_KIND,
+                true => {
+                    !k.is_empty() && ![TEMPLATE_KIND, DOC_KIND, SKILL_KIND].contains(&k.as_str())
+                }
                 false => KINDS.contains(&k.as_str()),
             }
         });

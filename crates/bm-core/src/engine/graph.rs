@@ -61,7 +61,7 @@ pub(crate) fn snapshot(conn: &Connection, project: Option<&ProjectId>) -> Result
                     lp.x, lp.y, coalesce(lp.pinned, 0)
              FROM nodes n INDEXED BY nodes_graph_idx
              LEFT JOIN layout_positions lp ON lp.view_id = ?1 AND lp.node_id = n.id
-             WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')",
+             WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc', 'skill')",
         )?;
         let rows = stmt.query_map([&view], |r| {
             Ok(GraphNode {
@@ -152,7 +152,7 @@ pub(crate) fn part(
         "SELECT n.id, n.title, n.kind, n.reviewed, n.updated_at, n.created_by,
                 lp.x, lp.y, coalesce(lp.pinned, 0)
          FROM nodes n LEFT JOIN layout_positions lp ON lp.view_id = ?1 AND lp.node_id = n.id
-         WHERE n.id = ?2 AND n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')",
+         WHERE n.id = ?2 AND n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc', 'skill')",
     )?;
     let mut member_stmt = conn.prepare_cached(
         "SELECT m.project_id FROM project_members m JOIN projects p ON p.id = m.project_id

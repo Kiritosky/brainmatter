@@ -11,6 +11,7 @@ pub const DEFAULT_RELATION: &str = "related_to";
 pub const WIKILINK_RELATION: &str = "mentions";
 pub const TEMPLATE_KIND: &str = "template";
 pub const DOC_KIND: &str = "doc";
+pub const SKILL_KIND: &str = "skill";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -192,7 +193,7 @@ pub struct ProjectDeletePreview {
     pub entries_only_here: usize,
     /// Entries also in other projects, which always stay.
     pub entries_elsewhere: usize,
-    /// Documentation pages and templates, which go to the trash in any case.
+    /// Documentation pages, templates and skills, which go to the trash in any case.
     pub documents: usize,
 }
 
@@ -208,6 +209,63 @@ pub struct TemplateInfo {
     /// Has the user seen it? AIs can write templates, and only reviewed ones
     /// are offered to clients as prompts.
     pub reviewed: bool,
+}
+
+/// A skill in the vault: instructions an AI picks by itself when a task fits its
+/// description, in the open Agent Skills format.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillInfo {
+    pub node: NodeBrief,
+    /// Its `name` in the Agent Skills format.
+    pub slug: String,
+    pub description: String,
+    /// The instructions, Markdown without front matter.
+    pub body: String,
+    /// Supporting files; a file's name is its path inside the skill folder.
+    pub files: Vec<Attachment>,
+    /// Empty for a skill available everywhere.
+    pub projects: Vec<ProjectBrief>,
+    /// Like a template's: only reviewed skills are handed out as instructions.
+    pub reviewed: bool,
+    /// Where it was imported from, for updating it from there.
+    pub source: Option<SkillSource>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillSource {
+    /// The URL the user imported from.
+    pub url: String,
+    /// `owner/name`
+    pub repo: String,
+    /// The folder of its `SKILL.md` in the repository, empty for the root.
+    pub path: String,
+    /// The full commit SHA imported.
+    pub revision: String,
+    pub imported_at: i64,
+}
+
+/// A skill to create (without `id`) or change, as the app saves it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SkillInput {
+    pub id: Option<NodeId>,
+    pub title: String,
+    pub description: String,
+    pub body: String,
+    /// Exactly the projects it is in afterwards; none for everywhere.
+    #[serde(default)]
+    pub projects: Vec<ProjectId>,
+}
+
+/// A skill fetched from elsewhere, ready to go into the vault.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillImport {
+    pub title: String,
+    pub description: String,
+    pub body: String,
+    /// Path inside the skill folder and content.
+    pub files: Vec<(String, Vec<u8>)>,
+    pub source: SkillSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

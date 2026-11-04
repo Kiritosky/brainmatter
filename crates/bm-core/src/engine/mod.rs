@@ -20,6 +20,7 @@ mod refs;
 mod rows;
 mod search;
 mod semantic;
+mod skills;
 mod writer;
 
 pub use export::ExportSummary;
@@ -237,7 +238,7 @@ impl Engine {
             let mut stmt = c.prepare_cached(
                 "SELECT t.tag, count(*) FROM node_tags t
                  JOIN nodes n INDEXED BY nodes_graph_idx ON n.id = t.node_id
-                 WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc')
+                 WHERE n.deleted_at IS NULL AND n.kind NOT IN ('template', 'doc', 'skill')
                  GROUP BY t.tag ORDER BY count(*) DESC, t.tag",
             )?;
             let rows = stmt.query_map([], |r| Ok(TagCount { tag: r.get(0)?, count: r.get(1)? }))?;
@@ -566,7 +567,8 @@ impl Engine {
     // ------------------------------------------------------- attachments ---
 
     /// Encrypts `bytes` and attaches them to an entry. `mime` is checked and
-    /// otherwise guessed from the file name.
+    /// otherwise guessed from the file name. A skill's file keeps its path inside
+    /// the skill folder, such as `scripts/fill_form.py`.
     pub fn add_attachment(
         &self,
         ctx: &Ctx,
@@ -575,20 +577,27 @@ impl Engine {
         mime: Option<&str>,
         bytes: &[u8],
     ) -> Result<Attachment> {
-        let filename = attachments::clean_filename(filename)
-            .ok_or_else(|| CoreError::Invalid("the file needs a name".into()))?;
+        let entry = self.read(|c| rows::live_node(c, node))?;
+        let filename = match entry.kind.as_str() {
+            SKILL_KIND => crate::skills::clean_path(filename),
+            _ => attachments::clean_filename(filename),
+        }
+        .ok_or_else(|| CoreError::Invalid("the file needs a name".into()))?;
         if bytes.len() > MAX_ATTACHMENT_BYTES {
             let limit = MAX_ATTACHMENT_BYTES / (1024 * 1024);
             return Err(CoreError::Invalid(format!("attachments are limited to {limit} MB")));
         }
         let mime = attachments::clean_mime(mime, &filename);
-        let title = self.read(|c| Ok(rows::live_node(c, node)?.title))?;
         // Outside the transaction: encrypting a large file must not hold up writes.
         let blob = self.blob_store()?.put(bytes)?;
-        let summary = format!("„{filename}“ an „{title}“ angehängt");
+        let summary = format!("„{filename}“ an „{}“ angehängt", entry.title);
         let size = bytes.len() as i64;
         Ok(self
-            .write(ctx, summary, |w| attachments::insert(w, node, &filename, &mime, size, &blob))?
+            .write(ctx, summary, |w| {
+                let attachment = attachments::insert(w, node, &filename, &mime, size, &blob)?;
+                skills::after_file_change(w, node)?;
+                Ok(attachment)
+            })?
             .0)
     }
 
@@ -611,7 +620,10 @@ impl Engine {
     pub fn delete_attachment(&self, ctx: &Ctx, id: &AttachmentId) -> Result<()> {
         let a = self.attachment(id)?;
         let summary = format!("Anhang „{}“ entfernt", a.filename);
-        self.write(ctx, summary, |w| attachments::remove(w, &a))?;
+        self.write(ctx, summary, |w| {
+            attachments::remove(w, &a)?;
+            skills::after_file_change(w, &a.node_id)
+        })?;
         Ok(())
     }
 

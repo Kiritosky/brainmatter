@@ -12,7 +12,10 @@ use crate::{
     error::{CoreError, Result},
     events::Event,
     ids::{NodeId, ProjectId},
-    model::{DOC_KIND, NewProject, Project, ProjectDeletePreview, ProjectSummary, TEMPLATE_KIND},
+    model::{
+        DOC_KIND, NewProject, Project, ProjectDeletePreview, ProjectSummary, SKILL_KIND,
+        TEMPLATE_KIND,
+    },
 };
 
 /// Revision snapshot for a project membership; presence means "member".
@@ -135,8 +138,8 @@ pub(crate) fn delete_preview(conn: &Connection, id: &ProjectId) -> Result<Projec
         ProjectDeletePreview { subprojects: tree.len() - 1, ..ProjectDeletePreview::default() };
     for (_, kind, exclusive) in members_of(conn, &tree)? {
         match (kind.as_str(), exclusive) {
-            (TEMPLATE_KIND | DOC_KIND, true) => preview.documents += 1,
-            (TEMPLATE_KIND | DOC_KIND, false) => {}
+            (TEMPLATE_KIND | DOC_KIND | SKILL_KIND, true) => preview.documents += 1,
+            (TEMPLATE_KIND | DOC_KIND | SKILL_KIND, false) => {}
             (_, true) => preview.entries_only_here += 1,
             (_, false) => preview.entries_elsewhere += 1,
         }
@@ -168,16 +171,16 @@ fn members_of(conn: &Connection, tree: &HashSet<ProjectId>) -> Result<Vec<(NodeI
 }
 
 /// Deletes a project with its subprojects, as one undoable step. Entries stay in
-/// the graph unless `with_entries`. Documentation and templates that belong only
-/// here go to the trash either way: pages have no place without their project,
-/// and a project's template must not turn into a global one.
+/// the graph unless `with_entries`. Documentation, templates and skills that belong
+/// only here go to the trash either way: pages have no place without their project,
+/// and a project's template or skill must not turn into a global one.
 pub(crate) fn delete(w: &mut Writer<'_>, id: &ProjectId, with_entries: bool) -> Result<usize> {
     rows::live_project(w.conn, id)?;
     let ids = subtree(w.conn, id)?;
     let tree: HashSet<ProjectId> = ids.iter().cloned().collect();
     let mut trashed = 0;
     for (node, kind, exclusive) in members_of(w.conn, &tree)? {
-        let always = matches!(kind.as_str(), TEMPLATE_KIND | DOC_KIND);
+        let always = matches!(kind.as_str(), TEMPLATE_KIND | DOC_KIND | SKILL_KIND);
         if exclusive && (always || with_entries) {
             nodes::delete(w, &node)?;
             trashed += 1;
@@ -240,7 +243,7 @@ pub(crate) fn list(conn: &Connection) -> Result<Vec<ProjectSummary>> {
                 (SELECT count(*) FROM project_members m
                   JOIN nodes n INDEXED BY nodes_graph_idx ON n.id = m.node_id
                   WHERE m.project_id = projects.id AND n.deleted_at IS NULL
-                    AND n.kind NOT IN ('template', 'doc'))
+                    AND n.kind NOT IN ('template', 'doc', 'skill'))
          FROM projects WHERE deleted_at IS NULL ORDER BY sort, name"
     );
     let mut stmt = conn.prepare(&sql)?;

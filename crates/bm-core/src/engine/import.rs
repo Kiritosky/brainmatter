@@ -12,12 +12,19 @@ use std::{
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use super::{Engine, edges, export::NO_PROJECT, nodes, projects, rows, writer::Writer};
+use super::{
+    Engine, edges,
+    export::{NO_PROJECT, SKILLS},
+    nodes, projects, rows,
+    skills::{self, StoredFile},
+    writer::Writer,
+};
 use crate::{
     error::Result,
     ids::{ChangeSetId, NodeId, ProjectId},
     import::{self, ImportPlan, SkipReason, SkippedFile},
     model::{Ctx, EdgeOrigin, NewEdge, NewNode, NewProject},
+    templates::slug,
     wikilinks::fold,
 };
 
@@ -29,13 +36,14 @@ const MAX_TITLE_CHARS: usize = 300;
 pub struct ImportSummary {
     /// The name of the folder.
     pub folder: String,
-    /// New entries.
+    /// New entries, skills included.
     pub entries: usize,
     /// New projects.
     pub projects: usize,
     /// Typed links from a Brainmatter export; `[[links]]` in the text come on top.
     pub links: usize,
-    /// Entries left out since the vault has one of that title.
+    /// Entries left out since the vault has one of that title, and skills since it has
+    /// one of that name.
     pub existing: usize,
     /// The first files left out for another reason.
     pub skipped: Vec<SkippedFile>,
@@ -59,6 +67,8 @@ struct Resolved {
     targets: Vec<Target>,
     /// Per note: whether it is new.
     keep: Vec<bool>,
+    /// Per skill: whether it is new.
+    keep_skills: Vec<bool>,
     existing: usize,
     skipped: Vec<SkippedFile>,
     /// Folders by their name, for the projects a note of an export names.
@@ -91,10 +101,32 @@ fn resolve(conn: &Connection, plan: &ImportPlan) -> Result<Resolved> {
         keep.push(new);
     }
 
+    let mut keep_skills = Vec::with_capacity(plan.skills.len());
+    let mut names = HashSet::new();
+    for skill in &plan.skills {
+        let name = slug(&skill.title);
+        let new = if skill.title.chars().count() > MAX_TITLE_CHARS {
+            skipped.push(SkippedFile { path: skill.path.clone(), reason: SkipReason::LongTitle });
+            false
+        } else if names.contains(&name) {
+            skipped.push(SkippedFile { path: skill.path.clone(), reason: SkipReason::SameTitle });
+            false
+        } else if skills::name_taken(conn, &name)? {
+            existing += 1;
+            false
+        } else {
+            names.insert(name);
+            true
+        };
+        keep_skills.push(new);
+    }
+
     let export = plan.brainmatter_export;
     let outside = |i: usize| {
         let folder = &plan.folders[i];
-        export && (i == 0 || (folder.parent == Some(0) && fold(&folder.name) == fold(NO_PROJECT)))
+        let top = folder.parent == Some(0)
+            && [NO_PROJECT, SKILLS].iter().any(|n| fold(&folder.name) == fold(n));
+        export && (i == 0 || top)
     };
     let mut by_name = HashMap::new();
     for (i, folder) in plan.folders.iter().enumerate() {
@@ -118,6 +150,14 @@ fn resolve(conn: &Connection, plan: &ImportPlan) -> Result<Resolved> {
         if *new {
             mark(Some(note.folder));
             for name in &note.projects {
+                mark(by_name.get(&fold(name)).copied());
+            }
+        }
+    }
+    for (skill, new) in plan.skills.iter().zip(&keep_skills) {
+        if *new {
+            mark(Some(skill.folder));
+            for name in &skill.projects {
                 mark(by_name.get(&fold(name)).copied());
             }
         }
@@ -173,13 +213,13 @@ fn resolve(conn: &Connection, plan: &ImportPlan) -> Result<Resolved> {
             }
         }
     }
-    Ok(Resolved { targets, keep, existing, skipped, by_name, links })
+    Ok(Resolved { targets, keep, keep_skills, existing, skipped, by_name, links })
 }
 
 fn summary(plan: &ImportPlan, resolved: &Resolved) -> ImportSummary {
     ImportSummary {
         folder: plan.folders[0].name.clone(),
-        entries: resolved.keep.iter().filter(|k| **k).count(),
+        entries: resolved.keep.iter().chain(&resolved.keep_skills).filter(|k| **k).count(),
         projects: resolved.targets.iter().filter(|t| **t == Target::New).count(),
         links: resolved.links,
         existing: resolved.existing,
@@ -189,7 +229,12 @@ fn summary(plan: &ImportPlan, resolved: &Resolved) -> ImportSummary {
     }
 }
 
-fn carry_out(w: &mut Writer<'_>, plan: &ImportPlan) -> Result<ImportSummary> {
+/// `skill_files` holds the files of each planned skill, stored already.
+fn carry_out(
+    w: &mut Writer<'_>,
+    plan: &ImportPlan,
+    skill_files: &[Vec<StoredFile>],
+) -> Result<ImportSummary> {
     let resolved = resolve(w.conn, plan)?;
     let mut folder_projects: Vec<Option<ProjectId>> = Vec::with_capacity(plan.folders.len());
     for (folder, target) in plan.folders.iter().zip(&resolved.targets) {
@@ -205,13 +250,9 @@ fn carry_out(w: &mut Writer<'_>, plan: &ImportPlan) -> Result<ImportSummary> {
         folder_projects.push(project);
     }
 
-    let mut created: HashMap<String, NodeId> = HashMap::new();
-    for (note, new) in plan.notes.iter().zip(&resolved.keep) {
-        if !*new {
-            continue;
-        }
-        let mut members: Vec<ProjectId> = folder_projects[note.folder].iter().cloned().collect();
-        for name in &note.projects {
+    let members = |folder: usize, named: &[String]| {
+        let mut members: Vec<ProjectId> = folder_projects[folder].iter().cloned().collect();
+        for name in named {
             if let Some(Some(project)) =
                 resolved.by_name.get(&fold(name)).map(|f| &folder_projects[*f])
                 && !members.contains(project)
@@ -219,6 +260,22 @@ fn carry_out(w: &mut Writer<'_>, plan: &ImportPlan) -> Result<ImportSummary> {
                 members.push(project.clone());
             }
         }
+        members
+    };
+
+    for ((skill, new), files) in plan.skills.iter().zip(&resolved.keep_skills).zip(skill_files) {
+        if *new {
+            let projects = members(skill.folder, &skill.projects);
+            skills::create(w, &skill.title, &skill.description, &skill.body, projects, files)?;
+        }
+    }
+
+    let mut created: HashMap<String, NodeId> = HashMap::new();
+    for (note, new) in plan.notes.iter().zip(&resolved.keep) {
+        if !*new {
+            continue;
+        }
+        let members = members(note.folder, &note.projects);
         let node = nodes::create(
             w,
             NewNode {
@@ -270,8 +327,14 @@ impl Engine {
     /// export leave them; see [`crate::import`].
     pub fn import_markdown(&self, ctx: &Ctx, root: &Path) -> Result<ImportSummary> {
         let plan = import::plan(root)?;
+        let skill_files = plan
+            .skills
+            .iter()
+            .map(|s| skills::store_files(self, &s.files))
+            .collect::<Result<Vec<_>>>()?;
         let text = format!("„{}“ importiert", plan.folders[0].name);
-        let (mut summary, change_set) = self.write(ctx, text, |w| carry_out(w, &plan))?;
+        let (mut summary, change_set) =
+            self.write(ctx, text, |w| carry_out(w, &plan, &skill_files))?;
         summary.change_set = change_set;
         Ok(summary)
     }

@@ -20,6 +20,8 @@ use crate::{
 };
 
 pub(super) const NO_PROJECT: &str = "Ohne Projekt";
+/// Skill folders as `~/.claude/skills` and other tools expect them.
+pub(super) const SKILLS: &str = "skills";
 const DOCS: &str = "_Doku";
 const TEMPLATES: &str = "_Vorlagen";
 const ATTACHMENTS: &str = "_Anhänge";
@@ -198,6 +200,10 @@ impl Engine {
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         })?;
         let mut names = Names::default();
+        let skills: HashMap<NodeId, SkillInfo> =
+            self.skills(None)?.into_iter().map(|s| (s.node.id.clone(), s)).collect();
+        // Before the projects: the folder keeps its name, and a project called so moves aside.
+        let skills_dir = (!skills.is_empty()).then(|| names.claim(root, SKILLS, ""));
         let projects = self.projects()?;
         let folders = project_folders(&projects, root, &mut names);
         for folder in folders.values() {
@@ -211,7 +217,12 @@ impl Engine {
             failed_attachments: Vec::new(),
         };
         let attachments_dir = root.join(ATTACHMENTS);
+        let mut skill_names = HashSet::new();
         for id in &ids {
+            if let (Some(skill), Some(dir)) = (skills.get(id), &skills_dir) {
+                self.export_skill(skill, dir, &mut skill_names, &mut summary)?;
+                continue;
+            }
             let detail = self.node_detail(id)?;
             let home = detail
                 .projects
@@ -247,6 +258,56 @@ impl Engine {
             summary.entries += 1;
         }
         Ok(summary)
+    }
+
+    /// `skills/<name>/SKILL.md` with the files next to it, so the folder works as it
+    /// is in other tools. The title and projects ride along in `metadata`.
+    fn export_skill(
+        &self,
+        skill: &SkillInfo,
+        skills_dir: &Path,
+        taken: &mut HashSet<String>,
+        summary: &mut ExportSummary,
+    ) -> Result<()> {
+        let base = match crate::skills::name_for(&skill.node.title) {
+            name if name.is_empty() => "skill".to_string(),
+            name => name,
+        };
+        let mut name = base.clone();
+        let mut number = 1;
+        while !taken.insert(name.clone()) {
+            number += 1;
+            name = format!("{base}-{number}");
+        }
+        let folder = skills_dir.join(&name);
+        fs::create_dir_all(&folder)?;
+        let projects: Vec<String> = skill.projects.iter().map(|p| p.name.clone()).collect();
+        let text = crate::skills::render(
+            &name,
+            &skill.description,
+            &skill.node.title,
+            &projects,
+            &skill.body,
+        );
+        fs::write(folder.join(crate::skills::SKILL_FILE), text)?;
+        summary.entries += 1;
+
+        for file in &skill.files {
+            let relative = crate::skills::clean_path(&file.filename)
+                .unwrap_or_else(|| safe_name(&file.filename));
+            let path = folder.join(&relative);
+            let written = self.attachment_data(&file.id).and_then(|(_, bytes)| {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                Ok(fs::write(&path, bytes)?)
+            });
+            match written {
+                Ok(()) => summary.attachments += 1,
+                Err(_) => summary.failed_attachments.push(file.filename.clone()),
+            }
+        }
+        Ok(())
     }
 }
 

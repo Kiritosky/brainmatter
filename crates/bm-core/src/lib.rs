@@ -14,6 +14,7 @@ pub mod import;
 pub mod mirror;
 pub mod model;
 pub mod semantic;
+pub mod skills;
 pub mod store;
 pub mod templates;
 pub mod time;
