@@ -281,7 +281,7 @@
             <article class="prose-bm prose-doc selectable" role="presentation" bind:this={article} onclick={onArticleClick}>{@html html}</article>
           {:else}
             <button class="w-full rounded-xl border border-dashed border-line py-10 text-faint transition-colors hover:border-faint hover:text-muted" onclick={() => (editing = 'body')}>
-              Noch leer. Klicken zum Schreiben.
+              {t('Noch leer. Klicken zum Schreiben.', 'Empty so far. Click to write.')}
             </button>
           {/if}
 
