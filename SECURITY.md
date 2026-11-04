@@ -28,7 +28,7 @@ Touch ID key ────────► BK  ─wrap─┘        │
 | Key hierarchy | One random data key, wrapped separately for password, recovery key and Touch ID. Changing the password re-wraps it; the database is not re-encrypted |
 | Keys in memory | Held in `zeroize` types. Locking closes every connection, drops graph, vectors and caches, wipes the keys and clears the interface |
 | Backups | Encrypted copies of the database, verified after writing |
-| Network | Only update checks, which can be turned off, and the optional model download. Entries never leave the Mac. No telemetry |
+| Network | Only update checks, which can be turned off, the optional model download, and reading a public GitHub repository when the user imports a skill from it. Entries never leave the Mac. No telemetry |
 
 The plaintext `vault.header` holds the KDF parameters and the wrapped keys, never content.
 

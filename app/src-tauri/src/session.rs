@@ -760,7 +760,8 @@ impl Session {
     }
 
     /// Downloads in the background and reports through `bm:model`. Only the user
-    /// starts this. Besides update checks, it is the only outgoing connection.
+    /// starts this, like a skill import from GitHub; update checks are the only
+    /// connection the app makes on its own.
     pub fn download_model(self: &Arc<Self>) {
         {
             let mut download = self.download.lock();

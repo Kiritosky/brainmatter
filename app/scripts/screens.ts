@@ -31,7 +31,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${nam
 {
   const page = await open('/?mock=fresh');
   await page.getByText('Willkommen bei Brainmatter').waitFor();
-  await page.getByPlaceholder('z. B. Lasse').fill('Lasse');
+  await page.getByPlaceholder('z. B. Alex').fill('Lasse');
   await page.locator('input[type=password]').nth(0).fill('Korrekt-Pferd-9!');
   await page.locator('input[type=password]').nth(1).fill('Korrekt-Pferd-9!');
   await shot(page, '01-onboarding');
