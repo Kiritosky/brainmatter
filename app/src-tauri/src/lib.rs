@@ -165,13 +165,14 @@ pub fn run() {
         )
         .init();
 
-    // Measuring runs beside an installed copy, which would otherwise take over.
     // The web view learns the language before its first script.
     let language = tauri::plugin::Builder::<tauri::Wry>::new("language")
         .js_init_script(i18n::script())
         .build();
     let builder = tauri::Builder::default().plugin(language);
-    let builder = if perf::script().is_some() {
+    // A dev build and a measuring run work beside an installed copy, with their
+    // own vault and port; the installed copy would otherwise take over.
+    let builder = if cfg!(debug_assertions) || perf::script().is_some() {
         builder
     } else {
         builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
