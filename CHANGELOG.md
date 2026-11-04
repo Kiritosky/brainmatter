@@ -2,16 +2,24 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
-## 1.2.0
+## 1.2.0 · 2026-11-04
 
-Deine KIs greifen jetzt von selbst zu Brainmatter, statt jede Sitzung bei null anzufangen.
+Deine KIs greifen jetzt von selbst zu Brainmatter, und ein Skill-Tresor hält die Anleitungen, mit denen sie arbeiten, an einem Ort.
 
 ### Neu
 - **Brainmatter als Gedächtnis:** Beim Verbinden schreibt Brainmatter auf Wunsch eine kurze Regel in die Anweisungen der KI: `~/.claude/CLAUDE.md` für Claude Code, `~/.codex/AGENTS.md` für Codex, `~/.cursor/rules` für Cursor. Dann schlägt sie vor jeder Aufgabe nach und sichert Entscheidungen, Erkenntnisse und deine Korrekturen von selbst. Für Claude Desktop und jede andere KI mit MCP gibt es die Regel zum Kopieren. Bestehende Verbindungen bekommen dafür einen Schalter unter Einstellungen → KI-Verbindungen.
+- **Skill-Tresor:** Skills sind Anleitungen, die eine KI von selbst lädt, wenn eine Aufgabe passt, etwa wie du Commit-Nachrichten haben willst oder wie man ein PDF-Formular ausfüllt. Lege sie pro Projekt oder für alles an, schreibe und bearbeite sie in der Bibliothek, hänge Dateien wie Skripte an, und jede verbundene KI kann sie nutzen, egal welche. Skills, die du geprüft hast, erscheinen auch als Befehle.
+- **Skills von GitHub:** Füge die Adresse eines öffentlichen Repos oder Ordners ein, wähle die Skills aus, und sie sind im Tresor. Später bringt ein Klick einen Skill auf den Stand seiner Quelle. Repos im verbreiteten Agent-Skills-Format funktionieren so, wie sie sind, und ein Export schreibt Skills wieder in diesem Format.
+- **Installieren mit Homebrew:** `brew install --cask kiritosky/tap/brainmatter`. Die App aktualisiert sich weiterhin selbst.
 - **Klarere Hinweise für jede KI:** Der MCP-Server sagt jeder verbundenen KI genauer, wann sie nachschlagen und wann sie speichern soll.
+
+### Verbessert
+- Klareres Englisch in der ganzen Oberfläche.
 
 ### Behoben
 - Die Suche nach Sinn hängt nicht mehr von einer ZIP-Bibliothek mit bekannten Sicherheitslücken ab.
+- Fehler beim Laden des Modells für die Suche nach Sinn kamen immer auf Deutsch.
+- Ein leerer Eintrag oder eine leere Seite forderte auch auf Englisch auf Deutsch zum Schreiben auf.
 - Die Fehlermeldungen im Browser-Demo folgen jetzt der Sprache der Oberfläche.
 
 ## 1.1.0 · 2026-11-04

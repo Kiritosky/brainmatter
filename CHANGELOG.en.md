@@ -2,16 +2,24 @@
 
 This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
-## 1.2.0
+## 1.2.0 · 2026-11-04
 
-Your AI tools now turn to Brainmatter on their own instead of starting every session from scratch.
+Your AI tools now turn to Brainmatter on their own, and a skill vault keeps the instructions they work with in one place.
 
 ### New
 - **Brainmatter as memory:** When you connect an AI client, Brainmatter can add a short rule to its instructions: `~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for Codex, `~/.cursor/rules` for Cursor. It then looks things up before every task and saves decisions, findings and your corrections without being asked. For Claude Desktop and any other AI client with MCP, you get the rule to copy. Existing connections get a switch for it under Settings → AI connections.
+- **Skill vault:** Skills are instructions an AI client loads by itself when a task fits, such as how you want commit messages or how to fill in a PDF form. Keep them per project or for everything, write and edit them in the Library, add files such as scripts, and every connected AI client can use them, whichever it is. Skills you have reviewed also appear as commands.
+- **Skills from GitHub:** Paste the address of a public repository or folder, choose which skills to take, and they are in the vault. Later, one click brings a skill up to date with its source. Repositories in the common Agent Skills layout work as they are, and an export writes skills back in that layout.
+- **Install with Homebrew:** `brew install --cask kiritosky/tap/brainmatter`. The app keeps updating itself as before.
 - **Clearer hints for every AI client:** The MCP server tells every connected AI client more precisely when to look things up and when to save.
+
+### Improved
+- Clearer English throughout the interface.
 
 ### Fixed
 - Search by meaning no longer depends on a ZIP library with known vulnerabilities.
+- Errors while downloading the model for search by meaning were always in German.
+- An empty entry or page asked to be written to in German only.
 - The in-browser demo's error messages now follow the interface language.
 
 ## 1.1.0 · 2026-11-04
