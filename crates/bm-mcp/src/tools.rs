@@ -926,8 +926,18 @@ pub struct GetTemplateArgs {
 pub(crate) fn get_template(cx: &ToolCx, a: GetTemplateArgs) -> Out {
     let wanted = a.template.trim().trim_start_matches('#').to_lowercase();
     let all = cx.engine.templates(None)?;
-    let found = all.iter().filter(|t| sees_template(cx, t)).find(|t| {
-        t.node.title.to_lowercase() == wanted || t.slug == wanted || t.node.id.short() == wanted
+    let visible: Vec<&TemplateInfo> = all.iter().filter(|t| sees_template(cx, t)).collect();
+    // Names resolve as in the prompt list: a reviewed template replaces the built-in
+    // command of its name, which in turn comes before anything else called like it.
+    let named = visible.iter().find(|t| t.reviewed && t.slug == wanted);
+    let command = crate::prompts::find(&wanted).filter(|c| c.usable_by(&cx.client));
+    if let (None, Some(command)) = (named, command) {
+        return command.render(&a.values).map_err(fail);
+    }
+    let found = named.or_else(|| {
+        visible.iter().find(|t| {
+            t.node.title.to_lowercase() == wanted || t.slug == wanted || t.node.id.short() == wanted
+        })
     });
     let Some(t) = found else {
         return Err(fail(format!("No template „{}“. `list_templates` lists them.", a.template)));

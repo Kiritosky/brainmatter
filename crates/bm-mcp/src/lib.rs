@@ -4,6 +4,7 @@ mod auth;
 mod clients;
 mod format;
 mod hub;
+mod offers;
 mod prompts;
 mod schema;
 mod server;
@@ -11,6 +12,7 @@ mod tools;
 
 pub use clients::{Client, ClientRegistry, RegistryError, Scope};
 pub use hub::{Hub, StaticHub};
+pub use offers::{MenuItem, skill_menu};
 pub use server::BrainmatterMcp;
 
 use std::sync::Arc;

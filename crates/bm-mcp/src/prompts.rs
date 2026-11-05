@@ -19,7 +19,7 @@ pub(crate) struct Argument {
 
 pub(crate) struct Command {
     pub(crate) name: &'static str,
-    description: &'static str,
+    pub(crate) description: &'static str,
     /// Offered only to clients that may write.
     writes: bool,
     arguments: &'static [Argument],
@@ -122,6 +122,10 @@ impl Command {
             })
             .collect();
         Prompt::new(self.name, Some(self.description), Some(arguments))
+    }
+
+    pub(crate) fn argument_names(&self) -> impl Iterator<Item = &'static str> {
+        self.arguments.iter().map(|a| a.name)
     }
 
     /// The text, with what the user gave at the end. Optional arguments have no

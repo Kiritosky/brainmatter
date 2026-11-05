@@ -16,14 +16,15 @@ use rmcp::{
     model::{
         CallToolResult, ContentBlock, GetPromptRequestParams, GetPromptResponse, GetPromptResult,
         Implementation, ListPromptsResult, ListResourcesResult, PaginatedRequestParams, Prompt,
-        PromptArgument, PromptMessage, ReadResourceRequestParams, ReadResourceResponse,
-        ReadResourceResult, Resource, ResourceContents, Role, ServerCapabilities, ServerConfig,
+        PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
+        Resource, ResourceContents, Role, ServerCapabilities, ServerConfig,
     },
     service::{NotificationContext, Peer, RequestContext},
     tool, tool_handler, tool_router,
 };
 
-use crate::prompts::{self, COMMANDS};
+use crate::offers::{self, Offer, SKILL_PROMPT};
+use crate::prompts;
 use crate::{
     Client, Hub, Scope,
     tools::{self, ToolCx, ToolError},
@@ -315,7 +316,7 @@ impl BrainmatterMcp {
         self.run(&parts, "list_templates", Scope::Read, args, tools::list_templates).await
     }
 
-    #[tool(description = "A template with its placeholders filled in.")]
+    #[tool(description = "A template or built-in command with its placeholders filled in.")]
     async fn get_template(
         &self,
         Extension(parts): Extension<Parts>,
@@ -450,43 +451,10 @@ impl BrainmatterMcp {
     }
 }
 
-const SKILL_PROMPT: &str = "skill-";
-
-/// Clients ask for the prompt list on their own as soon as they connect, so this
-/// never triggers Touch ID: while locked, only the built-in commands are offered.
-/// A template or skill becomes a prompt only after the user has seen it. Otherwise
-/// an AI could plant text that later arrives in another session looking like the
-/// user's request.
-///
-/// A skill's prompt is its name after [`SKILL_PROMPT`], so it never takes the name
-/// of a built-in command. A template named like that keeps the name, and the skill
-/// is reached through `get_skill` only.
-fn vault_prompts(engine: &Engine, client: &Client) -> Result<Vec<Prompt>, CoreError> {
-    let scope = tools::project_scope(engine, client)?;
-    let mut prompts: Vec<Prompt> = engine
-        .templates(None)?
-        .into_iter()
-        .filter(|t| t.reviewed && !t.slug.is_empty() && tools::template_in_scope(scope.as_ref(), t))
-        .map(|t| {
-            let arguments = t
-                .arguments
-                .iter()
-                .map(|a| PromptArgument::new(a).with_required(true))
-                .collect::<Vec<_>>();
-            Prompt::new(t.slug, Some(t.node.title), Some(arguments))
-        })
-        .collect();
-    for skill in engine.skills(None)? {
-        let name = format!("{SKILL_PROMPT}{}", skill.slug);
-        let offered = skill.reviewed
-            && !skill.slug.is_empty()
-            && tools::skill_in_scope(scope.as_ref(), &skill)
-            && !prompts.iter().any(|p| p.name == name);
-        if offered {
-            prompts.push(Prompt::new(name, Some(skill.description), None));
-        }
-    }
-    Ok(prompts)
+/// The prompt list, which only ever needs an engine that is open already.
+fn prompts_of(engine: Option<&Engine>, client: &Client) -> Vec<Prompt> {
+    let offers = offers::offers(engine, client).or_else(|_| offers::offers(None, client));
+    offers.unwrap_or_default().iter().map(Offer::prompt).collect()
 }
 
 /// What a skill's prompt sends: its instructions, and where its files are.
@@ -569,8 +537,8 @@ const WATCH_SETTLE: Duration = Duration::from_secs(1);
 
 /// What the client would get from the prompt list, to tell when it changed.
 fn prompts_signature(hub: &Arc<dyn Hub>, client: &Client) -> String {
-    let prompts = hub.open_engine().map(|e| vault_prompts(&e, client).unwrap_or_default());
-    serde_json::to_string(&prompts.unwrap_or_default()).unwrap_or_default()
+    let prompts = prompts_of(hub.open_engine().as_deref(), client);
+    serde_json::to_string(&prompts).unwrap_or_default()
 }
 
 /// Tells a client when the prompts it can see have changed, for as long as it is connected.
@@ -695,22 +663,10 @@ impl ServerHandler for BrainmatterMcp {
             return Ok(ListPromptsResult::default());
         }
         let hub = self.hub.clone();
-        let prompts = tokio::task::spawn_blocking(move || {
-            let vault = match hub.open_engine() {
-                Some(engine) => vault_prompts(&engine, &client).unwrap_or_default(),
-                None => Vec::new(),
-            };
-            let replaced = |name: &str| vault.iter().any(|t| t.name == name);
-            let mut prompts: Vec<Prompt> = COMMANDS
-                .iter()
-                .filter(|c| c.usable_by(&client) && !replaced(c.name))
-                .map(|c| c.prompt())
-                .collect();
-            prompts.extend(vault);
-            prompts
-        })
-        .await
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let prompts =
+            tokio::task::spawn_blocking(move || prompts_of(hub.open_engine().as_deref(), &client))
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(ListPromptsResult::with_all_items(prompts))
     }
 

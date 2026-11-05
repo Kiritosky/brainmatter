@@ -1021,6 +1021,100 @@ async fn skills_are_followed_and_offered_only_once_the_user_has_seen_them() {
 }
 
 #[tokio::test]
+async fn the_skill_menu_holds_what_the_prompt_list_offers() {
+    let s = start().await;
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let work = s
+        .engine
+        .create_project(&user, NewProject { name: "Arbeit".into(), ..Default::default() })
+        .unwrap()
+        .id;
+    let skill = |title: &str, projects: Vec<bm_core::ids::ProjectId>| {
+        let input = bm_core::model::SkillInput {
+            id: None,
+            title: title.into(),
+            description: format!("Wann {title}"),
+            body: format!("Anleitung {title}"),
+            projects,
+        };
+        let id = s.engine.save_skill(&user, input).unwrap().node.id;
+        s.engine.add_attachment(&user, &id, "scripts/run.py", None, b"print(1)").unwrap();
+        id
+    };
+    skill("Eigener", vec![]);
+    let public = skill("Oeffentlich", vec![]);
+    s.engine.set_skill_on_disk(&user, &public, true).unwrap();
+    skill("Nur Arbeit", vec![work.clone()]);
+    for (title, body) in [("Wochenrückblick", "Woche {{woche}}"), ("Recall", "Meine Fassung")] {
+        let input = NewNode {
+            title: title.into(),
+            body: body.into(),
+            kind: Some("template".into()),
+            ..Default::default()
+        };
+        s.engine.create_node(&user, input).unwrap();
+    }
+    let (_, token) = s.registry.create("KI", &[Scope::Read, Scope::Write], &[]).unwrap();
+    let c = connect(&s.url, &token).await;
+    let (t, err) =
+        call(&c, "save_skill", json!({"name": "Von KI", "description": "x", "body": "y"})).await;
+    assert!(!err, "{t}");
+
+    let client = s.registry.list().into_iter().find(|c| c.name == "KI").unwrap();
+    let menu = bm_mcp::skill_menu(&s.engine, &client, "brainmatter").unwrap();
+    let names: Vec<&str> = menu.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, all_prompt_names(&c).await, "the same set, under the same names");
+    assert!(names.contains(&"skill-nur-arbeit") && !names.contains(&"skill-von-ki"), "{names:?}");
+    let item = |name: &str| menu.iter().find(|m| m.name == name).unwrap();
+
+    let own = item("skill-eigener");
+    assert_eq!(own.description, "Wann Eigener");
+    assert!(own.files.is_empty() && !own.body.contains("Anleitung"), "stays in the vault");
+    assert!(own.body.contains("`get_skill`") && own.body.contains("`brainmatter`"));
+    assert!(own.body.contains("`eigener`") && own.body.contains("`read_attachment`"));
+    let public = item("skill-oeffentlich");
+    assert_eq!(public.body, "Anleitung Oeffentlich");
+    assert_eq!(
+        public.files.iter().map(|f| f.filename.as_str()).collect::<Vec<_>>(),
+        ["scripts/run.py"]
+    );
+    let weekly = item("wochenrueckblick");
+    assert_eq!(weekly.description, "Brainmatter template: Wochenrückblick");
+    assert!(weekly.body.contains("`get_template`") && weekly.body.contains("`woche`"));
+    let setup = item("setup-project");
+    assert!(setup.body.contains("`setup-project`") && setup.body.contains("`project`, `focus`"));
+    assert!(!item("capture-session").description.is_empty());
+
+    // The pointers work: `get_template` knows the built-in commands too, unless a
+    // reviewed template has taken the name.
+    let fill = json!({"template": "setup-project", "values": {"project": "Akani"}});
+    let (t, err) = call(&c, "get_template", fill).await;
+    assert!(!err && t.contains("write_doc") && t.ends_with("project: Akani"), "{t}");
+    let (t, err) = call(&c, "get_template", json!({"template": "recall"})).await;
+    assert!(!err && t.contains("Meine Fassung"), "{t}");
+    let (t, err) = call(&c, "get_template", json!({"template": "Wochenrückblick"})).await;
+    assert!(!err && t.contains("Still open: woche"), "{t}");
+
+    // A reader gets no command that writes, here or anywhere else.
+    let (_, reader) =
+        s.registry.create("Leser", &[Scope::Read], std::slice::from_ref(&work)).unwrap();
+    let r = connect(&s.url, &reader).await;
+    let (t, err) = call(&r, "get_template", json!({"template": "setup-project"})).await;
+    assert!(err && !t.contains("write_doc"), "{t}");
+    let client = s.registry.list().into_iter().find(|c| c.name == "Leser").unwrap();
+    let menu = bm_mcp::skill_menu(&s.engine, &client, "brainmatter-dev").unwrap();
+    let names: Vec<&str> = menu.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, all_prompt_names(&r).await);
+    assert!(!names.contains(&"setup-project") && names.contains(&"skill-nur-arbeit"));
+    assert!(menu.iter().all(|m| m.files.is_empty() || m.name == "skill-oeffentlich"));
+    assert!(menu[0].body.contains("`brainmatter-dev`"), "{}", menu[0].body);
+
+    c.cancel().await.unwrap();
+    r.cancel().await.unwrap();
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
 async fn skills_respect_project_scopes_and_global_ones_are_for_everyone() {
     let s = start().await;
     let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
