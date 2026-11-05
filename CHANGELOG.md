@@ -2,7 +2,7 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
-## 1.3.0
+## 1.3.0 · 2026-11-05
 
 Deine Befehle und Skills stehen jetzt auch im Skill-Menü deiner KI-Apps, und die Gedächtnis-Regel bleibt von selbst aktuell.
 

@@ -2,7 +2,7 @@
 
 This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
-## 1.3.0
+## 1.3.0 · 2026-11-05
 
 Your commands and skills now also show up in the skill menu of your AI tools, and the memory rule keeps itself up to date.
 
