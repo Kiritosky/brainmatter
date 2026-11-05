@@ -159,7 +159,7 @@
   const MENU_WHY = t('Für Apps, die Skills zeigen, MCP-Befehle aber nicht.', 'For apps that show skills but not MCP commands.');
   const MENU_PRIVACY = t(
     'Namen und Beschreibungen liegen dort unverschlüsselt, Skills mit „Direkt als Dateien“ ganz.',
-    'Names and descriptions lie there unencrypted, and skills set to “Directly as files” in full.',
+    'Names and descriptions are stored there unencrypted, and skills set to “Directly as files” in full.',
   );
 
   async function revoke(c: AiClient) {

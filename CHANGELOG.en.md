@@ -8,7 +8,7 @@ Your commands and skills now also show up in the skill menu of your AI tools, an
 
 ### New
 - **In the skill menu:** For Claude Code, Codex and Cursor, Brainmatter can put its commands, your reviewed templates and your skills into the app's skill folder, as far as the connection may see them: `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills`. That way you can pick them in apps that show skills but not MCP commands. Brainmatter keeps the folder up to date with every change and touches only what it put there itself. New connections have it on; existing ones get a switch under Settings → AI connections.
-- **Directly as files, or through Brainmatter:** For each skill you choose how it reaches the skill folder: whole, with all its files, or as a short pointer that loads it from the vault only when it is used. Skills from GitHub go as files, your own through Brainmatter. Either way it lies there unencrypted; with a pointer, only its name and description.
+- **Directly as files, or through Brainmatter:** For each skill you choose how it reaches the skill folder: whole, with all its files, or as a short pointer that loads it from the vault only when it is used. Skills from GitHub go as files, your own through Brainmatter. Either way it is stored there unencrypted; as a pointer, only its name and description.
 - **Commands through `get_template`:** `get_template` also returns the built-in commands filled in, the same way the command list shows them.
 - **The memory rule stays current:** When the app starts or the vault is unlocked, a rule Brainmatter wrote earlier gets the current wording, where it stands and in its read-only or writing variant.
 

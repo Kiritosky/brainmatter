@@ -159,7 +159,7 @@ Only you can mark entries as reviewed, erase them for good, manage backups or ch
 | AI access | Local only (`127.0.0.1`), hashed bearer tokens, browser origins rejected |
 | Network | Only update checks, which you can turn off, the optional model download, and reading a public GitHub repository when you import a skill from it. Your entries never leave the Mac |
 
-What this does not protect against: malware running as your user while the vault is unlocked, and a forgotten password together with a lost recovery key. Backups sit next to the vault unless you choose a second place for copies, so without one they do not help when the Mac is lost. A Markdown export is not encrypted, and the app says so before writing one. Neither is the skill menu: the names and descriptions it writes lie in the apps' skill folders as plain files, and so do skills set to go directly as files, in full.
+What this does not protect against: malware running as your user while the vault is unlocked, and a forgotten password together with a lost recovery key. Backups sit next to the vault unless you choose a second place for copies, so without one they do not help when the Mac is lost. A Markdown export is not encrypted, and the app says so before writing one. Neither is the skill menu: the names and descriptions it writes are stored in the apps' skill folders as plain files, and so do skills set to go directly as files, in full.
 
 Entries are treated as untrusted when shown: Markdown is sanitized, and AI clients are told that content is data, not instructions.
 
