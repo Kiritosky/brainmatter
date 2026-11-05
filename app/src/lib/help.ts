@@ -190,7 +190,7 @@ export const MCP_TOOLS: { title: string; tools: { name: string; about: string }[
       { name: 'read_doc', about: t('Eine Seite oder einen Abschnitt lesen', 'Read a page or a section') },
       { name: 'write_doc', about: t('Eine Seite anlegen oder ersetzen', 'Create or replace a page') },
       { name: 'list_templates', about: t('Deine Vorlagen', 'Your templates') },
-      { name: 'get_template', about: t('Eine Vorlage ausgefüllt holen', 'Get a template, filled in') },
+      { name: 'get_template', about: t('Eine Vorlage oder einen Befehl ausgefüllt holen', 'Get a template or a command, filled in') },
       { name: 'save_template', about: t('Eine Vorlage anlegen oder ersetzen', 'Create or replace a template') },
       { name: 'list_skills', about: t('Deine Skills mit ihren Beschreibungen', 'Your skills with their descriptions') },
       { name: 'get_skill', about: t('Einen Skill mit Anleitung und Dateien laden', 'Load a skill with its instructions and files') },

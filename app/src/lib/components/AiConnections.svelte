@@ -40,6 +40,7 @@
   let projects = $state<string[]>([]);
 
   let memory = $state(true);
+  let skillMenu = $state(true);
 
   let token = $state('');
   let copied = $state(false);
@@ -76,6 +77,7 @@
     limitProjects = false;
     projects = [];
     memory = true;
+    skillMenu = true;
     error = null;
     view = 'new';
   }
@@ -98,7 +100,7 @@
     error = null;
     try {
       const chosen = (Object.keys(scopes) as Scope[]).filter((s) => scopes[s]);
-      await api.connectIntegration(integration.target, chosen, limitProjects ? projects : [], memory);
+      await api.connectIntegration(integration.target, chosen, limitProjects ? projects : [], memory, skillMenu && !!integration.skills_dir);
       name = integration.name;
       await load();
       view = 'connected';
@@ -137,6 +139,28 @@
     }
     integrations = await api.integrations().catch(() => integrations);
   }
+
+  async function setSkillMenu(i: Integration, on: boolean) {
+    error = null;
+    try {
+      await api.setSkillMenu(i.target, on);
+    } catch (e) {
+      error = errorMessage(e);
+    }
+    integrations = await api.integrations().catch(() => integrations);
+  }
+
+  /** What a tool finds in its skill folder, such as „14 Befehle und Skills in ~/.claude/skills“. */
+  function menuStatus(i: Integration) {
+    if (!i.skills) return t(`Noch nichts in ${i.skills_dir}`, `Nothing in ${i.skills_dir} yet`);
+    if (i.skills === 1) return t(`1 Befehl oder Skill in ${i.skills_dir}`, `1 command or skill in ${i.skills_dir}`);
+    return t(`${i.skills} Befehle und Skills in ${i.skills_dir}`, `${i.skills} commands and skills in ${i.skills_dir}`);
+  }
+  const MENU_WHY = t('Für Apps, die Skills zeigen, MCP-Befehle aber nicht.', 'For apps that show skills but not MCP commands.');
+  const MENU_PRIVACY = t(
+    'Namen und Beschreibungen liegen dort unverschlüsselt, Skills mit „Direkt als Dateien“ ganz.',
+    'Names and descriptions lie there unencrypted, and skills set to “Directly as files” in full.',
+  );
 
   async function revoke(c: AiClient) {
     try {
@@ -244,6 +268,7 @@
       <div class="card mb-4">
         {#each info.clients as c (c.id)}
           {@const ig = integrations.find((i) => i.name === c.name && i.rule_file)}
+          {@const menu = integrations.find((i) => i.name === c.name && i.skills_dir)}
           <div class="row group" animate:flip={{ duration: 180 }}>
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={avatarStyle(tint(c.name))}><Bot size={16} /></div>
             <div class="min-w-0 flex-1">
@@ -253,11 +278,24 @@
                 · {c.projects.length ? c.projects.map(projectName).join(', ') : t('Alle Projekte', 'All projects')}
                 · {seen(c.last_seen_at)}
               </div>
+              {#if menu?.skill_menu}
+                <div class="truncate text-xs text-faint" in:pop={{ duration: 140, y: -2 }}>{menuStatus(menu)}</div>
+              {/if}
             </div>
-            {#if ig && confirmRevoke !== c.id}
-              <div class="flex shrink-0 items-center gap-2 text-xs text-muted" title={t(`Regel in ${ig.rule_file}`, `Rule in ${ig.rule_file}`)}>
-                {t('Gedächtnis', 'Memory')}
-                <Toggle checked={ig.rule} label={t(`${c.name} nutzt Brainmatter von selbst`, `${c.name} uses Brainmatter unasked`)} onchange={(on) => setRule(ig, on)} />
+            {#if (ig || menu) && confirmRevoke !== c.id}
+              <div class="flex shrink-0 flex-col items-end gap-1.5 text-xs text-muted">
+                {#if ig}
+                  <div class="flex items-center gap-2" title={t(`Regel in ${ig.rule_file}`, `Rule in ${ig.rule_file}`)}>
+                    {t('Gedächtnis', 'Memory')}
+                    <Toggle checked={ig.rule} label={t(`${c.name} nutzt Brainmatter von selbst`, `${c.name} uses Brainmatter unasked`)} onchange={(on) => setRule(ig, on)} />
+                  </div>
+                {/if}
+                {#if menu}
+                  <div class="flex items-center gap-2" title={MENU_WHY}>
+                    {t('Skill-Menü', 'Skill menu')}
+                    <Toggle checked={menu.skill_menu} label={t(`Befehle und Skills im Skill-Menü von ${c.name}`, `Commands and skills in the skill menu of ${c.name}`)} onchange={(on) => setSkillMenu(menu, on)} />
+                  </div>
+                {/if}
               </div>
             {/if}
             {#if confirmRevoke === c.id}
@@ -269,6 +307,9 @@
           </div>
         {/each}
       </div>
+      {#if integrations.some((i) => i.configured && i.skills_dir)}
+        <p class="-mt-2 mb-4 text-xs leading-relaxed text-faint">{t('Das Skill-Menü legt Brainmatters Befehle und Skills als Skills in den Ordner der App.', "The skill menu puts Brainmatter's commands and skills into the app's skill folder.")} {MENU_WHY} {MENU_PRIVACY}</p>
+      {/if}
     {:else}
       <div class="mb-4 flex flex-col items-center rounded-xl border border-dashed border-line px-6 py-8 text-center">
         <div class="mb-3 flex h-11 w-11 items-center justify-center text-faint"><Bot size={20} /></div>
@@ -362,6 +403,22 @@
       </div>
     </div>
 
+    {#if integration?.available && integration.skills_dir}
+      <div class="section-title" in:pop={{ duration: 140, y: -3 }}>{t('Im Skill-Menü', 'In the skill menu')}</div>
+      <div class="card mb-5" in:pop={{ duration: 140, y: -3 }}>
+        <div class="row">
+          <div class="flex-1">
+            <div>{t('Befehle und Skills als Skills', 'Commands and skills as skills')}</div>
+            <div class="text-xs text-faint">
+              {t(`Legt sie nach ${integration.skills_dir}, so wie ${integration.name} sie sehen darf.`, `Puts them into ${integration.skills_dir}, as far as ${integration.name} may see them.`)}
+              {MENU_WHY} {MENU_PRIVACY}
+            </div>
+          </div>
+          <Toggle bind:checked={skillMenu} label={t('Im Skill-Menü', 'In the skill menu')} />
+        </div>
+      </div>
+    {/if}
+
     {#if error}<p class="mb-3 leading-relaxed text-danger" in:pop={{ duration: 160, y: -3 }}>{error}</p>{/if}
     <div class="flex items-center gap-2">
       {#if integration?.available}
@@ -384,6 +441,9 @@
         `Restart ${name} once, and Brainmatter is there. While the app is locked, you confirm with Touch ID before the AI client can read anything.`,
       )}
     </p>
+    {#if integration?.skill_menu}
+      <p class="-mt-3 mb-4 flex items-center gap-1.5 text-xs text-faint"><Check size={13} class="text-ok" /> {menuStatus(integration)}</p>
+    {/if}
     {#if memory && integration?.rule}
       <p class="-mt-3 mb-6 flex items-center gap-1.5 text-xs text-faint"><Check size={13} class="text-ok" /> {t(`Die Regel steht in ${integration.rule_file}.`, `The rule is in ${integration.rule_file}.`)}</p>
     {:else if memory && integration?.rule_file}

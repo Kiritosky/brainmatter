@@ -6,6 +6,7 @@
   import { formatSize } from '#lib/attachments.ts';
   import { MAX_SKILL_BYTES, MAX_SKILL_FILES, cleanFilePath, filesLabel, shortRevision, skillBytes, suggestFilePath } from '#lib/skills.ts';
   import ProjectPicker from '#lib/ui/ProjectPicker.svelte';
+  import Segmented from '#lib/ui/Segmented.svelte';
   import { ws } from '#lib/workspace.svelte.ts';
   import { pop } from '#lib/ui/motion.ts';
   import AttachmentPreview from './AttachmentPreview.svelte';
@@ -23,6 +24,8 @@
   let description = $state('');
   let body = $state('');
   let projectIds = $state.raw<Id[]>([]);
+  /** Only while a new one is written; after that the vault has the say. */
+  let draftOnDisk = $state(false);
   let dirty = $state(false);
   let saving = $state(0);
   let busy = $state(false);
@@ -141,6 +144,7 @@
     error = null;
     try {
       const saved = await api.saveSkill({ id: null, title, description, body, projects: projectIds });
+      if (draftOnDisk) await api.setSkillOnDisk(saved.node.id, true);
       if (pending.length) await upload(saved.node.id);
       await ws.select(saved.node.id);
     } catch (e) {
@@ -148,6 +152,30 @@
     } finally {
       busy = false;
     }
+  }
+
+  // How the skill reaches the skill folders of connected apps.
+  type Delivery = 'vault' | 'files';
+  const DELIVERY: { value: Delivery; label: string }[] = [
+    { value: 'vault', label: t('Über Brainmatter', 'Through Brainmatter') },
+    { value: 'files', label: t('Direkt als Dateien', 'Directly as files') },
+  ];
+  const onDisk = $derived(creating ? draftOnDisk : (info?.on_disk ?? false));
+
+  function setOnDisk(on: boolean) {
+    if (creating) {
+      draftOnDisk = on;
+      return;
+    }
+    if (info) info = { ...info, on_disk: on };
+    write(async () => {
+      try {
+        info = await api.setSkillOnDisk(skillId!, on);
+      } catch (e) {
+        ws.notify(errorMessage(e));
+        await load();
+      }
+    });
   }
 
   // Files: picked or dropped, they wait here for their path in the folder.
@@ -449,6 +477,16 @@
     <button class="chip mt-1.5 gap-1 !bg-transparent transition-colors hover:!border-faint hover:text-text" title={t('Wird verschlüsselt gespeichert. Geht auch per Ziehen.', 'Stored encrypted. Dragging works too.')} onclick={() => filePicker?.click()}>
       <Plus size={11} /> {t('Datei hinzufügen', 'Add a file')}
     </button>
+
+    <div class="section-title mt-6">{t('Im Skill-Menü der Apps', 'In the skill menu of apps')}</div>
+    <Segmented value={onDisk ? 'files' : 'vault'} options={DELIVERY} label={t('Im Skill-Menü der Apps', 'In the skill menu of apps')} onchange={(v) => setOnDisk(v === 'files')} />
+    <p class="mt-1.5 text-xs leading-relaxed text-faint">
+      {#if onDisk}
+        {t('Apps mit Skill-Menü bekommen den Skill samt Dateien unverschlüsselt in ihren Skill-Ordner.', 'Apps with the skill menu get the skill and its files unencrypted in their skill folder.')}
+      {:else}
+        {t('Im Skill-Ordner der Apps liegen nur Name und Beschreibung, unverschlüsselt. Den Rest holen sie aus dem Tresor.', "The apps' skill folders hold only its name and description, unencrypted. They fetch the rest from the vault.")}
+      {/if}
+    </p>
 
     {#if info?.source}
       {@const source = info.source}

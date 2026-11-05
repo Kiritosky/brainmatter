@@ -164,6 +164,8 @@ export interface SkillInfo {
   projects: { id: Id; name: string }[];
   reviewed: boolean;
   source: SkillSource | null;
+  /** Written into the skill folders of connected tools as it is, files and all. */
+  on_disk: boolean;
   updated_at: number;
 }
 
@@ -410,6 +412,12 @@ export interface Integration {
   /** Where the memory rule goes; null when it is pasted by hand. */
   rule_file: string | null;
   rule: boolean;
+  /** Where the tool finds Brainmatter's commands and skills; null when it reads no skill folder. */
+  skills_dir: string | null;
+  /** Brainmatter keeps that folder in step with what the tool may see. */
+  skill_menu: boolean;
+  /** How many commands and skills of Brainmatter are there. */
+  skills: number;
 }
 
 export type BodyEdit = { mode: 'replace' | 'append' | 'prepend'; text: string };
@@ -516,9 +524,15 @@ export const api = {
     call<{ client: AiClient; token: string }>('create_client', { name, scopes, projects }),
   revokeClient: (id: Id) => call<void>('revoke_client', { id }),
   integrations: () => call<Integration[]>('integrations'),
-  connectIntegration: (target: IntegrationTarget, scopes: Scope[], projects: Id[], memory: boolean) =>
-    call<AiClient>('connect_integration', { target, scopes, projects, memory }),
+  connectIntegration: (
+    target: IntegrationTarget,
+    scopes: Scope[],
+    projects: Id[],
+    memory: boolean,
+    skillMenu: boolean,
+  ) => call<AiClient>('connect_integration', { target, scopes, projects, memory, skillMenu }),
   setMemoryRule: (target: IntegrationTarget, on: boolean) => call<void>('set_memory_rule', { target, on }),
+  setSkillMenu: (target: IntegrationTarget, on: boolean) => call<void>('set_skill_menu', { target, on }),
 
   // data
   projects: () => call<ProjectSummary[]>('projects'),
@@ -592,6 +606,7 @@ export const api = {
   templates: () => call<TemplateInfo[]>('templates'),
   skills: () => call<SkillInfo[]>('skills'),
   saveSkill: (input: SkillInput) => call<SkillInfo>('save_skill', { input }),
+  setSkillOnDisk: (id: Id, on: boolean) => call<SkillInfo>('set_skill_on_disk', { id, on }),
   /** Reads only the SKILL.md files of a GitHub repo, folder or file. */
   previewSkillImport: (url: string) => call<SkillImportPreview>('preview_skill_import', { url }),
   /** New skills go into `projects`; those already here keep theirs. */

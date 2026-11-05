@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from '#lib/i18n.ts';
   import { flip } from 'svelte/animate';
-  import { BookMarked, Bot, Check, FolderGit2, Paperclip, Plus, Puzzle, Search, X } from '@lucide/svelte';
+  import { BookMarked, Bot, Check, FolderGit2, HardDrive, Paperclip, Plus, Puzzle, Search, X } from '@lucide/svelte';
   import { api, errorMessage, type SkillInfo, type TemplateInfo } from '#lib/api.ts';
   import { filesLabel, shortRevision } from '#lib/skills.ts';
   import { ws } from '#lib/workspace.svelte.ts';
@@ -95,6 +95,10 @@
               {/if}
               {#if skill.files.length}
                 <span class="flex h-5 items-center gap-1 px-1 text-[11px] text-faint" title={filesLabel(skill.files.length)}><Paperclip size={10} />{skill.files.length}</span>
+              {/if}
+              {#if skill.on_disk}
+                {@const onDisk = t('Geht direkt als Dateien in das Skill-Menü der Apps', 'Goes directly as files into the skill menu of apps')}
+                <span class="flex h-5 items-center px-1 text-faint" title={onDisk} aria-label={onDisk}><HardDrive size={10} /></span>
               {/if}
             </div>
           </button>

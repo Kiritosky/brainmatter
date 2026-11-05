@@ -59,8 +59,8 @@
 
   <p class="mt-2 text-xs leading-relaxed text-faint">
     {t(
-      'Geprüfte Vorlagen und Skills erscheinen dort ebenfalls als Befehle. Projekte und Doku-Seiten sehen KIs außerdem als Ressourcen, die sie durchstöbern können, nur für die Projekte ihrer Verbindung.',
-      'Reviewed templates and skills show up there as commands too. AI clients also see projects and documentation pages as resources to browse, only for the projects of their connection.',
+      'Geprüfte Vorlagen und Skills erscheinen dort ebenfalls als Befehle. Mit dem Skill-Menü einer Verbindung liegen sie alle auch im Skill-Ordner der App. Projekte und Doku-Seiten sehen KIs außerdem als Ressourcen, die sie durchstöbern können, nur für die Projekte ihrer Verbindung.',
+      "Reviewed templates and skills show up there as commands too. With a connection's skill menu, all of them are in the app's skill folder as well. AI clients also see projects and documentation pages as resources to browse, only for the projects of their connection.",
     )}
   </p>
 

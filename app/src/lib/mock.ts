@@ -422,7 +422,7 @@ function detail(nid: string): NodeDetail {
 }
 
 // Skills: entries of kind `skill`, their files are attachments named by their path.
-type SkillProps = { description: string; source?: SkillSource };
+type SkillProps = { description: string; source?: SkillSource; on_disk?: boolean };
 interface RepoSkill {
   path: string;
   name: string;
@@ -457,6 +457,7 @@ function skillInfo(n: Node): SkillInfo {
     projects: projectsOf(n.id).map((p) => ({ id: p.id, name: p.name })),
     reviewed: n.reviewed,
     source: props.source ?? null,
+    on_disk: props.on_disk ?? false,
     updated_at: n.updated_at,
   };
 }
@@ -548,6 +549,7 @@ const repoUrl = (address: SkillAddress) =>
 function importSkill(s: RepoSkill, into: string[]): Node {
   const source: SkillSource = { url: `https://github.com/${REPO.repo}/tree/main/${s.path}`, repo: REPO.repo, path: s.path, revision: REPO.revision, imported_at: now() };
   let n = existingSkill(s);
+  const onDisk = n ? ((n.props as SkillProps | null)?.on_disk ?? false) : true;
   if (n) {
     // Updated in place: the files are replaced, the projects stay.
     n.body = s.body;
@@ -558,7 +560,7 @@ function importSkill(s: RepoSkill, into: string[]): Node {
   } else {
     n = createNode({ title: s.name, body: s.body, kind: 'skill', projects: into });
   }
-  n.props = { description: s.description, source } satisfies SkillProps;
+  n.props = { description: s.description, source, on_disk: onDisk } satisfies SkillProps;
   for (const f of s.files) addSkillFile(n.id, f.path, f.text);
   return n;
 }
@@ -601,6 +603,7 @@ function seedSkills(bm: Project, core: Project) {
     revision: 'a41c9e27d0b5f3e8c1a6b2d4e7f9a0c3b5d8e1f2',
     imported_at: now() - 12 * DAY,
   };
+  (pdf.props as SkillProps).on_disk = true;
   const written = skill(
     t('Fehler eingrenzen', 'Narrowing down a bug'),
     t(
@@ -706,8 +709,36 @@ const MEMORY_RULE_WRITE =
   '- No secrets, and nothing that code or git already records.\n';
 const TARGET_NAMES: Record<string, string> = { claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', cursor: 'Cursor', codex: 'Codex' };
 const RULE_FILES: Record<string, string> = { claude_code: '~/.claude/CLAUDE.md', cursor: '~/.cursor/rules/brainmatter.mdc', codex: '~/.codex/AGENTS.md' };
+const SKILL_DIRS: Record<string, string> = { claude_code: '~/.claude/skills', cursor: '~/.cursor/skills', codex: '~/.agents/skills' };
 /** Clients whose own instructions hold the memory rule. */
 const rules = new Set<string>();
+/** Clients whose skill folder holds Brainmatter's commands and skills. */
+const skillMenus = new Set<string>();
+
+/** What a client finds in its skill folder: its commands, and reviewed templates and skills in its projects. */
+function skillMenu(client: AiClient): number {
+  if (!client.scopes.includes('read')) return 0;
+  const inScope = (n: Node) => {
+    const of = projectsOf(n.id).map((p) => p.id);
+    return !client.projects.length || !of.length || of.some((p) => client.projects.includes(p));
+  };
+  const names = new Set(client.scopes.includes('write') ? ['setup-project', 'update-docs', 'capture-session', 'recall', 'tidy-project'] : ['recall']);
+  for (const n of nodes.values()) {
+    if (n.deleted_at || !n.reviewed || !inScope(n)) continue;
+    if (n.kind === 'template') names.add(n.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+    if (n.kind === 'skill') names.add(`skill-${skillSlug(n.title)}`);
+  }
+  return names.size;
+}
+
+/** Where each client finds its menu. Cursor also reads the folders of Claude Code and Codex, so it writes none of its own then. */
+function skillMenuStatus(target: string): { skills_dir: string | null; skill_menu: boolean; skills: number } {
+  const own = SKILL_DIRS[target] ?? null;
+  const client = (t: string) => (skillMenus.has(t) ? clients.find((c) => c.name === TARGET_NAMES[t]) : undefined);
+  if (!own || !client(target)) return { skills_dir: own, skill_menu: false, skills: 0 };
+  const from = target === 'cursor' ? (['claude_code', 'codex'].find((t) => client(t)) ?? target) : target;
+  return { skills_dir: SKILL_DIRS[from], skill_menu: true, skills: skillMenu(client(from)!) };
+}
 
 const handlers: Record<string, (a: Args) => unknown> = {
   mcp_info: () => ({
@@ -731,6 +762,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
     const [gone] = clients.splice(clients.findIndex((c) => c.id === a.id), 1);
     const target = Object.entries(TARGET_NAMES).find(([, n]) => n === gone?.name)?.[0];
     if (target) rules.delete(target);
+    if (target) skillMenus.delete(target);
   },
   integrations: () =>
     ([['claude_code', 'Claude Code', true], ['claude_desktop', 'Claude Desktop', true], ['cursor', 'Cursor', true], ['codex', 'Codex', false]] as const).map(
@@ -743,9 +775,11 @@ const handlers: Record<string, (a: Args) => unknown> = {
         unavailable_reason: installed ? null : `${name} ist auf diesem Mac nicht installiert.`,
         rule_file: RULE_FILES[target] ?? null,
         rule: rules.has(target),
+        ...skillMenuStatus(target),
       }),
     ),
   set_memory_rule: (a) => void (a.on ? rules.add(a.target) : rules.delete(a.target)),
+  set_skill_menu: (a) => void (a.on && SKILL_DIRS[a.target] ? skillMenus.add(a.target) : skillMenus.delete(a.target)),
   connect_integration: (a) => {
     const name = TARGET_NAMES[a.target];
     const old = clients.findIndex((c) => c.name === name);
@@ -754,6 +788,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
     clients.push(client);
     if (a.memory && RULE_FILES[a.target]) rules.add(a.target);
     else rules.delete(a.target);
+    if (a.skillMenu && SKILL_DIRS[a.target]) skillMenus.add(a.target);
+    else skillMenus.delete(a.target);
     return client;
   },
   session_status: () => status(),
@@ -972,6 +1008,15 @@ const handlers: Record<string, (a: Args) => unknown> = {
     n.props = { ...(n.props as SkillProps | null), description } satisfies SkillProps;
     setSkillProjects(n.id, input.projects ?? []);
     record(`„${n.title}“ ${input.id ? 'bearbeitet' : 'erstellt'}`, [n.id]);
+    notify({ type: 'node_upserted', id: n.id });
+    return skillInfo(n);
+  },
+  set_skill_on_disk: (a) => {
+    const n = live(a.id);
+    if (n.kind !== 'skill') fail('invalid', t('Dieser Eintrag ist kein Skill.', 'This entry is not a skill.'));
+    n.props = { ...(n.props as SkillProps), on_disk: !!a.on } satisfies SkillProps;
+    n.rev++;
+    record(`Skill „${n.title}“ ${a.on ? 'als Dateien' : 'über Brainmatter'} bereitgestellt`, [n.id]);
     notify({ type: 'node_upserted', id: n.id });
     return skillInfo(n);
   },

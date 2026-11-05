@@ -659,6 +659,8 @@ try {
   await page.getByRole('radio', { name: 'Skills' }).click();
   await page.getByText('Release-Notizen schreiben', { exact: true }).waitFor();
   await page.getByText('einen Skill wählt die KI anhand seiner Beschreibung').waitFor();
+  // An imported skill goes to the apps as files; one written here does not.
+  if ((await page.getByLabel('Geht direkt als Dateien in das Skill-Menü der Apps').count()) !== 1) errors.push('the imported skill is not marked as going to disk');
   await page.waitForTimeout(350);
   await shot(page, '62-skills');
   const skillInGraph = await page.evaluate(async () => {
@@ -710,6 +712,12 @@ try {
   if (!made?.description.startsWith('Prüft vor einem Release')) errors.push('a new skill lost its description');
   if (made?.files.map((f: any) => f.filename).join() !== 'scripts/audit.sh') errors.push(`a new skill has the wrong files: ${made?.files.map((f: any) => f.filename)}`);
   if (made?.projects.map((p: any) => p.name).join() !== 'Kern') errors.push('a new skill did not go into its project');
+  if (made?.on_disk) errors.push('a skill written here goes to disk by default');
+  const asFiles = skillPanel.getByRole('radio', { name: 'Direkt als Dateien' });
+  if ((await skillPanel.getByRole('radio', { name: 'Über Brainmatter' }).getAttribute('aria-checked')) !== 'true') errors.push('a new skill does not show “Über Brainmatter”');
+  await asFiles.click();
+  await skillPanel.getByText('samt Dateien unverschlüsselt').waitFor();
+  await eventually('“Direkt als Dateien” did not stick', async () => (await skillNamed('Abhängigkeiten prüfen'))?.on_disk === true);
   await page.waitForTimeout(300);
   await shot(page, '65-skill-edit');
 
@@ -999,6 +1007,8 @@ try {
   await page.getByRole('button', { name: 'KI verbinden' }).click();
   await page.getByRole('button', { name: /Claude Desktop/ }).click();
   await page.waitForTimeout(300);
+  // Claude Desktop reads no skill folder, so it has no skill menu.
+  if (await page.getByText('Befehle und Skills als Skills').count()) errors.push('Claude Desktop offers a skill menu');
   await shot(page, '14-ai-new');
   await page.getByRole('button', { name: 'Automatisch einrichten' }).click();
   await page.getByText('Claude Desktop ist verbunden').waitFor();
@@ -1012,8 +1022,14 @@ try {
   await page.getByRole('button', { name: 'KI verbinden' }).click();
   await page.getByRole('button', { name: /Claude Code/ }).click();
   await page.getByText('Von selbst nachschlagen und sichern').waitFor();
+  await page.getByText('Legt sie nach ~/.claude/skills').waitFor();
+  if ((await page.getByRole('switch', { name: 'Im Skill-Menü' }).getAttribute('aria-checked')) !== 'true') errors.push('the skill menu is not on by default');
+  await page.getByRole('button', { name: 'Automatisch einrichten' }).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
+  await shot(page, '14b-ai-skill-menu');
   await page.getByRole('button', { name: 'Automatisch einrichten' }).click();
   await page.getByText('Die Regel steht in ~/.claude/CLAUDE.md.').waitFor();
+  await page.getByText(/\d+ Befehle und Skills in ~\/\.claude\/skills/).waitFor();
   await page.getByRole('button', { name: 'Fertig' }).click();
   const memorySwitch = page.getByRole('switch', { name: 'Claude Code nutzt Brainmatter von selbst' });
   await memorySwitch.waitFor();
@@ -1024,6 +1040,17 @@ try {
   await page.waitForFunction(
     () => document.querySelector('[aria-label="Claude Code nutzt Brainmatter von selbst"]')?.getAttribute('aria-checked') === 'false',
   );
+  // The skill menu: on for Claude Code, with what is in its folder; none for Claude Desktop.
+  const menuSwitch = page.getByRole('switch', { name: 'Befehle und Skills im Skill-Menü von Claude Code' });
+  if ((await menuSwitch.getAttribute('aria-checked')) !== 'true') errors.push('skill menu not shown as on');
+  if (await page.getByRole('switch', { name: 'Befehle und Skills im Skill-Menü von Claude Desktop' }).count()) errors.push('Claude Desktop has a skill menu switch');
+  await page.getByText('Für Apps, die Skills zeigen, MCP-Befehle aber nicht.').first().waitFor();
+  await page.waitForTimeout(250);
+  await shot(page, '15c-ai-skill-menu');
+  await menuSwitch.click();
+  await page.getByText(/Befehle und Skills in ~\/\.claude\/skills/).waitFor({ state: 'detached' });
+  await menuSwitch.click();
+  await page.getByText(/Befehle und Skills in ~\/\.claude\/skills/).waitFor();
   await page.getByRole('button', { name: 'KI verbinden' }).click();
   await page.getByRole('button', { name: /Codex/ }).click();
   await page.waitForTimeout(250);
@@ -1477,13 +1504,20 @@ try {
     await skill.getByLabel('Close').click();
     await page.getByRole('button', { name: 'New skill' }).click();
     await page.getByRole('complementary', { name: 'New skill' }).getByText('An AI picks the skill by this text.').waitFor();
+    await page.getByRole('radio', { name: 'Directly as files' }).waitFor();
     await german('new skill');
     await page.getByRole('button', { name: 'Cancel' }).click();
+    // With a skill menu on, the import says where new skills land.
+    await page.evaluate(async () => {
+      const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+      await invoke('connect_integration', { target: 'claude_code', scopes: ['read', 'write'], projects: [], memory: false, skillMenu: true });
+    });
     await page.getByRole('button', { name: 'Import', exact: true }).click();
     const importer = page.getByRole('dialog', { name: 'Import skills from GitHub' });
     await importer.getByLabel('GitHub address').fill('example/agent-skills');
     await importer.getByRole('button', { name: 'Load preview' }).click();
     await importer.getByText('updates “pdf-forms”').waitFor();
+    await importer.getByText('New skills land with their files directly in the skill menu of Claude Code.').waitFor();
     await page.waitForTimeout(300);
     await german('skill import');
     await shot(page, '91-english-skill-import');

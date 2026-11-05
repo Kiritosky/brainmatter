@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { num, plural, t } from '#lib/i18n.ts';
+  import { locale, num, plural, t } from '#lib/i18n.ts';
   import { ArrowLeft, Check, ChevronRight, CircleAlert, CircleCheck, FolderGit2, LoaderCircle, X } from '@lucide/svelte';
   import { api, errorMessage, type Id, type SkillImportPreview, type SkillInfo } from '#lib/api.ts';
   import { formatSize } from '#lib/attachments.ts';
@@ -23,6 +23,8 @@
   let result = $state.raw<{ skills: SkillInfo[]; updated: number }>({ skills: [], updated: 0 });
   /** Names of the skills here, for those an import would update. */
   let existingNames = $state.raw(new Map<Id, string>());
+  /** Connected apps whose skill menu new skills land in as files. */
+  let menuApps = $state.raw<string[]>([]);
   /** Answers to an address typed over since are dropped. */
   let asked = 0;
 
@@ -38,9 +40,10 @@
     loading = true;
     error = null;
     try {
-      const [found, skills] = await Promise.all([api.previewSkillImport(url.trim()), api.skills()]);
+      const [found, skills, integrations] = await Promise.all([api.previewSkillImport(url.trim()), api.skills(), api.integrations().catch(() => [])]);
       if (mine !== asked) return;
       existingNames = new Map(skills.map((s) => [s.node.id, s.node.title]));
+      menuApps = integrations.filter((i) => i.skill_menu).map((i) => i.name);
       preview = found;
       picked = new Set(found.skills.map((s) => s.path));
       step = 'choose';
@@ -170,6 +173,13 @@
             </div>
           {/each}
         </div>
+
+        {#if anyNew && menuApps.length}
+          {@const apps = new Intl.ListFormat(locale, { type: 'conjunction' }).format(menuApps)}
+          <p class="mt-3 text-xs leading-relaxed text-faint" in:pop={{ duration: 140, y: -3 }}>
+            {t(`Neue Skills landen mit ihren Dateien direkt im Skill-Menü von ${apps}. Das lässt sich bei jedem Skill ändern.`, `New skills land with their files directly in the skill menu of ${apps}. You can change that for each skill.`)}
+          </p>
+        {/if}
 
         {#if anyNew}
           <div class="mt-5" in:pop={{ duration: 160, y: 4 }}>
