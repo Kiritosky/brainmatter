@@ -42,6 +42,7 @@ The plaintext `vault.header` holds the KDF parameters and the wrapped keys, neve
 - What an AI writes is attributed to it and marked as unreviewed. Deleting is always a soft delete, and every change set can be undone.
 - A file link an AI creates stays unreadable until the user approves it. Clients can read only linked text files.
 - Only the user can mark entries as reviewed, erase them for good, manage backups or change settings.
+- The skill menu writes only into folders named with Brainmatter's prefix whose `SKILL.md` carries its mark, so the user's own skills are never touched. Files are replaced atomically and never written through a symbolic link, paths with `..` are refused, and a skill's `.claude-plugin` folder is left out, so a skill cannot arrive as a plugin.
 - Logs never contain entry content.
 
 ## Touch ID without an Apple Developer account
@@ -55,5 +56,6 @@ macOS binds such Keychain items to the binary, so after every update the item ca
 - Malware running as your user while the vault is unlocked.
 - A forgotten password together with a lost recovery key. Nobody can recover the data then, by design.
 - A Markdown export, which is plain text. The app says so before writing one.
+- The skill menu, which writes into the skill folders of connected apps as plain files: the names and descriptions of commands, templates and skills, and skills set to go directly as files in full. Any program that reads those folders sees them.
 - Losing the Mac, unless backups are also copied to a second place (Settings → Backups).
 - An AI client you connected doing what its token allows. Limit tokens to what each client needs.

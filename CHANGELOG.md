@@ -2,6 +2,16 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
+## 1.3.0
+
+Deine Befehle und Skills stehen jetzt auch im Skill-Menü deiner KI-Apps, und die Gedächtnis-Regel bleibt von selbst aktuell.
+
+### Neu
+- **Im Skill-Menü:** Für Claude Code, Codex und Cursor legt Brainmatter auf Wunsch seine Befehle, deine geprüften Vorlagen und deine Skills in den Skill-Ordner der App, so weit die Verbindung sie sehen darf: `~/.claude/skills`, `~/.agents/skills` oder `~/.cursor/skills`. So stehen sie auch in Apps zur Wahl, die Skills zeigen, MCP-Befehle aber nicht. Brainmatter hält den Ordner bei jeder Änderung auf Stand und rührt nur an, was es selbst dort abgelegt hat. Neue Verbindungen haben es eingeschaltet, bestehende bekommen einen Schalter unter Einstellungen → KI-Verbindungen.
+- **Direkt als Dateien oder über Brainmatter:** Bei jedem Skill legst du fest, wie er in den Skill-Ordner kommt: ganz, mit allen Dateien, oder als kurzer Verweis, der ihn erst beim Laden aus dem Tresor holt. Skills von GitHub gehen als Dateien, eigene über Brainmatter. Im Ordner liegt beides unverschlüsselt, beim Verweis nur Name und Beschreibung.
+- **Befehle über `get_template`:** `get_template` liefert auch die eingebauten Befehle ausgefüllt, so wie die Befehlsliste sie zeigt.
+- **Die Gedächtnis-Regel bleibt aktuell:** Beim Start und beim Entsperren bekommt eine Regel, die Brainmatter früher geschrieben hat, den aktuellen Wortlaut, an ihrer Stelle und in ihrer Fassung zum Lesen oder Schreiben.
+
 ## 1.2.0 · 2026-11-04
 
 Deine KIs greifen jetzt von selbst zu Brainmatter, und ein Skill-Tresor hält die Anleitungen, mit denen sie arbeiten, an einem Ort.
