@@ -229,6 +229,9 @@ pub struct SkillInfo {
     pub reviewed: bool,
     /// Where it was imported from, for updating it from there.
     pub source: Option<SkillSource>,
+    /// Written into the skill folders of connected tools as it is, files and all.
+    /// Otherwise they get a short pointer that loads it from the vault.
+    pub on_disk: bool,
     pub updated_at: i64,
 }
 

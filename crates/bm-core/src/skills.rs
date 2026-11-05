@@ -32,7 +32,12 @@ pub struct SkillText {
     pub title: Option<String>,
     /// `metadata.projects`, one name per line, also from the export.
     pub projects: Vec<String>,
+    /// `metadata.managed-by`: who wrote the folder and may change it; see [`render_managed`].
+    pub managed_by: Option<String>,
 }
+
+/// The `metadata` key that marks a folder as written by an app.
+const MANAGED_BY: &str = "managed-by";
 
 pub fn parse(text: &str) -> SkillText {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text).replace("\r\n", "\n");
@@ -51,6 +56,7 @@ pub fn parse(text: &str) -> SkillText {
                 for (key, value, _) in fields(&inner) {
                     match key.as_str() {
                         "title" => out.title = Some(value).filter(|v| !v.is_empty()),
+                        MANAGED_BY => out.managed_by = Some(value).filter(|v| !v.is_empty()),
                         "projects" => {
                             out.projects = value
                                 .lines()
@@ -69,8 +75,7 @@ pub fn parse(text: &str) -> SkillText {
     out
 }
 
-/// A `SKILL.md` that other tools read as well. Values are written as JSON strings,
-/// which YAML reads the same way and which take care of all quoting.
+/// A `SKILL.md` that other tools read as well. `name` must follow the format already.
 pub fn render(
     name: &str,
     description: &str,
@@ -78,15 +83,58 @@ pub fn render(
     projects: &[String],
     body: &str,
 ) -> String {
-    let quote = |s: &str| serde_json::to_string(s).expect("a string serializes");
-    let mut out = format!("---\nname: {name}\ndescription: {}\n", quote(description.trim()));
-    out += &format!("metadata:\n  title: {}\n", quote(title));
+    let mut metadata = vec![("title", title.to_string())];
     if !projects.is_empty() {
-        out += &format!("  projects: {}\n", quote(&projects.join("\n")));
+        metadata.push(("projects", projects.join("\n")));
+    }
+    with_front_matter(name, description, &metadata, body)
+}
+
+/// A `SKILL.md` for a folder that `owner` keeps up to date in another app's skill
+/// folder. The mark tells it which folders are its own to change or remove.
+pub fn render_managed(name: &str, description: &str, owner: &str, body: &str) -> String {
+    with_front_matter(name, description, &[(MANAGED_BY, owner.to_string())], body)
+}
+
+fn with_front_matter(
+    name: &str,
+    description: &str,
+    metadata: &[(&str, String)],
+    body: &str,
+) -> String {
+    let mut out = format!("---\nname: {name}\ndescription: {}\n", quote(description.trim()));
+    out += "metadata:\n";
+    for (key, value) in metadata {
+        out += &format!("  {key}: {}\n", quote(value));
     }
     out += "---\n\n";
     out += body.trim();
     out.push('\n');
+    out
+}
+
+/// A double-quoted YAML scalar on one line. Only printable characters stay as they
+/// are; YAML forbids the others, and line separators would end the line.
+fn quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            ' '..='~' => out.push(c),
+            '\u{a0}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}'
+                if !matches!(c, '\u{2028}' | '\u{2029}' | '\u{feff}') =>
+            {
+                out.push(c)
+            }
+            // Never above U+FFFF here, so four digits are enough.
+            c => out.push_str(&format!("\\u{:04x}", c as u32)),
+        }
+    }
+    out.push('"');
     out
 }
 
@@ -574,6 +622,35 @@ mod tests {
         assert_eq!(s.projects, projects);
         assert_eq!(s.body, "# Schritte");
         assert!(!render("x", "d", "x", &[], "b").contains("projects"));
+    }
+
+    #[test]
+    fn hostile_descriptions_stay_one_quoted_line() {
+        let hostile = [
+            "key: value: more",
+            "\"quoted\" and 'single' and \\back\\slash",
+            "line one\nline two\r\nthree",
+            "---\nname: other\n---",
+            "# not a comment",
+            "- not a list",
+            "{flow: map} [and, list] & *alias !tag | > %",
+            "control \u{0}\u{7}\u{7f}\u{85}\u{9f} and separators \u{2028}\u{2029}\u{feff}",
+            "Prüft „Code“ 😀",
+        ];
+        for description in hostile {
+            let text = render_managed("brainmatter-x", description, "brainmatter", "Body");
+            let front = text.split("\n---\n").next().unwrap();
+            assert_eq!(front.lines().count(), 5, "{text}");
+            let line = front.lines().find(|l| l.starts_with("description: ")).unwrap();
+            assert!(line.ends_with('"') && line.chars().all(|c| !c.is_control()), "{line}");
+
+            let s = parse(&text);
+            assert_eq!(s.name.as_deref(), Some("brainmatter-x"));
+            assert_eq!(s.description, description.trim(), "{text}");
+            assert_eq!(s.managed_by.as_deref(), Some("brainmatter"));
+            assert_eq!(s.body, "Body");
+        }
+        assert_eq!(parse(&render("x", "d", "T", &[], "b")).managed_by, None);
     }
 
     #[test]

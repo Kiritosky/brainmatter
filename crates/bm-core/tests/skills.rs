@@ -264,6 +264,43 @@ fn an_import_updates_in_place_and_goes_with_one_undo() {
 }
 
 #[test]
+fn imports_go_on_disk_and_the_users_choice_stays() {
+    let f = setup();
+    let own = f.skill("Eigener", "Selbst geschrieben.", &[]);
+    assert!(!own.on_disk, "the user's own skills stay in the vault");
+
+    let first = vec![fetched("pdf", "PDFs", &[("a.py", "a")], source("o/r", "pdf", "1"))];
+    let pdf = f.e.import_skills(&f.user, first, &[]).unwrap().remove(0);
+    assert!(pdf.on_disk, "imported from a public repo");
+
+    let ai = Ctx::new(f.e.ensure_actor(ActorKind::Ai, "KI").unwrap().id);
+    let patch = NodePatch { body: Some(BodyEdit::Append("KI".into())), ..Default::default() };
+    f.e.update_node(&ai, &pdf.node.id, patch).unwrap();
+    let off = f.e.set_skill_on_disk(&f.user, &pdf.node.id, false).unwrap();
+    assert!(!off.on_disk);
+    assert!(!off.reviewed, "choosing how it is provided is no review");
+
+    let edit = SkillInput {
+        id: Some(pdf.node.id.clone()),
+        title: off.node.title.clone(),
+        description: "PDFs, bearbeitet".into(),
+        body: off.body.clone(),
+        projects: vec![],
+    };
+    assert!(!f.e.save_skill(&f.user, edit).unwrap().on_disk);
+    let again = vec![fetched("pdf", "PDFs, neu", &[], source("o/r", "pdf", "2"))];
+    assert!(!f.e.import_skills(&f.user, again, &[]).unwrap()[0].on_disk, "an update keeps it");
+
+    f.e.set_skill_on_disk(&f.user, &own.node.id, true).unwrap();
+    assert!(f.e.skill(&own.node.id).unwrap().on_disk);
+    f.undo_last();
+    assert!(!f.e.skill(&own.node.id).unwrap().on_disk);
+    let note = f.e.create_node(&f.user, NewNode { title: "Notiz".into(), ..Default::default() });
+    let not_a_skill = f.e.set_skill_on_disk(&f.user, &note.unwrap().id, true);
+    assert!(matches!(not_a_skill, Err(CoreError::Invalid(_))));
+}
+
+#[test]
 fn skills_go_through_an_export_and_come_back() {
     let from = setup();
     let work = from.project("Arbeit", None);

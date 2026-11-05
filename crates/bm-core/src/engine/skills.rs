@@ -15,6 +15,9 @@ use crate::{
     templates::slug,
 };
 
+/// The prop behind [`SkillInfo::on_disk`].
+const ON_DISK: &str = "on_disk";
+
 /// A skill file whose content is in the blob store already.
 pub(super) struct StoredFile {
     pub path: String,
@@ -39,11 +42,16 @@ fn source_of(node: &Node) -> Option<SkillSource> {
     serde_json::from_value(props_of(node).get("source")?.clone()).ok()
 }
 
+fn on_disk_of(node: &Node) -> bool {
+    props_of(node).get(ON_DISK).and_then(Value::as_bool).unwrap_or(false)
+}
+
 fn info(conn: &Connection, node: Node) -> Result<SkillInfo> {
     Ok(SkillInfo {
         slug: slug(&node.title),
         description: description_of(&node),
         source: source_of(&node),
+        on_disk: on_disk_of(&node),
         files: attachments::of_node(conn, &node.id)?,
         projects: rows::projects_of(conn, &node.id)?,
         reviewed: node.reviewed,
@@ -215,6 +223,25 @@ impl Engine {
         self.skill(&id)
     }
 
+    /// Whether connected tools get the skill's own files or a pointer to the vault; see
+    /// [`SkillInfo::on_disk`]. Leaves the review as it is: this says nothing about the content.
+    pub fn set_skill_on_disk(&self, ctx: &Ctx, id: &NodeId, on: bool) -> Result<SkillInfo> {
+        let before = self.read(|c| live_skill(c, id))?;
+        let mut props = props_of(&before);
+        props.insert(ON_DISK.into(), Value::Bool(on));
+        let patch = NodePatch {
+            props: Some(Value::Object(props)),
+            reviewed: Some(before.reviewed),
+            ..Default::default()
+        };
+        let summary = match on {
+            true => format!("Skill „{}“ als Dateien bereitgestellt", before.title),
+            false => format!("Skill „{}“ über Brainmatter bereitgestellt", before.title),
+        };
+        self.write(ctx, summary, |w| nodes::update(w, id, patch))?;
+        self.skill(id)
+    }
+
     /// The skill an import from `repo` at `path` would update, if any; see
     /// [`Self::import_skills`].
     pub fn skill_to_update(&self, repo: &str, path: &str, name: &str) -> Result<Option<NodeId>> {
@@ -270,7 +297,12 @@ impl Engine {
                         id
                     }
                     None => {
-                        let props = json!({ "description": description, "source": skill.source });
+                        // Public on GitHub already, so by default the clients get it as it is.
+                        let props = json!({
+                            "description": description,
+                            "source": skill.source,
+                            ON_DISK: true,
+                        });
                         let node = NewNode {
                             title: skill.title,
                             body: skill.body,
