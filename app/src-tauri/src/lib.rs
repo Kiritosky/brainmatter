@@ -10,6 +10,7 @@ pub mod integrations;
 mod perf;
 pub mod session;
 mod skill_import;
+mod skill_menu;
 mod tray;
 mod updates;
 
@@ -23,8 +24,10 @@ use std::{
 
 use bm_core::{Engine, semantic::Embedder, vault::KdfParams};
 use bm_mcp::{Client, ClientRegistry, Hub};
+use integrations::Target;
 use parking_lot::Mutex;
 use session::{Emit, Session, Settings, Theme};
+use skill_menu::SkillMenus;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -70,6 +73,46 @@ fn show_main(app: &AppHandle) {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
+    }
+}
+
+/// Keeps the skill folders of connected tools in step with the vault. Waits a
+/// moment after a change, so a burst of them makes one sync. `fresh` comes with
+/// the start of the app and every unlock: then memory rules written by an older
+/// version get the current wording too.
+async fn keep_skill_menus(
+    mut woken: tokio::sync::mpsc::UnboundedReceiver<bool>,
+    session: Arc<Session>,
+    registry: Arc<ClientRegistry>,
+    status: Arc<McpStatus>,
+    menus: Arc<SkillMenus>,
+) {
+    while let Some(mut fresh) = woken.recv().await {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        while let Ok(more) = woken.try_recv() {
+            fresh |= more;
+        }
+        let (session, registry, status, menus) =
+            (session.clone(), registry.clone(), status.clone(), menus.clone());
+        let synced = tauri::async_runtime::spawn_blocking(move || {
+            let Ok(local) = commands::local_integrations(&status) else { return };
+            if fresh {
+                for target in Target::ALL {
+                    match local.refresh_rule(target) {
+                        Ok(true) => tracing::info!("memory rule for {} updated", target.name()),
+                        Ok(false) => {}
+                        Err(e) => tracing::warn!("memory rule for {}: {e}", target.name()),
+                    }
+                }
+            }
+            // Locked, the folders stay as they are.
+            if let Some(engine) = session.open_engine() {
+                menus.sync(&engine, &registry.list(), &local, fresh);
+            }
+        });
+        if let Err(e) = synced.await {
+            tracing::error!("skill menu sync failed: {e}");
+        }
     }
 }
 
@@ -199,15 +242,34 @@ pub fn run() {
             perf::attach(app.handle());
             tracing::info!("vault directory: {}", dir.display());
             let handle = app.handle().clone();
+            let (wake, woken) = tokio::sync::mpsc::unbounded_channel();
+            let _ = wake.send(true);
             let emit: Emit = Arc::new(move |name, payload| {
+                let changed = match name {
+                    "bm:event" => payload["type"] == "change_set_committed",
+                    "bm:resync" => true,
+                    _ => false,
+                };
+                if changed || name == "bm:session" && payload["state"] == "unlocked" {
+                    let _ = wake.send(!changed);
+                }
                 let _ = handle.emit(name, payload);
             });
             let registry = Arc::new(ClientRegistry::open(&dir.join("clients.json")));
+            let menus = Arc::new(SkillMenus::open(dir.join("skill-menus.json")));
             let session = Arc::new(Session::new(dir, emit, KdfParams::recommended()));
             let mcp_status = Arc::new(McpStatus { addr: MCP_ADDR, error: Mutex::new(None) });
             app.manage(session.clone());
             app.manage(registry.clone());
             app.manage(mcp_status.clone());
+            app.manage(menus.clone());
+            tauri::async_runtime::spawn(keep_skill_menus(
+                woken,
+                session.clone(),
+                registry.clone(),
+                mcp_status.clone(),
+                menus,
+            ));
             app.manage(CaptureState::default());
             app.manage(commands::ImportFolder::default());
             apply_settings(app.handle(), &session.settings());
@@ -307,6 +369,7 @@ pub fn run() {
             commands::templates,
             commands::skills,
             commands::save_skill,
+            commands::set_skill_on_disk,
             commands::preview_skill_import,
             commands::import_skills,
             commands::file_links,
@@ -352,6 +415,7 @@ pub fn run() {
             commands::integrations,
             commands::connect_integration,
             commands::set_memory_rule,
+            commands::set_skill_menu,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Brainmatter");

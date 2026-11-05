@@ -25,7 +25,7 @@ pub const SERVER_NAME: &str =
 const BACKUP_SUFFIX: &str = "brainmatter-backup";
 const CLI_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Target {
     ClaudeCode,
@@ -126,6 +126,13 @@ pub struct Status {
     pub rule_file: Option<String>,
     /// The memory rule is in that file.
     pub rule: bool,
+    /// Where it finds Brainmatter's commands and skills, with `~`. `None` when it
+    /// reads no skill folder.
+    pub skills_dir: Option<String>,
+    /// Brainmatter keeps that folder in step with what the tool may see.
+    pub skill_menu: bool,
+    /// How many commands and skills of Brainmatter are there.
+    pub skills: usize,
 }
 
 impl Integrations {
@@ -167,6 +174,9 @@ impl Integrations {
             unavailable_reason,
             rule_file: self.rule_file(target).map(|p| self.tilde(&p)),
             rule: self.has_rule(target),
+            skills_dir: self.skills_dir(target).map(|p| self.tilde(&p)),
+            skill_menu: false,
+            skills: 0,
         }
     }
 
@@ -315,8 +325,59 @@ impl Integrations {
         }
     }
 
+    /// Brings a rule an older version wrote to the current wording, where it stands,
+    /// and keeps it read-only if it was. Never adds one. Returns whether it changed.
+    pub fn refresh_rule(&self, target: Target) -> Result<bool, SetupError> {
+        let Some(path) = self.rule_file(target) else { return Ok(false) };
+        let old = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(SetupError::Io(path, e)),
+        };
+        let new = if target == Target::Cursor {
+            cursor_rule(&rule_text(old.contains(WRITES)))
+        } else {
+            let Some((a, b)) = rule_block(&old) else { return Ok(false) };
+            let text = rule_text(old[a..b].contains(WRITES));
+            let block = format!("{}\n{text}{}", rule_marker("start"), rule_marker("end"));
+            format!("{}{block}{}", &old[..a], &old[b..])
+        };
+        if new == old {
+            return Ok(false);
+        }
+        write_config(&path, new.as_bytes()).map(|()| true)
+    }
+
+    // -------------------------------------------------------- Skill menu ---
+
+    /// Where `target` looks for skills of its own. Claude Desktop keeps them in the
+    /// account. Codex once used `~/.codex/skills`; Cursor reads that as well, so a
+    /// copy there would show twice.
+    pub fn skills_dir(&self, target: Target) -> Option<PathBuf> {
+        match target {
+            Target::ClaudeCode => Some(match &self.claude_config_dir {
+                Some(dir) => dir.join("skills"),
+                None => self.home.join(".claude/skills"),
+            }),
+            Target::Codex => Some(self.home.join(".agents/skills")),
+            Target::Cursor => Some(self.home.join(".cursor/skills")),
+            Target::ClaudeDesktop => None,
+        }
+    }
+
+    /// The skill folders of other tools that `target` reads too.
+    pub fn also_reads(&self, target: Target) -> Vec<PathBuf> {
+        match target {
+            Target::Cursor => [".claude/skills", ".agents/skills", ".codex/skills"]
+                .into_iter()
+                .map(|dir| self.home.join(dir))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// `~/…` for paths in the home folder, as people know them.
-    fn tilde(&self, path: &Path) -> String {
+    pub fn tilde(&self, path: &Path) -> String {
         match path.strip_prefix(&self.home) {
             Ok(rest) => format!("~/{}", rest.display()),
             Err(_) => path.display().to_string(),
@@ -523,19 +584,26 @@ pub fn rule_text(write: bool) -> String {
     text
 }
 
+/// Only the rule for tools that may write mentions this.
+const WRITES: &str = "`capture`";
+
 /// Debug builds mark their own block, like their own server name.
 fn rule_marker(edge: &str) -> String {
     format!("<!-- {SERVER_NAME}:{edge} -->")
 }
 
+/// Where our block starts and ends, markers included. `None` also when someone cut
+/// it in half: better leave it than guess.
+fn rule_block(text: &str) -> Option<(usize, usize)> {
+    let (start, end) = (rule_marker("start"), rule_marker("end"));
+    let a = text.find(&start)?;
+    let b = text[a..].find(&end).map(|i| a + i + end.len())?;
+    Some((a, b))
+}
+
 /// The text without our block and the blank line it was given.
 fn without_rule(text: &str) -> String {
-    let (start, end) = (rule_marker("start"), rule_marker("end"));
-    let Some(a) = text.find(&start) else { return text.to_owned() };
-    let Some(b) = text[a..].find(&end).map(|i| a + i + end.len()) else {
-        // Someone cut the block in half; better leave it than guess.
-        return text.to_owned();
-    };
+    let Some((a, b)) = rule_block(text) else { return text.to_owned() };
     let before = text[..a].trim_end();
     let after = text[b..].trim_start_matches(['\r', '\n']);
     match (before.is_empty(), after.is_empty()) {
@@ -833,6 +901,66 @@ mod tests {
         assert!(i.rule_file(Target::Codex).unwrap().ends_with(".codex/AGENTS.md"));
         write(&i.home.join(".codex/AGENTS.override.md"), "Be brief.\n");
         assert!(i.rule_file(Target::Codex).unwrap().ends_with(".codex/AGENTS.override.md"));
+    }
+
+    #[test]
+    fn an_old_rule_gets_the_new_wording_where_it_stands() {
+        let (_d, i) = setup();
+        assert!(rule_text(true).contains(WRITES) && !rule_text(false).contains(WRITES));
+        let block = |text: &str| format!("{}\n{text}{}", rule_marker("start"), rule_marker("end"));
+        let old_write = "## Brainmatter\n\nOld wording. Use `capture` for decisions.\n";
+        let old_read = "## Brainmatter\n\nOld wording, just look things up.\n";
+
+        let claude = i.rule_file(Target::ClaudeCode).unwrap();
+        write(&claude, &format!("# Mine\n\n{}\n\n## After\n\nStays below.\n", block(old_write)));
+        let codex = i.rule_file(Target::Codex).unwrap();
+        write(&codex, &format!("{}\n", block(old_read)));
+        let cursor = i.rule_file(Target::Cursor).unwrap();
+        write(&cursor, &cursor_rule(old_write));
+
+        for target in [Target::ClaudeCode, Target::Codex, Target::Cursor] {
+            assert!(i.refresh_rule(target).unwrap(), "{target:?}");
+            assert!(!i.refresh_rule(target).unwrap(), "{target:?} is current now");
+        }
+        let text = fs::read_to_string(&claude).unwrap();
+        let expected =
+            format!("# Mine\n\n{}\n\n## After\n\nStays below.\n", block(&rule_text(true)));
+        assert_eq!(text, expected, "in place, the rest untouched");
+        assert_eq!(fs::read_to_string(&codex).unwrap(), format!("{}\n", block(&rule_text(false))));
+        assert_eq!(fs::read_to_string(&cursor).unwrap(), cursor_rule(&rule_text(true)));
+
+        // No rule, no new one; and half a block stays as it is.
+        let (_other_dir, other) = setup();
+        write(&other.rule_file(Target::ClaudeCode).unwrap(), "# Mine\n");
+        let half = format!("Mine\n\n{}\nhalf a rule\n", rule_marker("start"));
+        write(&other.rule_file(Target::Codex).unwrap(), &half);
+        for target in Target::ALL {
+            assert!(!other.refresh_rule(target).unwrap(), "{target:?}");
+        }
+        assert!(!other.rule_file(Target::Cursor).unwrap().exists());
+        assert_eq!(fs::read_to_string(other.rule_file(Target::Codex).unwrap()).unwrap(), half);
+        assert_eq!(
+            fs::read_to_string(other.rule_file(Target::ClaudeCode).unwrap()).unwrap(),
+            "# Mine\n"
+        );
+    }
+
+    #[test]
+    fn skill_folders_are_where_each_tool_reads_them() {
+        let (d, mut i) = setup();
+        let dir = |t| i.skills_dir(t).map(|p| i.tilde(&p));
+        assert_eq!(dir(Target::ClaudeCode).as_deref(), Some("~/.claude/skills"));
+        assert_eq!(dir(Target::Codex).as_deref(), Some("~/.agents/skills"));
+        assert_eq!(dir(Target::Cursor).as_deref(), Some("~/.cursor/skills"));
+        assert_eq!(dir(Target::ClaudeDesktop), None);
+        assert_eq!(i.status(Target::ClaudeDesktop).skills_dir, None);
+        let cursor = i.also_reads(Target::Cursor);
+        assert!(cursor.contains(&i.skills_dir(Target::ClaudeCode).unwrap()));
+        assert!(cursor.contains(&i.skills_dir(Target::Codex).unwrap()));
+        assert!(i.also_reads(Target::ClaudeCode).is_empty());
+
+        i.claude_config_dir = Some(d.path().join("config"));
+        assert_eq!(i.skills_dir(Target::ClaudeCode), Some(d.path().join("config/skills")));
     }
 
     #[test]

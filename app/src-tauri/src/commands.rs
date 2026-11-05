@@ -22,6 +22,7 @@ use crate::{
     integrations::{self as setup, Integrations, Target},
     session::{BackupStatus, ModelStatus, Session, Settings, Status},
     skill_import::{self, SkillImportPreview},
+    skill_menu::SkillMenus,
     updates::AvailableUpdate,
 };
 
@@ -692,6 +693,14 @@ pub fn save_skill(session: S<'_>, input: SkillInput) -> ApiResult<SkillInfo> {
     Ok(engine.save_skill(&ctx, input)?)
 }
 
+/// Whether the skill goes into the skill folders of connected tools as it is, or
+/// only as a pointer that loads it from the vault.
+#[tauri::command(async)]
+pub fn set_skill_on_disk(session: S<'_>, id: NodeId, on: bool) -> ApiResult<SkillInfo> {
+    let (engine, ctx) = session.engine()?;
+    Ok(engine.set_skill_on_disk(&ctx, &id, on)?)
+}
+
 #[tauri::command]
 pub async fn preview_skill_import(session: S<'_>, url: String) -> ApiResult<SkillImportPreview> {
     // A locked vault could not tell which skills exist; no need to ask GitHub then.
@@ -940,7 +949,7 @@ fn bridge_path() -> std::path::PathBuf {
         .unwrap_or_default()
 }
 
-fn local_integrations(status: &McpStatus) -> ApiResult<Integrations> {
+pub(crate) fn local_integrations(status: &McpStatus) -> ApiResult<Integrations> {
     let home = std::env::var_os("HOME").ok_or_else(|| ApiError::internal("HOME is not set"))?;
     Ok(Integrations {
         home: home.into(),
@@ -990,26 +999,46 @@ pub fn mcp_info(
 #[tauri::command(async)]
 pub fn integrations(
     session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
     status: State<'_, Arc<McpStatus>>,
+    menus: State<'_, Arc<SkillMenus>>,
 ) -> ApiResult<Vec<setup::Status>> {
     require_unlocked(&session)?;
     let local = local_integrations(&status)?;
-    Ok(Target::ALL.into_iter().map(|t| local.status(t)).collect())
+    let mut all: Vec<setup::Status> = Target::ALL.into_iter().map(|t| local.status(t)).collect();
+    menus.annotate(&mut all, &registry.list(), &local);
+    Ok(all)
+}
+
+/// Brings the skill folders in line right away, so the settings show the result.
+fn sync_skill_menus(
+    session: &Session,
+    registry: &ClientRegistry,
+    local: &Integrations,
+    menus: &SkillMenus,
+) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    menus.sync(&engine, &registry.list(), local, false);
+    Ok(())
 }
 
 /// Sets up an installed AI tool in one step. The token goes straight into its
 /// configuration and is never shown. An existing connection of the same tool
 /// keeps working until the new one is in place. With `memory`, the tool's own
-/// instructions also tell it to use Brainmatter unasked.
+/// instructions also tell it to use Brainmatter unasked; with `skill_menu`, its
+/// skill folder holds Brainmatter's commands and skills.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(async)]
 pub fn connect_integration(
     session: S<'_>,
     registry: State<'_, Arc<ClientRegistry>>,
     status: State<'_, Arc<McpStatus>>,
+    menus: State<'_, Arc<SkillMenus>>,
     target: Target,
     scopes: Vec<Scope>,
     projects: Vec<ProjectId>,
     memory: bool,
+    skill_menu: bool,
 ) -> ApiResult<Client> {
     require_unlocked(&session)?;
     let local = local_integrations(&status)?;
@@ -1034,7 +1063,29 @@ pub fn connect_integration(
     if let Err(e) = local.set_rule(target, rule.as_deref()) {
         tracing::warn!("memory rule for {name}: {e}");
     }
+    let skill_menu = skill_menu && local.skills_dir(target).is_some();
+    match menus.set(target, skill_menu) {
+        Ok(()) => sync_skill_menus(&session, &registry, &local, &menus)?,
+        Err(e) => tracing::warn!("skill menu for {name}: {}", e.kind()),
+    }
     Ok(Client { name: name.to_string(), ..client })
+}
+
+/// Puts Brainmatter's commands and skills into a connected tool's skill folder,
+/// or takes them out again.
+#[tauri::command(async)]
+pub fn set_skill_menu(
+    session: S<'_>,
+    registry: State<'_, Arc<ClientRegistry>>,
+    status: State<'_, Arc<McpStatus>>,
+    menus: State<'_, Arc<SkillMenus>>,
+    target: Target,
+    on: bool,
+) -> ApiResult<()> {
+    require_unlocked(&session)?;
+    let local = local_integrations(&status)?;
+    menus.set(target, on && local.skills_dir(target).is_some()).map_err(ApiError::internal)?;
+    sync_skill_menus(&session, &registry, &local, &menus)
 }
 
 /// Puts the memory rule into a connected tool's instructions or takes it out.
@@ -1083,17 +1134,21 @@ pub fn revoke_client(
     session: S<'_>,
     registry: State<'_, Arc<ClientRegistry>>,
     status: State<'_, Arc<McpStatus>>,
+    menus: State<'_, Arc<SkillMenus>>,
     id: String,
 ) -> ApiResult<()> {
     require_unlocked(&session)?;
     let name = registry.list().into_iter().find(|c| c.id == id).map(|c| c.name);
     registry.revoke(&id).map_err(registry_error)?;
+    let Some(target) = name.as_deref().and_then(Target::from_name) else { return Ok(()) };
     // The token is dead either way; a leftover entry would only cause errors
     // in that tool. Failing to tidy up must not fail the disconnect.
-    if let Some(target) = name.as_deref().and_then(Target::from_name)
-        && let Err(e) = local_integrations(&status)?.remove(target)
-    {
+    let local = local_integrations(&status)?;
+    if let Err(e) = local.remove(target) {
         tracing::warn!("could not remove {} configuration: {e}", target.name());
     }
-    Ok(())
+    if let Err(e) = menus.set(target, false) {
+        tracing::warn!("skill menu for {}: {}", target.name(), e.kind());
+    }
+    sync_skill_menus(&session, &registry, &local, &menus)
 }
