@@ -1387,6 +1387,32 @@ try {
   await tray.close();
 }
 
+// An AI client found the vault locked: the password window, and the panel asking instead.
+{
+  const prompt = await context.newPage();
+  await prompt.setViewportSize({ width: 380, height: 260 });
+  prompt.on('pageerror', (e) => errors.push(`unlock prompt: ${e.message}`));
+  try {
+    await prompt.goto(`${BASE}/?window=unlock`);
+    await prompt.getByText('„Claude Code“ möchte auf Brainmatter zugreifen').waitFor();
+    await prompt.waitForTimeout(300);
+    await shot(prompt, '89a-unlock-prompt');
+    await prompt.getByPlaceholder('Master-Passwort').fill('falsch');
+    await prompt.keyboard.press('Enter');
+    await prompt.getByText('Falsches Passwort').waitFor();
+    await shot(prompt, '89b-unlock-prompt-wrong');
+    await prompt.setViewportSize({ width: 356, height: 520 });
+    await prompt.goto(`${BASE}/?window=tray&ask=Codex`);
+    await prompt.getByText('„Codex“ möchte zugreifen').waitFor();
+    await prompt.waitForTimeout(300);
+    await shot(prompt, '89c-tray-asked');
+  } catch (e) {
+    await shot(prompt, 'zz-unlock-prompt-failure');
+    errors.push(`unlock prompt failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+  await prompt.close();
+}
+
 // After an update the app says once what changed, back to the last seen version.
 {
   const fresh = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'de-DE' });
@@ -1557,6 +1583,13 @@ try {
     await page.locator('.change').first().waitFor();
     await german('menu bar panel');
     await page.keyboard.press('Escape');
+
+    await page.goto(`${BASE}/?window=unlock`);
+    await page.getByText('“Claude Code” wants to access Brainmatter').waitFor();
+    await german('password window for an AI client');
+    await page.goto(`${BASE}/?window=tray&ask=Codex`);
+    await page.getByText('“Codex” wants access').waitFor();
+    await german('menu bar panel, asked by an AI client');
   } catch (e) {
     await shot(page, 'zz-english-failure');
     errors.push(`english failed: ${(e as Error).message.split('\n')[0]}`);

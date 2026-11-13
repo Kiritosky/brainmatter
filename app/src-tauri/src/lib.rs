@@ -12,6 +12,7 @@ pub mod session;
 mod skill_import;
 mod skill_menu;
 mod tray;
+mod unlock_prompt;
 mod updates;
 
 use std::{
@@ -32,6 +33,9 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuil
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const CAPTURE_WINDOW: &str = "capture";
+/// Passed by `brainmatter-mcp` when it starts the app for an AI client: then
+/// Brainmatter stays in the menu bar instead of opening its window.
+const BACKGROUND_ARG: &str = "--background";
 
 /// Debug builds use a separate vault so development never touches real data.
 const VAULT_DIR: &str = if cfg!(debug_assertions) { "vault-dev" } else { "vault" };
@@ -253,6 +257,10 @@ pub fn run() {
                 if changed || name == "bm:session" && payload["state"] == "unlocked" {
                     let _ = wake.send(!changed);
                 }
+                if name == "bm:unlock-request" {
+                    let app = handle.clone();
+                    let _ = handle.run_on_main_thread(move || unlock_prompt::show(&app));
+                }
                 let _ = handle.emit(name, payload);
             });
             let registry = Arc::new(ClientRegistry::open(&dir.join("clients.json")));
@@ -303,6 +311,11 @@ pub fn run() {
             });
 
             tray::build(app.handle())?;
+            if std::env::args().any(|arg| arg == BACKGROUND_ARG) {
+                tray::show_in_dock(app.handle(), false);
+            } else {
+                show_main(app.handle());
+            }
             Ok(())
         })
         .on_page_load(perf::run_script)
@@ -384,6 +397,8 @@ pub fn run() {
             commands::hide_capture,
             commands::show_main_window,
             commands::hide_tray,
+            commands::dismiss_unlock_request,
+            commands::hide_unlock_prompt,
             commands::open_in_main,
             commands::toggle_capture,
             commands::backup_status,

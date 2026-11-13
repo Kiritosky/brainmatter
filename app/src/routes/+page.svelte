@@ -14,15 +14,18 @@
   const loadCapture = () => (captureModule ??= import('#lib/components/QuickCapture.svelte'));
   let trayModule: Promise<typeof import('#lib/components/TrayPanel.svelte')> | undefined;
   const loadTray = () => (trayModule ??= import('#lib/components/TrayPanel.svelte'));
+  let unlockModule: Promise<typeof import('#lib/components/UnlockPrompt.svelte')> | undefined;
+  const loadUnlock = () => (unlockModule ??= import('#lib/components/UnlockPrompt.svelte'));
 
   // Every window loads this page and is told apart by its label. In a browser, with
-  // the mock, `?window=capture` or `?window=tray` stands in for it.
+  // the mock, `?window=capture`, `?window=tray` or `?window=unlock` stands in for it.
   const windowName: string =
     new URLSearchParams(location.search).get('window') ??
     (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label ??
     'main';
   const isCapture = windowName === 'capture';
   const isTray = windowName === 'tray';
+  const isUnlock = windowName === 'unlock';
 
   let status = $state<Status | null>(null);
   // Onboarding keeps control until the user finishes it, even though the
@@ -31,7 +34,7 @@
 
   onMount(() => {
     // After the first frame, so it does not hold up the lock screen.
-    if (!isCapture && !isTray) requestAnimationFrame(() => setTimeout(loadWorkspace));
+    if (!isCapture && !isTray && !isUnlock) requestAnimationFrame(() => setTimeout(loadWorkspace));
     api.status().then((s) => {
       status = s;
       onboarding = s.state === 'none';
@@ -49,6 +52,10 @@
 {:else if isTray}
   {#if status}
     {#await loadTray() then { default: TrayPanel }}<TrayPanel {status} />{/await}
+  {/if}
+{:else if isUnlock}
+  {#if status}
+    {#await loadUnlock() then { default: UnlockPrompt }}<UnlockPrompt {status} />{/await}
   {/if}
 {:else if !status}
   <div class="backdrop h-full" data-tauri-drag-region></div>

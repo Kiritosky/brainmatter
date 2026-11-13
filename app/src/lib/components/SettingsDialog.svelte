@@ -47,6 +47,11 @@
     { value: 'dark', label: t('Dunkel', 'Dark') },
   ];
 
+  const UNLOCK_PROMPTS: { value: Settings['unlock_prompt']; label: string }[] = [
+    { value: 'center', label: t('Bildschirmmitte', 'Centre of the screen') },
+    { value: 'menu_bar', label: t('Menüleiste', 'Menu bar') },
+  ];
+
   const AUTO_LOCK = [5, 15, 30, 60, 120, 240, 480].map((m) => ({
     value: m,
     label: m < 60 ? plural(m, ['Minute', 'Minuten'], ['minute', 'minutes']) : plural(m / 60, ['Stunde', 'Stunden'], ['hour', 'hours']),
@@ -243,6 +248,20 @@
                   </div>
                 </div>
                 <Toggle checked={status.touch_id_enrolled} disabled={busy || !status.biometry_available} label="Touch ID" onchange={toggleTouchId} />
+              </div>
+              <div class="row">
+                <div class="flex-1">
+                  <div>{t('Passwort für KIs', 'Password for AI clients')}</div>
+                  <div class="text-xs text-faint">
+                    {status.touch_id_enrolled
+                      ? t('Wenn du bei Touch ID „Passwort verwenden“ wählst', 'When you choose “Use Password” at Touch ID')
+                      : t('Wenn eine KI Brainmatter gesperrt vorfindet', 'When an AI client finds Brainmatter locked')}
+                  </div>
+                </div>
+                <div class="w-64">
+                  <Segmented value={settings.unlock_prompt} options={UNLOCK_PROMPTS} label={t('Passwort für KIs', 'Password for AI clients')}
+                    onchange={(where) => save({ unlock_prompt: where })} />
+                </div>
               </div>
             </div>
           {:else if tab === 'help'}

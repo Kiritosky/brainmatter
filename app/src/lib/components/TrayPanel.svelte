@@ -6,6 +6,7 @@
   import {
     api,
     errorMessage,
+    isApiError,
     onDomainEvent,
     onSession,
     onTrayOpen,
@@ -45,6 +46,8 @@
   let passwordField: HTMLInputElement | undefined = $state();
 
   const locked = $derived(status.state !== 'unlocked');
+  /** An AI client waits for the password, and this panel is where it is asked for. */
+  const answering = (s: Status) => s.unlock_request !== null && s.settings.unlock_prompt === 'menu_bar';
   const isAi = (c: ChangeSetInfo) => c.client !== null || c.actor_name !== status.user_name;
 
   const subline = $derived.by(() => {
@@ -112,7 +115,11 @@
     }, 90);
   }
 
-  const close = (giveBack: boolean) => api.hideTray(giveBack);
+  async function close(giveBack: boolean) {
+    // Closed without unlocking: the waiting AI client hears no at once.
+    if (status.state === 'locked' && answering(status)) await api.dismissUnlockRequest();
+    await api.hideTray(giveBack);
+  }
   const openEntry = (id: Id) => api.openInMain({ entry: id });
   const openActivity = () => api.openInMain({ panel: 'activity' });
   const openMain = () => api.openInMain({});
@@ -123,7 +130,9 @@
     try {
       await api.unlockTouchId();
     } catch (e) {
-      error = errorMessage(e);
+      // The prompt's password button: the field is right here.
+      if (isApiError(e) && e.code === 'touch_id_fallback') passwordField?.focus();
+      else error = errorMessage(e);
     } finally {
       unlocking = false;
     }
@@ -180,6 +189,12 @@
       onTrayOpen(reset),
       onSession((s) => {
         const changed = s.state !== status.state;
+        // Opened for an AI client: once unlocked, it has done its job.
+        if (s.state === 'unlocked' && answering(status)) {
+          status = s;
+          close(true);
+          return;
+        }
         status = s;
         if (changed) {
           error = null;
@@ -234,6 +249,12 @@
         </div>
       {:else if locked}
         <div class="px-4 pb-4">
+          {#if status.unlock_request}
+            <p class="mb-3 flex items-center gap-2 text-[12.5px] text-muted" in:pop={{ duration: 160, y: -2 }}>
+              <Bot size={14} class="shrink-0 text-accent" />
+              <span class="min-w-0">{t(`„${status.unlock_request}“ möchte zugreifen`, `“${status.unlock_request}” wants access`)}</span>
+            </p>
+          {/if}
           {#if status.touch_id_enrolled}
             <button class="btn-primary w-full" disabled={unlocking} onclick={unlockTouchId}>
               <Fingerprint size={15} /> {t('Mit Touch ID entsperren', 'Unlock with Touch ID')}

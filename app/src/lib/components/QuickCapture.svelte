@@ -3,7 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { Check, CornerDownLeft, Fingerprint, FolderOpen, Lock, Zap } from '@lucide/svelte';
-  import { api, errorMessage, onCaptureOpen, onSession, type Id, type ProjectSummary, type Status } from '#lib/api.ts';
+  import { api, errorMessage, isApiError, onCaptureOpen, onSession, type Id, type ProjectSummary, type Status } from '#lib/api.ts';
   import { pop } from '#lib/ui/motion.ts';
 
   let { status: initial }: { status: Status } = $props();
@@ -104,6 +104,11 @@
     try {
       await api.unlockTouchId();
     } catch (e) {
+      // The prompt's password button: the password is typed in the main window.
+      if (isApiError(e) && e.code === 'touch_id_fallback') {
+        api.showMainWindow();
+        return;
+      }
       error = errorMessage(e);
     } finally {
       unlocking = false;

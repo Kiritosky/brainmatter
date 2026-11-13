@@ -161,6 +161,19 @@ pub fn hide_tray(app: tauri::AppHandle, give_back: bool) {
     crate::tray::hide_panel(&app, give_back);
 }
 
+/// The user turned down an AI client's request for the password.
+#[tauri::command]
+pub fn dismiss_unlock_request(app: tauri::AppHandle, session: S<'_>) {
+    session.dismiss_unlock_request();
+    crate::unlock_prompt::hide(&app);
+}
+
+/// Closes the password window after unlocking.
+#[tauri::command]
+pub fn hide_unlock_prompt(app: tauri::AppHandle) {
+    crate::unlock_prompt::hide(&app);
+}
+
 /// From the menu bar panel: the main window, with an entry or a panel open.
 #[tauri::command]
 pub fn open_in_main(app: tauri::AppHandle, entry: Option<String>, panel: Option<String>) {

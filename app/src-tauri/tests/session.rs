@@ -3,7 +3,7 @@
 
 use std::{
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bm_core::{model::NewNode, vault::KdfParams};
@@ -165,9 +165,79 @@ fn ai_access_follows_the_lock_state_without_counting_as_activity() {
     assert!(session.engine_for_client("Claude Code").is_ok());
 
     session.lock();
-    // Without Touch ID there is nothing to prompt with: a clear error, at once.
-    let started = std::time::Instant::now();
-    let err = session.engine_for_client("Claude Code").err().expect("locked");
+    // Without Touch ID the password window asks, and the request waits for it.
+    let waiting = {
+        let session = session.clone();
+        std::thread::spawn(move || session.engine_for_client("Claude Code"))
+    };
+    wait_for(|| session.status().unlock_request.is_some());
+    assert_eq!(session.status().unlock_request.as_deref(), Some("Claude Code"));
+    assert_eq!(unlock_requests(&f.events), 1);
+
+    session.unlock_password("lang-genug").unwrap();
+    assert!(waiting.join().unwrap().is_ok(), "answered by the unlock");
+    assert_eq!(session.status().unlock_request, None);
+}
+
+#[test]
+fn a_dismissed_password_request_silences_that_client() {
+    let f = fixture();
+    let session = Arc::new(session_in(f.dir.path(), &f.events));
+    session.create("lang-genug", "Lasse").unwrap();
+    session.lock();
+
+    let waiting = {
+        let session = session.clone();
+        std::thread::spawn(move || session.engine_for_client("Codex"))
+    };
+    wait_for(|| session.status().unlock_request.is_some());
+    let started = Instant::now();
+    session.dismiss_unlock_request();
+    let err = waiting.join().unwrap().err().expect("still locked");
     assert!(err.contains("locked"), "{err}");
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(started.elapsed() < Duration::from_secs(2), "the AI hears it at once");
+    assert_eq!(session.status().unlock_request, None);
+
+    // No new window for a while, and a clear answer straight away.
+    let started = Instant::now();
+    assert!(session.engine_for_client("Codex").is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(unlock_requests(&f.events), 1);
+}
+
+#[test]
+fn one_password_window_answers_every_waiting_client() {
+    let f = fixture();
+    let session = Arc::new(session_in(f.dir.path(), &f.events));
+    session.create("lang-genug", "Lasse").unwrap();
+    session.lock();
+
+    let ask = |client: &'static str| {
+        let session = session.clone();
+        std::thread::spawn(move || session.engine_for_client(client))
+    };
+    let first = ask("Claude Code");
+    wait_for(|| session.status().unlock_request.is_some());
+    let second = ask("Cursor");
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(session.status().unlock_request.as_deref(), Some("Claude Code"));
+
+    session.unlock_password("lang-genug").unwrap();
+    assert!(first.join().unwrap().is_ok());
+    assert!(second.join().unwrap().is_ok());
+    assert_eq!(unlock_requests(&f.events), 1, "one window, not one per client");
+}
+
+fn unlock_requests(events: &Arc<Mutex<Vec<String>>>) -> usize {
+    events.lock().unwrap().iter().filter(|e| *e == "bm:unlock-request").count()
+}
+
+fn wait_for(done: impl Fn() -> bool) {
+    for _ in 0..200 {
+        if done() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("timed out");
 }

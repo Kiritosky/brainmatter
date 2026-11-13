@@ -123,7 +123,37 @@ fn toggle_panel(app: &AppHandle, icon: Rect, click: PhysicalPosition<f64>) {
     if state.hidden_at.lock().is_some_and(|at| at.elapsed() < REOPEN_GUARD) {
         return;
     }
-    state.opened.fetch_add(1, Ordering::Relaxed);
+    open_panel(app, existing, icon, click);
+}
+
+/// Opens the panel under the icon by itself, for an AI client waiting for the
+/// password. False if there is no icon to open it under.
+pub fn open_for_unlock(app: &AppHandle) -> bool {
+    let Some(icon) = app.tray_by_id("main").and_then(|tray| tray.rect().ok().flatten()) else {
+        return false;
+    };
+    let existing = app.get_webview_window(PANEL_WINDOW);
+    if let Some(w) = existing.as_ref().filter(|w| w.is_visible().unwrap_or(false)) {
+        let _ = w.set_focus();
+        let _ = w.emit("bm:tray-open", ());
+        return true;
+    }
+    // Brainmatter may be hidden after the panel last gave the focus back.
+    let _ = app.show();
+    let scale = app.primary_monitor().ok().flatten().map_or(1.0, |m| m.scale_factor());
+    let at = icon.position.to_physical::<f64>(scale);
+    let size = icon.size.to_physical::<f64>(scale);
+    let centre = PhysicalPosition::new(at.x + size.width / 2.0, at.y + size.height / 2.0);
+    open_panel(app, existing, icon, centre)
+}
+
+fn open_panel(
+    app: &AppHandle,
+    existing: Option<WebviewWindow>,
+    icon: Rect,
+    click: PhysicalPosition<f64>,
+) -> bool {
+    app.state::<PanelState>().opened.fetch_add(1, Ordering::Relaxed);
     let window = match existing {
         Some(w) => w,
         // Built on first use: most of the time nobody looks at it.
@@ -147,7 +177,7 @@ fn toggle_panel(app: &AppHandle, icon: Rect, click: PhysicalPosition<f64>) {
                 Ok(w) => w,
                 Err(e) => {
                     tracing::error!("menu bar panel failed: {e}");
-                    return;
+                    return false;
                 }
             }
         }
@@ -156,6 +186,7 @@ fn toggle_panel(app: &AppHandle, icon: Rect, click: PhysicalPosition<f64>) {
     let _ = window.show();
     let _ = window.set_focus();
     let _ = window.emit("bm:tray-open", ());
+    true
 }
 
 /// Under the icon, kept on the screen it is on.

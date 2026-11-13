@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '#lib/i18n.ts';
   import { onMount } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { ArrowRight, Fingerprint } from '@lucide/svelte';
   import { api, errorMessage, isApiError, type Status } from '#lib/api.ts';
   import { pop } from '#lib/ui/motion.ts';
@@ -31,8 +32,8 @@
     try {
       await api.unlockTouchId();
     } catch (e) {
-      // Dismissing the prompt is not an error worth showing.
-      if (!(isApiError(e) && e.code === 'touch_id_cancelled')) fail(e);
+      // Dismissing the prompt, or choosing its password button, is no error worth showing.
+      if (!(isApiError(e) && (e.code === 'touch_id_cancelled' || e.code === 'touch_id_fallback'))) fail(e);
       input?.focus();
     } finally {
       waitingForFinger = false;
@@ -58,8 +59,24 @@
     }
   }
 
+  // Touch ID asks by itself once, when the window is in view: a window opened
+  // hidden, for an AI client, or locked while closed, must not prompt out of nowhere.
+  let asked = false;
+  function askOnce() {
+    if (asked || !canTouchId) return;
+    asked = true;
+    touchId();
+  }
+
   onMount(() => {
-    if (canTouchId) touchId();
+    if (!document.documentElement.classList.contains('tauri')) {
+      askOnce();
+      return;
+    }
+    const window = getCurrentWindow();
+    window.isVisible().then((visible) => visible && askOnce());
+    const off = window.onFocusChanged(({ payload: focused }) => focused && askOnce());
+    return () => off.then((f) => f());
   });
 </script>
 

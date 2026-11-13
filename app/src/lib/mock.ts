@@ -72,7 +72,7 @@ const clients: AiClient[] = [];
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
 let userName = 'Alex';
-let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true, auto_update: true, backup_copy: null };
+let settings: Settings = { auto_lock_minutes: 60, lock_on_sleep: true, lock_on_screen_lock: false, auto_backup: true, theme: 'system', quick_capture: true, auto_update: true, backup_copy: null, unlock_prompt: 'center' };
 const DAY = 86_400_000;
 const backups = [1, 2, 9].map((days) => ({ name: `backup-${now() - days * DAY}.db`, at: now() - days * DAY, size: 2_400_000 - days * 40_000 }));
 
@@ -198,7 +198,14 @@ const status = (): Status => ({
   biometry_available: true,
   user_name: state === 'unlocked' ? userName : null,
   settings,
+  // `?window=unlock`, or `?ask=Name` in any window, as if an AI client were waiting.
+  unlock_request: state === 'locked' ? waitingClient() : null,
 });
+
+function waitingClient(): string | null {
+  const params = new URLSearchParams(location.search);
+  return params.get('ask') ?? (params.get('window') === 'unlock' ? 'Claude Code' : null);
+}
 
 function fail(code: string, message: string): never {
   throw { code, message };
@@ -1077,6 +1084,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
   hide_tray: () => undefined,
   open_in_main: () => undefined,
   toggle_capture: () => undefined,
+  dismiss_unlock_request: () => undefined,
+  hide_unlock_prompt: () => undefined,
   backup_status: () => backupStatus(),
   backup_now: () => {
     const b = { name: `backup-${now()}.db`, at: now(), size: 2_450_000 };

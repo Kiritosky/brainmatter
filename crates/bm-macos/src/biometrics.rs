@@ -24,7 +24,13 @@ pub enum AuthError {
     Unavailable(String),
     #[error("authentication failed or was cancelled: {0}")]
     Denied(String),
+    /// The user chose the prompt's password button instead of the finger.
+    #[error("the user chose the password")]
+    Fallback,
 }
+
+/// `LAError.userFallback`: the prompt's password button.
+const USER_FALLBACK: isize = -3;
 
 fn describe(e: &NSError) -> String {
     format!("{} (code {})", e.localizedDescription(), e.code())
@@ -52,8 +58,11 @@ pub fn authenticate(reason: &str) -> Result<(), AuthError> {
         let result = if ok.as_bool() {
             Ok(())
         } else {
-            let msg = unsafe { err.as_ref() }.map(describe).unwrap_or_else(|| "unknown".into());
-            Err(AuthError::Denied(msg))
+            match unsafe { err.as_ref() } {
+                Some(e) if e.code() == USER_FALLBACK => Err(AuthError::Fallback),
+                Some(e) => Err(AuthError::Denied(describe(e))),
+                None => Err(AuthError::Denied("unknown".into())),
+            }
         };
         let _ = tx.send(result);
     });

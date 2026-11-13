@@ -310,6 +310,8 @@ export interface Settings {
   auto_update: boolean;
   /** A second place for the backups; only `chooseBackupCopy` changes it. */
   backup_copy: string | null;
+  /** Where the password is asked for when an AI client finds the vault locked. */
+  unlock_prompt: 'center' | 'menu_bar';
 }
 
 export interface AvailableUpdate {
@@ -369,6 +371,8 @@ export interface Status {
   biometry_available: boolean;
   user_name: string | null;
   settings: Settings;
+  /** The AI client waiting for the password, while its window is open. */
+  unlock_request: string | null;
 }
 
 export interface ApiError {
@@ -504,6 +508,9 @@ export const api = {
   /** From the menu bar panel: the main window, showing an entry or a panel. */
   openInMain: (target: OpenTarget) => call<void>('open_in_main', { entry: target.entry ?? null, panel: target.panel ?? null }),
   toggleCapture: () => call<void>('toggle_capture'),
+  /** The user turned down an AI client's request for the password; closes its window. */
+  dismissUnlockRequest: () => call<void>('dismiss_unlock_request'),
+  hideUnlockPrompt: () => call<void>('hide_unlock_prompt'),
 
   // backups
   backupStatus: () => call<BackupStatus>('backup_status'),
@@ -651,6 +658,10 @@ export function onCaptureOpen(cb: () => void): Promise<UnlistenFn> {
 
 export function onTrayOpen(cb: () => void): Promise<UnlistenFn> {
   return listen('bm:tray-open', () => cb());
+}
+
+export function onUnlockOpen(cb: () => void): Promise<UnlistenFn> {
+  return listen('bm:unlock-open', () => cb());
 }
 
 /** What the menu bar panel asks the main window to show. */

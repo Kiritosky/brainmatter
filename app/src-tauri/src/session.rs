@@ -42,6 +42,8 @@ const SETTINGS_FILE: &str = "settings.json";
 const MIN_PASSWORD: usize = 8;
 /// How long an AI request waits for the user to answer the Touch ID prompt.
 const UNLOCK_WAIT: Duration = Duration::from_secs(30);
+/// ...and, once the password window is open, for the password to be typed.
+const PASSWORD_WAIT: Duration = Duration::from_secs(60);
 /// After a dismissed prompt, this client does not trigger another one for a while.
 const PROMPT_COOLDOWN_MS: i64 = 5 * 60 * 1000;
 /// The model takes ~0.9 GB while loaded, so it leaves memory when unused.
@@ -73,6 +75,8 @@ pub struct Settings {
     /// A second place for the backups, as the user picked it. Only
     /// [`Session::set_backup_copy`] changes it.
     pub backup_copy: Option<String>,
+    /// Where the password is asked for when an AI client finds the vault locked.
+    pub unlock_prompt: UnlockPrompt,
 }
 
 impl Default for Settings {
@@ -86,8 +90,18 @@ impl Default for Settings {
             quick_capture: true,
             auto_update: true,
             backup_copy: None,
+            unlock_prompt: UnlockPrompt::Center,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlockPrompt {
+    /// A small window in the middle of the screen, like the Touch ID prompt.
+    Center,
+    /// The menu bar panel, opened under its icon.
+    MenuBar,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +155,8 @@ pub struct Status {
     pub biometry_available: bool,
     pub user_name: Option<String>,
     pub settings: Settings,
+    /// The AI client waiting for the password, while its window is open.
+    pub unlock_request: Option<String>,
 }
 
 enum Download {
@@ -192,8 +208,11 @@ pub struct Session {
     state: Mutex<State>,
     settings: Mutex<Settings>,
     last_activity: AtomicI64,
-    /// A Touch ID prompt for an AI client is on screen.
+    /// An AI client asked to unlock, and the user has not answered yet: with
+    /// Touch ID or in the password window.
     prompting: AtomicBool,
+    /// The client whose password window is open, and since when.
+    unlock_request: Mutex<Option<(String, Instant)>>,
     /// Client name → no new prompt before this time (ms).
     prompt_blocked_until: Mutex<HashMap<String, i64>>,
     models: ModelStore,
@@ -231,6 +250,7 @@ impl Session {
             settings: Mutex::new(settings),
             last_activity: AtomicI64::new(now_ms()),
             prompting: AtomicBool::new(false),
+            unlock_request: Mutex::new(None),
             prompt_blocked_until: Mutex::new(HashMap::new()),
         }
     }
@@ -259,6 +279,7 @@ impl Session {
             biometry_available: biometrics::available().is_ok(),
             user_name,
             settings: self.settings.lock().clone(),
+            unlock_request: self.unlock_request.lock().as_ref().map(|(client, _)| client.clone()),
         }
     }
 
@@ -362,8 +383,13 @@ impl Session {
                 )
             })?
             .to_string();
-        biometrics::authenticate(reason)
-            .map_err(|e| ApiError::new("touch_id_cancelled", e.to_string()))?;
+        biometrics::authenticate(reason).map_err(|e| match e {
+            biometrics::AuthError::Fallback => ApiError::new(
+                "touch_id_fallback",
+                tr("Entsperre mit dem Master-Passwort.", "Unlock with the master password."),
+            ),
+            e => ApiError::new("touch_id_cancelled", e.to_string()),
+        })?;
         let secret = match keychain::load_secret(KEYCHAIN_SERVICE, &account) {
             Ok(Some(secret)) => secret,
             Ok(None) => return Err(keychain::KeychainError::NotAccessible.into()),
@@ -461,17 +487,19 @@ impl Session {
         }
     }
 
-    /// Like [`Self::open_engine`], but if the vault is locked, asks the user
-    /// with a Touch ID prompt naming the client. Blocks up to [`UNLOCK_WAIT`].
-    /// Only one prompt is ever open; a dismissed prompt silences that client
-    /// for [`PROMPT_COOLDOWN_MS`]. The error text is shown to the AI.
+    /// Like [`Self::open_engine`], but if the vault is locked, asks the user:
+    /// with a Touch ID prompt naming the client, or in the password window,
+    /// without Touch ID or after the prompt's password button. Blocks up to
+    /// [`UNLOCK_WAIT`], or [`PASSWORD_WAIT`] once the password window is open.
+    /// Only one request is ever open; a dismissed one silences that client for
+    /// [`PROMPT_COOLDOWN_MS`]. The error text is shown to the AI.
     pub fn engine_for_client(self: &Arc<Self>, client: &str) -> Result<Arc<Engine>, String> {
         const LOCKED: &str =
             "Brainmatter is locked. Ask the user to unlock it in the app, then retry.";
         if let Some(engine) = self.open_engine() {
             return Ok(engine);
         }
-        if !self.status().touch_id_enrolled {
+        if !matches!(*self.state.lock(), State::Locked) {
             return Err(LOCKED.into());
         }
         let blocked = self.prompt_blocked_until.lock().get(client).is_some_and(|t| *t > now_ms());
@@ -482,30 +510,77 @@ impl Session {
         if !self.prompting.swap(true, Ordering::SeqCst) {
             let session = self.clone();
             let name = client.to_string();
-            std::thread::spawn(move || {
-                let reason = match crate::i18n::german() {
-                    true => format!("„{name}“ möchte auf Brainmatter zugreifen"),
-                    false => format!("“{name}” wants to access Brainmatter"),
-                };
-                if let Err(e) = session.unlock_touch_id(&reason) {
-                    tracing::info!("unlock for {name} refused: {}", e.code);
-                    session.prompt_blocked_until.lock().insert(name, now_ms() + PROMPT_COOLDOWN_MS);
-                }
-                session.prompting.store(false, Ordering::SeqCst);
-            });
+            std::thread::spawn(move || session.ask_to_unlock(name));
         }
 
-        let deadline = Instant::now() + UNLOCK_WAIT;
-        while Instant::now() < deadline {
+        let started = Instant::now();
+        loop {
             if let Some(engine) = self.open_engine() {
                 return Ok(engine);
             }
             if !self.prompting.load(Ordering::SeqCst) {
                 break;
             }
+            let wait = match &*self.unlock_request.lock() {
+                Some((_, since)) => since.duration_since(started) + PASSWORD_WAIT,
+                None => UNLOCK_WAIT,
+            };
+            if started.elapsed() >= wait {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(100));
         }
         Err(LOCKED.into())
+    }
+
+    /// Runs on its own thread while `prompting` is set. Touch ID first, if it
+    /// is there; otherwise the password window takes over and the request
+    /// stays open until it is answered.
+    fn ask_to_unlock(&self, client: String) {
+        let status = self.status();
+        if status.touch_id_enrolled && status.biometry_available {
+            let reason = match crate::i18n::german() {
+                true => format!("„{client}“ möchte auf Brainmatter zugreifen"),
+                false => format!("“{client}” wants to access Brainmatter"),
+            };
+            match self.unlock_touch_id(&reason) {
+                Err(e) if e.code == "touch_id_fallback" => {}
+                result => {
+                    if let Err(e) = result {
+                        tracing::info!("unlock for {client} refused: {}", e.code);
+                        // Unlocked some other way meanwhile: nothing was refused.
+                        if e.code != "already_unlocked" {
+                            self.silence(client);
+                        }
+                    }
+                    self.prompting.store(false, Ordering::SeqCst);
+                    return;
+                }
+            }
+        }
+        // Under the state lock, so an unlock either comes first or clears it.
+        let state = self.state.lock();
+        if !matches!(*state, State::Locked) {
+            self.prompting.store(false, Ordering::SeqCst);
+            return;
+        }
+        *self.unlock_request.lock() = Some((client.clone(), Instant::now()));
+        drop(state);
+        self.emit_status();
+        (self.emit)("bm:unlock-request", serde_json::json!({ "client": client }));
+    }
+
+    /// The password window was closed without unlocking.
+    pub fn dismiss_unlock_request(&self) {
+        let Some((client, _)) = self.unlock_request.lock().take() else { return };
+        tracing::info!("password for {client} not given");
+        self.silence(client);
+        self.prompting.store(false, Ordering::SeqCst);
+        self.emit_status();
+    }
+
+    fn silence(&self, client: String) {
+        self.prompt_blocked_until.lock().insert(client, now_ms() + PROMPT_COOLDOWN_MS);
     }
 
     // ---------------------------------------------------------- backups ---
@@ -945,6 +1020,10 @@ impl Session {
         *self.state.lock() = State::Unlocked(Box::new(unlocked));
         self.last_activity.store(now_ms(), Ordering::Relaxed);
         tracing::info!("vault unlocked");
+        // Whichever way it was unlocked, a waiting AI request is answered.
+        if self.unlock_request.lock().take().is_some() {
+            self.prompting.store(false, Ordering::SeqCst);
+        }
         self.emit_status();
         Ok(())
     }

@@ -70,8 +70,10 @@ impl Bridge {
     async fn post_or_start_app(&self, line: &str) -> reqwest::Result<Response> {
         match self.post(line).await {
             Err(e) if e.is_connect() && self.start_app => {
+                // In the background and only in the menu bar: the AI needs the
+                // app, not its window.
                 let _ = tokio::process::Command::new("open")
-                    .args(["-g", "-b", APP_BUNDLE_ID])
+                    .args(["-g", "-b", APP_BUNDLE_ID, "--args", "--background"])
                     .status()
                     .await;
                 let deadline = tokio::time::Instant::now() + APP_START_WAIT;
