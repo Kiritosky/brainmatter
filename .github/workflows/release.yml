@@ -1,5 +1,9 @@
-# Pushing a tag like v0.2.0 tests everything on macOS, then publishes the DMG and
-# the signed update that running apps install through latest.json.
+# Pushing a tag like v0.2.0 checks and builds on macOS side by side, then
+# publishes the DMG and the signed update that running apps install through
+# latest.json, once both are green.
+#
+# Both jobs start from the caches the macOS jobs of CI leave on main: a tag can
+# read main's caches, but not those of an earlier tag. They never save their own.
 #
 # Needs the secret TAURI_SIGNING_PRIVATE_KEY, the key that signs updates. Losing
 # it means existing installations can no longer update.
@@ -14,19 +18,17 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  VERSION: ${{ github.ref_name }}
 
 jobs:
-  release:
+  check:
     runs-on: macos-15
-    timeout-minutes: 60
-    env:
-      TARGET: aarch64-apple-darwin
-      VERSION: ${{ github.ref_name }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: The tag must match the version in the code
         run: |
@@ -37,48 +39,52 @@ jobs:
           fi
 
       - name: The changelog must describe this version
+        run: scripts/release-notes.sh "${VERSION#v}"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: macos-check
+          save-if: false
+
+      - name: Check the frontend
+        working-directory: app
         run: |
-          code="${VERSION#v}"
-          awk -v v="$code" '
-            /^## / { on = (index($0, "## " v " ") == 1 || $0 == "## " v); next }
-            on { print }
-          ' CHANGELOG.md > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "CHANGELOG.md has no entry for $code" >&2
-            exit 1
-          fi
-          awk -v v="$code" '
-            /^## / { on = (index($0, "## " v " ") == 1 || $0 == "## " v); next }
-            on { print }
-          ' CHANGELOG.en.md > notes.en.md
-          if ! grep -q '[^[:space:]]' notes.en.md; then
-            echo "CHANGELOG.en.md has no entry for $code" >&2
-            exit 1
-          fi
+          bun install --frozen-lockfile
+          bun run check
+          bun run test
+
+      # CI on Linux cannot build the macOS-only crates and the app, so they are
+      # linted and tested here. In the dev profile: the release profile's LTO
+      # would link every test binary on its own, which took most of the time.
+      - name: Lint everything
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run all tests
+        run: cargo test --workspace
+
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      TARGET: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: macos-release
+          save-if: false
 
       - name: Install frontend dependencies
         working-directory: app
         run: bun install --frozen-lockfile
-
-      - name: Check the frontend
-        working-directory: app
-        run: bun run check
 
       - name: Build the stdio bridge
         run: |
           cargo build --release -p bm-cli
           mkdir -p app/src-tauri/binaries
           cp target/release/brainmatter-mcp "app/src-tauri/binaries/brainmatter-mcp-$TARGET"
-
-      # CI on Linux cannot build the macOS-only crates and the app, so they are
-      # linted here.
-      - name: Lint everything
-        run: cargo clippy --workspace --release --all-targets -- -D warnings
-
-      # In release mode, so the app build below reuses these compiled dependencies
-      # instead of building everything a second time.
-      - name: Run all tests
-        run: cargo test --workspace --release
 
       - name: Build and sign
         working-directory: app
@@ -91,15 +97,38 @@ jobs:
             --config src-tauri/tauri.bundle.conf.json \
             --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            target/release/bundle/dmg/Brainmatter_*_aarch64.dmg
+            target/release/bundle/macos/Brainmatter.app.tar.gz
+            target/release/bundle/macos/Brainmatter.app.tar.gz.sig
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle
+          path: bundle
+
       - name: Describe the update for running apps
         run: |
-          bundle=target/release/bundle
           code="${VERSION#v}"
+          scripts/release-notes.sh "$code"
           url="https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/Brainmatter.app.tar.gz"
           jq -n \
             --arg version "$code" \
             --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg signature "$(cat "$bundle/macos/Brainmatter.app.tar.gz.sig")" \
+            --arg signature "$(cat bundle/macos/Brainmatter.app.tar.gz.sig)" \
             --arg url "$url" \
             --rawfile notes notes.md \
             --rawfile notes_en notes.en.md \
@@ -110,7 +139,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bundle=target/release/bundle
           {
             cat notes.en.md
             printf '\n<details>\n<summary>Deutsch</summary>\n\n'
@@ -119,7 +147,7 @@ jobs:
             sed "s/VERSION/${VERSION#v}/" .github/release-footer.md
           } > release.md
           gh release create "$VERSION" --title "Brainmatter ${VERSION#v}" --notes-file release.md --verify-tag \
-            "$bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
-            "$bundle/macos/Brainmatter.app.tar.gz" \
-            "$bundle/macos/Brainmatter.app.tar.gz.sig" \
+            "bundle/dmg/Brainmatter_${VERSION#v}_aarch64.dmg" \
+            bundle/macos/Brainmatter.app.tar.gz \
+            bundle/macos/Brainmatter.app.tar.gz.sig \
             latest.json
