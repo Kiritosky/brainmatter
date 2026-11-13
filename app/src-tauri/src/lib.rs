@@ -261,6 +261,12 @@ pub fn run() {
                     let app = handle.clone();
                     let _ = handle.run_on_main_thread(move || unlock_prompt::show(&app));
                 }
+                // Unlocked or turned down, wherever: the password window goes,
+                // without relying on its web view to notice.
+                if name == "bm:session" && payload["unlock_request"].is_null() {
+                    let app = handle.clone();
+                    let _ = handle.run_on_main_thread(move || unlock_prompt::hide(&app));
+                }
                 let _ = handle.emit(name, payload);
             });
             let registry = Arc::new(ClientRegistry::open(&dir.join("clients.json")));
@@ -441,4 +447,25 @@ pub fn run() {
             show_main(app);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    /// A window missing from the capability may still call the app's own
+    /// commands, but not listen for events: it never learns that the vault
+    /// was unlocked. The browser mock cannot catch this.
+    #[test]
+    fn every_window_has_the_capability() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let windows = capability["windows"].as_array().unwrap();
+        for label in [
+            "main",
+            super::CAPTURE_WINDOW,
+            super::tray::PANEL_WINDOW,
+            super::unlock_prompt::PROMPT_WINDOW,
+        ] {
+            assert!(windows.iter().any(|w| w == label), "{label} is missing from default.json");
+        }
+    }
 }

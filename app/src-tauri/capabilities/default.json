@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window, quick capture and the menu bar panel",
+  "description": "Permissions for the main window, quick capture, the menu bar panel and the password window",
   "windows": [
     "main",
     "capture",
-    "tray"
+    "tray",
+    "unlock"
   ],
   "permissions": [
     "core:default",
