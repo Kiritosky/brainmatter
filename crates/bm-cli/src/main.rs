@@ -23,9 +23,18 @@ const APP_START_WAIT: Duration = Duration::from_secs(15);
 const SESSION_HEADER: &str = "mcp-session-id";
 const VERSION_HEADER: &str = "mcp-protocol-version";
 
+/// Only the installed app listens on the default address, so only then does
+/// starting it help. For any other address, such as a dev build's, `open` would
+/// reach the installed app instead: macOS hands a running app a reopen, which
+/// brings its window to the front, and the bridge would wait for nothing.
+fn starts_app(url: &str) -> bool {
+    url == DEFAULT_URL
+}
+
 struct Bridge {
     http: Client,
     url: String,
+    start_app: bool,
     token: String,
     session: RwLock<Option<String>>,
     version: RwLock<Option<String>>,
@@ -60,7 +69,7 @@ impl Bridge {
     /// Posts, starting the app and retrying once if nothing is listening.
     async fn post_or_start_app(&self, line: &str) -> reqwest::Result<Response> {
         match self.post(line).await {
-            Err(e) if e.is_connect() => {
+            Err(e) if e.is_connect() && self.start_app => {
                 let _ = tokio::process::Command::new("open")
                     .args(["-g", "-b", APP_BUNDLE_ID])
                     .status()
@@ -162,9 +171,11 @@ async fn main() {
         );
         std::process::exit(2);
     };
+    let url = std::env::var("BRAINMATTER_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
     let bridge = Arc::new(Bridge {
         http: Client::new(),
-        url: std::env::var("BRAINMATTER_URL").unwrap_or_else(|_| DEFAULT_URL.to_string()),
+        start_app: starts_app(&url),
+        url,
         token,
         session: RwLock::new(None),
         version: RwLock::new(None),
@@ -190,4 +201,15 @@ async fn main() {
     }
     // stdin closed: let in-flight requests finish, then exit.
     while tasks.join_next().await.is_some() {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_installed_apps_address_starts_it() {
+        assert!(starts_app(DEFAULT_URL));
+        assert!(!starts_app("http://127.0.0.1:47475/mcp"));
+    }
 }
