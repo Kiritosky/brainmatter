@@ -2,6 +2,19 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
+## 1.4.0 · 2026-11-13
+
+Braucht eine KI Brainmatter, bleibt das Hauptfenster zu. Das Passwort gibst du in einem kleinen Fenster ein.
+
+### Neu
+- **Passwort für KIs im kleinen Fenster:** Findet eine KI Brainmatter gesperrt, fragt Brainmatter in einem kleinen Fenster nach deinem Master-Passwort und nennt die KI, die zugreifen will. Das passiert, wenn Touch ID nicht eingerichtet ist oder du bei Touch ID „Passwort verwenden“ wählst. Danach arbeitet die KI gleich weiter. „Nicht jetzt“ sagt ihr sofort ab, und sie fragt eine Weile nicht wieder.
+- **In der Mitte oder in der Menüleiste:** Unter Einstellungen → Sperren wählst du, wo das Fenster erscheint: in der Bildschirmmitte, oder als Fenster der Menüleiste unter ihrem Symbol.
+- **Von einer KI gestartet, nur in der Menüleiste:** Ist Brainmatter beendet und eine KI startet es, bleibt es in der Menüleiste, ohne Fenster und ohne Symbol im Dock.
+
+### Behoben
+- Touch ID konnte sich nach dem Sperren melden, obwohl das Hauptfenster geschlossen war. Jetzt fragt es erst, wenn du das Fenster öffnest.
+- Eine KI-Verbindung mit einer anderen Brainmatter-Adresse, etwa für einen Entwicklungs-Build, holte das Hauptfenster nach vorn, wenn dort niemand antwortete.
+
 ## 1.3.0 · 2026-11-05
 
 Deine Befehle und Skills stehen jetzt auch im Skill-Menü deiner KI-Apps, und die Gedächtnis-Regel bleibt von selbst aktuell.

@@ -2,6 +2,19 @@
 
 This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
+## 1.4.0 · 2026-11-13
+
+When an AI client needs Brainmatter, the main window stays closed. You type the password into a small window.
+
+### New
+- **The password for AI clients, in a small window:** When an AI client finds Brainmatter locked, Brainmatter asks for your master password in a small window and names the client that wants access. This happens when Touch ID is not set up, or when you choose “Use Password” at Touch ID. The client then carries on right away. “Not now” turns it down at once, and it does not ask again for a while.
+- **In the centre or in the menu bar:** Under Settings → Locking, choose where the window appears: in the centre of the screen, or as the menu bar panel under its icon.
+- **Started by an AI client, only in the menu bar:** When Brainmatter is not running and an AI client starts it, it stays in the menu bar, without a window and without a Dock icon.
+
+### Fixed
+- After locking, Touch ID could ask even while the main window was closed. Now it asks once you open the window.
+- An AI connection set up with a different Brainmatter address, such as one for a development build, brought the main window to the front when nothing answered there.
+
 ## 1.3.0 · 2026-11-05
 
 Your commands and skills now also show up in the skill menu of your AI tools, and the memory rule keeps itself up to date.
