@@ -36,13 +36,15 @@ The plaintext `vault.header` holds the KDF parameters and the wrapped keys, neve
 
 - The MCP server listens on `127.0.0.1` only. Requests with a browser `Origin` header are rejected, against DNS rebinding.
 - Each client has its own token (`bm_…`, 256 bit). Only its SHA-256 hash is stored, and the app never shows it after setup.
-- Tokens are limited to `read`, `write` and `delete`, and optionally to certain projects.
+- Tokens are limited to `read`, `write` and `delete`, optionally to certain projects, and optionally to 1, 7 or 30 days. An expired token is refused like an unknown one, with its own message, and stays listed as expired until the user removes it.
 - While the vault is locked, a request can ask the user for Touch ID or, without it or after the prompt's password button, for the master password in a window of the app. The Mac's login password never opens the vault. Only one request is open at a time, and a declined client is not asked again for a while.
 - Entry content is untrusted data. Markdown is sanitized before it is shown, and clients are told not to follow instructions inside entries.
 - What an AI writes is attributed to it and marked as unreviewed. Deleting is always a soft delete, and every change set can be undone.
 - A file link an AI creates stays unreadable until the user approves it. Clients can read only linked text files.
 - Only the user can mark entries as reviewed, erase them for good, manage backups or change settings.
 - The skill menu writes only into folders named with Brainmatter's prefix whose `SKILL.md` carries its mark, so the user's own skills are never touched. Files are replaced atomically and never written through a symbolic link, paths with `..` are refused, and a skill's `.claude-plugin` folder is left out, so a skill cannot arrive as a plugin.
+- File paths named in entries are checked only inside folders the user has set for a project, and only for whether they exist and when they last changed. Their content is never read. A path pointing elsewhere, whether absolute, with `~` or with `..`, is not checked at all, so an entry cannot be used to probe for files on the Mac. An AI reading an entry is told only which of its files are gone from the project folder.
+- How often an entry is read, when and by whom, is counted inside the encrypted vault and never leaves the Mac.
 - Logs never contain entry content.
 
 ## Touch ID without an Apple Developer account
@@ -56,6 +58,7 @@ macOS binds such Keychain items to the binary, so after every update the item ca
 - Malware running as your user while the vault is unlocked.
 - A forgotten password together with a lost recovery key. Nobody can recover the data then, by design.
 - A Markdown export, which is plain text. The app says so before writing one.
+- A project's copied context, which sits on the clipboard as plain text, where other apps and clipboard managers can read it.
 - The skill menu, which writes into the skill folders of connected apps as plain files: the names and descriptions of commands, templates and skills, and skills set to go directly as files in full. Any program that reads those folders sees them.
 - Losing the Mac, unless backups are also copied to a second place (Settings → Backups).
 - An AI client you connected doing what its token allows. Limit tokens to what each client needs.

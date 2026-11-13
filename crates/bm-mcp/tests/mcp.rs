@@ -296,6 +296,58 @@ async fn rejects_bad_tokens_and_browser_origins() {
         post().bearer_auth(&token).header("origin", "https://evil.example").send().await.unwrap();
     assert_eq!(res.status(), 403);
     assert!(post().bearer_auth(&token).send().await.unwrap().status().is_success());
+
+    let (_, expired) =
+        s.registry.create_expiring("Abgelaufen", &[Scope::Read], &[], Some(1)).unwrap();
+    let res = post().bearer_auth(&expired).send().await.unwrap();
+    assert_eq!(res.status(), 401);
+    assert!(res.text().await.unwrap().contains("expired"));
+    s.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn reading_is_counted_and_gone_files_are_named() {
+    let s = start().await;
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    let user = Ctx::new(s.engine.ensure_actor(ActorKind::User, "Nutzer").unwrap().id);
+    let project = s
+        .engine
+        .create_project(
+            &user,
+            NewProject {
+                name: "Code".into(),
+                parent: None,
+                description: String::new(),
+                color: None,
+                icon: None,
+            },
+        )
+        .unwrap();
+    s.engine.set_project_folder(&project.id, Some(repo.path().to_str().unwrap())).unwrap();
+    let input = NewNode {
+        title: "Aufbau".into(),
+        body: "Die Logik steht in `src/session.rs`.".into(),
+        projects: vec![project.id.clone()],
+        ..Default::default()
+    };
+    let node = s.engine.create_node(&user, input).unwrap();
+
+    let (_, token) = s.registry.create("Claude Code", &[Scope::Read], &[]).unwrap();
+    let c = connect(&s.url, &token).await;
+    let (text, err) = call(&c, "get", json!({"entry": "Aufbau"})).await;
+    assert!(!err, "{text}");
+    assert!(
+        text.contains("Maybe out of date: `src/session.rs` is gone from the project folder."),
+        "{text}"
+    );
+    let reads = s.engine.node_detail(&node.id).unwrap().reads.unwrap();
+    assert_eq!((reads.count, reads.last_by.as_str()), (1, "Claude Code"));
+
+    std::fs::write(repo.path().join("src/session.rs"), "").unwrap();
+    let (text, _) = call(&c, "get", json!({"entry": "Aufbau"})).await;
+    assert!(!text.contains("out of date"), "{text}");
+    c.cancel().await.unwrap();
     s.shutdown.cancel();
 }
 

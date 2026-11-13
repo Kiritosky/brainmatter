@@ -32,5 +32,20 @@ export function plural(n: number, de: [one: string, many: string], en: [one: str
 /** A number written for the locale. */
 export const num = (n: number): string => n.toLocaleString(locale);
 
+/** `vor 3 Tagen`, `gestern`, or the date for anything older than a week. */
+export function ago(ms: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  if (s < 60) return t('gerade eben', 'just now');
+  if (s < 3600) return t(`vor ${Math.round(s / 60)} Min.`, `${Math.round(s / 60)} min ago`);
+  if (s < 86_400) return t(`vor ${Math.round(s / 3600)} Std.`, `${Math.round(s / 3600)} h ago`);
+  const days = Math.round(s / 86_400);
+  if (days === 1) return t('gestern', 'yesterday');
+  if (days < 7) return t(`vor ${days} Tagen`, `${days} days ago`);
+  return new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+}
+
+/** A date like `13. Nov. 2026`. */
+export const day = (ms: number): string => new Date(ms).toLocaleDateString(locale, { dateStyle: 'medium' });
+
 /** “Text” in the quotes of the language. */
 export const quote = (text: string): string => (lang === 'de' ? `„${text}“` : `“${text}”`);

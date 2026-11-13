@@ -53,6 +53,8 @@ export interface Project {
 export interface ProjectSummary {
   project: Project;
   node_count: number;
+  /** Folder on the Mac that paths in its entries refer to; subprojects use their parent's. */
+  folder?: string | null;
 }
 
 export interface NodeBrief {
@@ -75,6 +77,38 @@ export interface NodeDetail {
   file_links: Omit<FileLinkStatus, 'exists' | 'is_dir'>[];
   /** A documentation page that mirrors a file and can only be changed there. */
   read_only: boolean;
+  /** Full reads by AI clients and the user; `null` if never since reads are counted. */
+  reads?: ReadStats | null;
+  /** Paths it names that are gone or changed since, within its projects' folders. */
+  path_issues?: PathIssue[];
+}
+
+export interface ReadStats {
+  count: number;
+  last_at: number;
+  last_by: string;
+}
+
+export interface PathIssue {
+  path: string;
+  /** Gone; otherwise changed after the entry was last edited. */
+  missing: boolean;
+}
+
+export interface OutdatedEntry {
+  node: NodeBrief;
+  issues: PathIssue[];
+}
+
+export interface MissingLink {
+  title: string;
+  sources: NodeBrief[];
+}
+
+export interface Unread {
+  /** Since when reads are counted. */
+  since: number;
+  entries: NodeBrief[];
 }
 
 export interface TagCount {
@@ -390,6 +424,8 @@ export interface AiClient {
   projects: Id[];
   created_at: number;
   last_seen_at: number | null;
+  /** After this, the token no longer works. */
+  expires_at?: number | null;
 }
 
 export interface McpInfo {
@@ -527,8 +563,8 @@ export const api = {
 
   // AI clients
   mcpInfo: () => call<McpInfo>('mcp_info'),
-  createClient: (name: string, scopes: Scope[], projects: Id[]) =>
-    call<{ client: AiClient; token: string }>('create_client', { name, scopes, projects }),
+  createClient: (name: string, scopes: Scope[], projects: Id[], expiresInDays: number | null = null) =>
+    call<{ client: AiClient; token: string }>('create_client', { name, scopes, projects, expiresInDays }),
   revokeClient: (id: Id) => call<void>('revoke_client', { id }),
   integrations: () => call<Integration[]>('integrations'),
   connectIntegration: (
@@ -578,6 +614,13 @@ export const api = {
   mergeNodes: (keep: Id, others: Id[]) => call<Node>('merge_nodes', { keep, others }),
   orphans: (limit = 200) => call<NodeBrief[]>('orphans', { limit }),
   unreviewed: (limit = 200) => call<NodeBrief[]>('unreviewed', { limit }),
+  unread: (limit = 200) => call<Unread>('unread', { limit }),
+  outdated: (limit = 200) => call<OutdatedEntry[]>('outdated', { limit }),
+  missingLinks: (limit = 200) => call<MissingLink[]>('missing_links', { limit }),
+  confirmCurrent: (id: Id) => call<void>('confirm_current', { id }),
+  chooseProjectFolder: (project: Id) => call<string | null>('choose_project_folder', { project }),
+  clearProjectFolder: (project: Id) => call<void>('clear_project_folder', { project }),
+  projectContext: (project: Id) => call<string>('project_context', { project }),
   addAttachment: async (node: Id, file: File) => {
     // See parse_attachment in commands.rs.
     const meta = new TextEncoder().encode(JSON.stringify({ node, filename: file.name, mime: file.type || null }));

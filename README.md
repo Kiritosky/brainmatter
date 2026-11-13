@@ -45,10 +45,17 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - With one switch, a short rule tells the AI client to look things up in Brainmatter before a task and to save what the next session needs, without being asked
 - A skill vault: instructions your AI tools load by themselves when a task fits, per project or for everything, editable in the app, and importable from GitHub in the Agent Skills format
 - A skill menu for apps that show skills but not MCP commands: your commands, templates and skills appear in the skill folders of Claude Code, Codex and Cursor
-- Each client gets its own token, limited to read, write or delete, and optionally to certain projects
+- Each client gets its own token, limited to read, write or delete, optionally to certain projects, and if you like to a day, a week or a month
+- Copy a project's context as Markdown for chat apps without MCP
 - Whatever an AI writes is attributed to it and marked as unreviewed until you have seen it
 - Every change can be undone, one step at a time, and the graph shows live what an AI is doing
 - Built to save tokens: a [test](crates/bm-mcp/tests/token_cost.rs) holds the size of tool definitions and answers to a budget
+
+**Keeps itself current**
+- Give a project its folder, such as the repo, and Brainmatter checks the file paths its entries name. An entry whose files are gone or have changed since is flagged, and an AI reading it is told which files are gone
+- Counts locally how often each entry is read, by you and by your AI clients, and lists what nobody has read or changed for 90 days
+- Collects `[[links]]` to entries that do not exist yet, each one click away from being created
+- One review panel for all of it, next to what an AI wrote and entries without links
 
 **Encrypted, and yours to take along**
 - The database, search index, embeddings, attachments and backups are all encrypted at rest
@@ -111,7 +118,9 @@ http://127.0.0.1:47474/mcp
 Authorization: Bearer <token>
 ```
 
-Clients that only speak stdio can use the bridge inside the app bundle, `Brainmatter.app/Contents/MacOS/brainmatter-mcp`, with the token in `BRAINMATTER_TOKEN`.
+Clients that only speak stdio can use the bridge inside the app bundle, `Brainmatter.app/Contents/MacOS/brainmatter-mcp`, with the token in `BRAINMATTER_TOKEN`. Such a token can expire after a day, a week or a month, for trying a client out; after that, Brainmatter refuses it and lists it as expired.
+
+For chat apps without MCP, **Copy context** in a project's menu puts its description, subprojects, doc pages, most important entries and open tasks on the clipboard as Markdown, short enough to paste into a chat.
 
 | Tools | For |
 |---|---|
@@ -157,10 +166,11 @@ Only you can mark entries as reviewed, erase them for good, manage backups or ch
 | Attachments | XChaCha20-Poly1305 with a key of their own; file names are keyed hashes |
 | Key derivation | Argon2id (128 MiB, 3 passes) |
 | Key hierarchy | A random data key, wrapped separately for password, recovery key and Touch ID |
-| AI access | Local only (`127.0.0.1`), hashed bearer tokens, browser origins rejected |
+| AI access | Local only (`127.0.0.1`), hashed bearer tokens that can expire, browser origins rejected |
+| Project folders | Only checked for whether a named file exists and when it changed, never read, and only inside folders you set |
 | Network | Only update checks, which you can turn off, the optional model download, and reading a public GitHub repository when you import a skill from it. Your entries never leave the Mac |
 
-What this does not protect against: malware running as your user while the vault is unlocked, and a forgotten password together with a lost recovery key. Backups sit next to the vault unless you choose a second place for copies, so without one they do not help when the Mac is lost. A Markdown export is not encrypted, and the app says so before writing one. Neither is the skill menu: the names and descriptions it writes are stored in the apps' skill folders as plain files, and so are skills set to go directly as files, in full.
+What this does not protect against: malware running as your user while the vault is unlocked, and a forgotten password together with a lost recovery key. Backups sit next to the vault unless you choose a second place for copies, so without one they do not help when the Mac is lost. A Markdown export is not encrypted, and the app says so before writing one. Neither is a project's copied context, which other apps can read on the clipboard, nor the skill menu: the names and descriptions it writes are stored in the apps' skill folders as plain files, and so are skills set to go directly as files, in full.
 
 Entries are treated as untrusted when shown: Markdown is sanitized, and AI clients are told that content is data, not instructions.
 

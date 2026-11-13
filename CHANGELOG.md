@@ -2,6 +2,18 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
+## 1.5.0
+
+Brainmatter merkt jetzt, welche Einträge vielleicht nicht mehr stimmen, welche keiner mehr liest und welche noch fehlen. Tokens können ablaufen, und den Kontext eines Projekts kopierst du für Chat-Apps ohne MCP.
+
+### Neu
+- **Projekt-Ordner:** Im Projekt-Menü gibst du einem Projekt seinen Ordner auf dem Mac, etwa das Repo. Dann prüft Brainmatter die Dateipfade, die in seinen Einträgen und denen seiner Unterprojekte stehen. Es schaut nur nach, ob es eine Datei noch gibt und wann sie sich geändert hat, und liest sie nie.
+- **Vielleicht veraltet:** Fehlt eine genannte Datei oder hat sie sich seit dem Eintrag geändert, sagt der Eintrag es dir und steht im Prüf-Panel unter „Veraltet“. Eine KI, die ihn liest, erfährt, welche Dateien fehlen. „Stimmt noch“ nimmt ihn heraus, bis sich der Eintrag oder eine seiner Dateien wieder ändert.
+- **Lesestatistik:** Brainmatter zählt bei dir auf dem Mac, wie oft ein Eintrag gelesen wird, von dir und von deinen KIs. Unten im Eintrag steht, wie oft, und beim Darüberfahren, wann zuletzt und von wem. Unter „Selten“ stehen Einträge, die 90 Tage lang niemand gelesen oder geändert hat. Gezählt wird ab diesem Update, die Liste füllt sich also nach 90 Tagen.
+- **Fehlende Einträge:** `[[Links]]` auf Einträge, die es noch nicht gibt, sammelt das Prüf-Panel unter „Fehlend“. Ein Klick legt den Eintrag an, in den Projekten des Eintrags, der auf ihn verweist.
+- **Tokens mit Ablauf:** Ein Token für einen eigenen Client gilt auf Wunsch nur einen Tag, 7 oder 30 Tage, etwa für einen Test. Danach weist Brainmatter ihn ab, und in der Liste steht „abgelaufen“.
+- **Kontext kopieren:** Im Projekt-Menü legt „Kontext kopieren“ das Wichtigste eines Projekts als Markdown in die Zwischenablage: Beschreibung, Unterprojekte, Doku-Seiten, die wichtigsten Einträge und offene Aufgaben, so lang, dass es in einen Chat passt. So hat auch eine Chat-App ohne MCP dein Projekt vor sich.
+
 ## 1.4.1 · 2026-11-13
 
 Das Passwort-Fenster für KIs schließt sich jetzt nach dem Entsperren.

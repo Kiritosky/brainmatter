@@ -20,6 +20,7 @@ const MIGRATIONS: &[(&str, Option<DataStep>)] = &[
     (V8, None),
     (V9, None),
     (V10, None),
+    (V11, None),
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
@@ -306,6 +307,31 @@ const V10: &str = r#"
 CREATE INDEX nodes_title_fold_idx ON nodes(bm_fold(title)) WHERE deleted_at IS NULL;
 CREATE INDEX nodes_kind_title_idx ON nodes(kind, title COLLATE NOCASE) WHERE deleted_at IS NULL;
 CREATE INDEX nodes_unreviewed_idx ON nodes(updated_at) WHERE deleted_at IS NULL AND reviewed = 0;
+"#;
+
+// Upkeep, all view state outside the undo history:
+// - how often an entry was read in full, and when and by whom last;
+// - when the user last confirmed an entry is still current despite its paths;
+// - the folder a project's paths are relative to, which only the user sets;
+// - since when reads are counted, so entries do not look unread before that.
+const V11: &str = r#"
+CREATE TABLE node_stats (
+    node_id      TEXT PRIMARY KEY REFERENCES nodes(id),
+    reads        INTEGER NOT NULL DEFAULT 0,
+    last_read_at INTEGER,
+    last_read_by TEXT REFERENCES actors(id),
+    checked_at   INTEGER
+) WITHOUT ROWID;
+CREATE TABLE project_folders (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id),
+    path       TEXT NOT NULL,
+    set_at     INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE vault_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+) WITHOUT ROWID;
+INSERT INTO vault_meta (key, value) VALUES ('reads_since', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
 "#;
 
 // Entries the user wants at hand. View state, so not part of the undo history.

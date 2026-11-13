@@ -256,6 +256,7 @@ pub(crate) fn get(cx: &ToolCx, a: GetArgs) -> Out {
         d.incoming.retain(|e| keep(&e.other.id));
     }
     let author = cx.actor_name(&d.node.updated_by);
+    let _ = cx.engine.note_read(&id, &cx.ctx.actor);
     Ok(format::node_detail(&d, &author))
 }
 
@@ -734,7 +735,9 @@ pub(crate) fn read_doc(cx: &ToolCx, a: ReadDocArgs) -> Out {
         })?,
         None => body,
     };
-    Ok(format!("# {}\n\n<entry-content>\n{text}\n</entry-content>", detail.node.title))
+    let _ = cx.engine.note_read(&id, &cx.ctx.actor);
+    let outdated = format::outdated(&detail.path_issues).map(|l| l + "\n").unwrap_or_default();
+    Ok(format!("# {}\n{outdated}\n<entry-content>\n{text}\n</entry-content>", detail.node.title))
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

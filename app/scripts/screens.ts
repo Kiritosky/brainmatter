@@ -9,6 +9,7 @@ const out = process.argv[2] ?? '/tmp/bm-shots';
 
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2, colorScheme: 'dark', locale: 'de-DE' });
+await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 const errors: string[] = [];
 // Past every release, so the "what's new" dialog is not in the way. It gets its
 // own context at the end.
@@ -393,6 +394,28 @@ try {
   if (onlyCircle && canvas && onlyCircle.width < canvas.height * 0.6) errors.push(`the only project shown stays small: ${Math.round(onlyCircle.width)}px`);
   await sidebar.getByRole('button', { name: 'Alle zeigen' }).click();
   if ((await shownNow()) !== everything) errors.push('showing all did not bring everything back');
+  // A project's folder and its context for chat apps without MCP.
+  await row('Brainmatter').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Brainmatter' }).click();
+  await page.getByRole('menuitem', { name: /Ordner: brainmatter/ }).waitFor();
+  await page.waitForTimeout(200);
+  await shot(page, '50a-project-folder');
+  await page.getByRole('menuitem', { name: 'Kontext kopieren' }).click();
+  await page.getByText(/Kontext von „Brainmatter“ kopiert, rund \d+ Wörter/).waitFor();
+  const copiedContext = await page.evaluate(() => navigator.clipboard.readText());
+  if (!copiedContext.startsWith('# Brainmatter') || !copiedContext.includes('Wichtigste Einträge')) errors.push(`copied context: ${copiedContext.slice(0, 120)}`);
+  await row('Kern').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Kern' }).click();
+  await page.getByRole('menuitem', { name: 'Ordner festlegen …' }).click();
+  await page.getByText('Pfade in „Kern“ beziehen sich jetzt auf').waitFor();
+  await row('Kern').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Kern' }).click();
+  await page.getByRole('menuitem', { name: 'Ordner entfernen' }).click();
+  await row('Kern').hover();
+  await sidebar.getByRole('button', { name: 'Mehr zu Kern' }).click();
+  await page.getByRole('menuitem', { name: 'Ordner festlegen …' }).waitFor();
+  await page.keyboard.press('Escape');
+
   await row('Tresor-Details').hover();
   await sidebar.getByRole('button', { name: 'Mehr zu Tresor-Details' }).click();
   await page.getByRole('menu').waitFor();
@@ -989,6 +1012,42 @@ try {
   await page.getByRole('radio', { name: 'Unverbunden' }).click();
   await page.waitForTimeout(400);
   await shot(page, '25-review-orphans');
+
+  // Upkeep: gone and changed files, entries nobody opened, links to nothing.
+  const review = page.locator('aside').filter({ has: page.getByRole('heading', { name: 'Prüfen' }) });
+  await page.getByRole('radio', { name: 'Veraltet' }).click();
+  await review.getByText('lock.rs').waitFor();
+  if (!(await review.getByText('session.rs').count())) errors.push('a changed file is not listed');
+  await page.waitForTimeout(300);
+  await shot(page, '25a-review-outdated');
+  await page.getByRole('radio', { name: 'Selten' }).click();
+  await review.getByText('Reise nach Lissabon').waitFor();
+  if (await review.getByText('SQLCipher').count()) errors.push('an entry read yesterday counts as unread');
+  await page.waitForTimeout(300);
+  await shot(page, '25b-review-unread');
+  await page.getByRole('radio', { name: 'Fehlend' }).click();
+  await review.getByText('Schlüsselbund').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '25c-review-missing');
+  await review.locator('div.group', { hasText: 'Schlüsselbund' }).hover();
+  await review.locator('div.group', { hasText: 'Schlüsselbund' }).getByLabel('Eintrag anlegen').click();
+  await page.waitForFunction(() => (document.querySelector('input[aria-label="Titel"]') as HTMLInputElement | null)?.value === 'Schlüsselbund');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Escape');
+  await page.getByRole('radio', { name: 'Fehlend' }).waitFor();
+  if (await review.getByText('Schlüsselbund').count()) errors.push('a created entry is still missing');
+  await page.getByRole('radio', { name: 'Veraltet' }).click();
+  await review.getByText('Sperren', { exact: true }).click();
+  await page.getByText('Vielleicht veraltet').waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, '25d-inspector-outdated');
+  await page.getByRole('button', { name: 'Stimmt noch' }).first().click();
+  await page.getByText('Vielleicht veraltet').waitFor({ state: 'detached' });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Escape');
+  await page.getByRole('radio', { name: 'Veraltet' }).waitFor();
+  await page.waitForTimeout(300);
+  if (await review.getByText('lock.rs').count()) errors.push('a confirmed entry is still outdated');
   await page.getByRole('radio', { name: 'Ungeprüft' }).click();
   await page.getByText('Übergabe', { exact: true }).waitFor(); // AI-written templates need review too
   await page.locator('aside').getByText('Hybrid-Suche').hover();
@@ -1055,11 +1114,19 @@ try {
   await page.getByRole('button', { name: /Codex/ }).click();
   await page.waitForTimeout(250);
   await shot(page, '16-ai-not-installed');
+  // A token made by hand can expire, say after a trial.
+  await page.getByRole('radio', { name: '7 Tage' }).click();
+  await page.getByRole('button', { name: 'Token erstellen' }).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
+  await shot(page, '16b-ai-lifetime');
   await page.getByRole('button', { name: 'Token erstellen' }).click();
   await page.getByText('Nur jetzt sichtbar').waitFor();
   await page.getByText('In ~/.codex/AGENTS.md einfügen').waitFor();
   await page.waitForTimeout(300);
   await shot(page, '17-ai-token');
+  await page.getByRole('button', { name: 'Fertig' }).click();
+  await page.getByText('läuft in 7 Tagen ab').waitFor();
+  await page.getByText('läuft in 6 Tagen ab').waitFor();
 } catch (e) {
   await shot(page, 'zz-failure');
   errors.push(`step failed: ${(e as Error).message.split("\n")[0]} at ${(e as Error).stack?.match(/screens\.ts:\d+/)?.[0]} ${(e as Error).message.split("\n").find((l) => l.includes("waiting for")) ?? ""}`);

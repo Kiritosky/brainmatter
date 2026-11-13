@@ -11,11 +11,16 @@ import type {
   FileLinkStatus,
   GraphSnapshot,
   Attachment,
+  MissingLink,
   ModelStatus,
   Node,
+  NodeBrief,
   NodeDetail,
+  OutdatedEntry,
+  PathIssue,
   Project,
   ProjectSummary,
+  ReadStats,
   SearchHit,
   Settings,
   SkillInfo,
@@ -68,6 +73,14 @@ function importSummary(changeSet: string | null) {
   };
 }
 const clients: AiClient[] = [];
+
+// Upkeep: reads, project folders and which files the mock pretends are gone or changed.
+const reads = new Map<string, ReadStats>();
+const checkedAt = new Map<string, number>();
+const projectFolders = new Map<string, string>();
+const GONE_FILES = new Set(['app/src-tauri/src/lock.rs']);
+const CHANGED_FILES = new Set(['app/src-tauri/src/session.rs']);
+let readsSince = 0;
 
 let state: Status['state'] = new URLSearchParams(location.search).get('mock') === 'fresh' ? 'none' : 'locked';
 let touchId = state === 'locked';
@@ -332,7 +345,7 @@ function projectList(): ProjectSummary[] {
   const out: ProjectSummary[] = [];
   const visit = (parent: string | null) => {
     for (const p of all.filter((x) => x.parent_id === parent).sort((a, b) => a.sort - b.sort)) {
-      out.push({ project: p, node_count: [...nodes.values()].filter((n) => !n.deleted_at && !isDocument(n.kind) && members.has(`${p.id}|${n.id}`)).length });
+      out.push({ project: p, node_count: [...nodes.values()].filter((n) => !n.deleted_at && !isDocument(n.kind) && members.has(`${p.id}|${n.id}`)).length, folder: projectFolders.get(p.id) ?? null });
       visit(p.id);
     }
   };
@@ -425,7 +438,72 @@ function detail(nid: string): NodeDetail {
     attachments: [...attachments.values()].filter((a) => a.meta.node_id === nid && !a.deleted).map((a) => a.meta),
     file_links: fileLinks.filter((l) => l.node_id === nid),
     read_only: docs.some((d) => d.node === nid && d.source),
+    reads: reads.get(nid) ?? null,
+    path_issues: pathIssues(node),
   };
+}
+
+/** The folder a project's paths refer to: its own, or the nearest parent's. */
+function folderOf(pid: string | null): string | null {
+  for (let p = pid ? projects.get(pid) : undefined; p; p = p.parent_id ? projects.get(p.parent_id) : undefined) {
+    const folder = projectFolders.get(p.id);
+    if (folder) return folder;
+  }
+  return null;
+}
+
+/** Paths in inline code, checked against the made-up gone and changed files. */
+function pathIssues(n: Node): PathIssue[] {
+  if (!projectsOf(n.id).some((p) => folderOf(p.id))) return [];
+  const confirmed = (checkedAt.get(n.id) ?? 0) >= n.updated_at;
+  const paths = [...new Set([...n.body.matchAll(/`([\w.~-]+(?:\/[\w.-]+)+\.[a-z]+)`/g)].map((m) => m[1]))];
+  return paths.flatMap((path): PathIssue[] => {
+    if (GONE_FILES.has(path) && !confirmed) return [{ path, missing: true }];
+    if (CHANGED_FILES.has(path) && !confirmed) return [{ path, missing: false }];
+    return [];
+  });
+}
+
+function noteRead(nid: string, by: string) {
+  const prev = reads.get(nid);
+  const again = prev && prev.last_by === by && now() - prev.last_at < 30 * 60_000;
+  reads.set(nid, { count: (prev?.count ?? 0) + (again ? 0 : 1), last_at: now(), last_by: by });
+}
+
+const brief = (n: Node): NodeBrief => ({ id: n.id, title: n.title, kind: n.kind });
+
+function missingLinks(): MissingLink[] {
+  const titles = new Set([...nodes.values()].filter((n) => !n.deleted_at).map((n) => n.title.toLowerCase()));
+  const found = new Map<string, MissingLink>();
+  for (const n of nodes.values()) {
+    if (n.deleted_at) continue;
+    const seen = new Set<string>();
+    for (const [, raw] of n.body.matchAll(/\[\[([^\]|#]+)/g)) {
+      const title = raw.trim();
+      const key = title.toLowerCase();
+      if (!title || title.includes('{{') || titles.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      const entry = found.get(key) ?? { title, sources: [] };
+      entry.sources.push(brief(n));
+      found.set(key, entry);
+    }
+  }
+  return [...found.values()].sort((a, b) => b.sources.length - a.sources.length || a.title.localeCompare(b.title));
+}
+
+function projectContext(pid: string): string {
+  const p = projects.get(pid)!;
+  const scope = subtree(pid);
+  const inside = [...nodes.values()].filter((n) => !n.deleted_at && !isDocument(n.kind) && projectsOf(n.id).some((x) => scope.has(x.id)));
+  const entries = inside.filter((n) => n.kind !== 'task').map((n) => `### ${n.title} (${n.kind})\n\n${n.body}\n`);
+  const tasks = inside.filter((n) => n.kind === 'task').map((n) => `- ${n.title}`);
+  return [
+    `# ${p.name}\n`,
+    `> ${t(`Kontext aus Brainmatter: ${inside.length} Einträge, hier die wichtigsten.`, `Context from Brainmatter: ${inside.length} entries, the most important ones below.`)}\n`,
+    p.description ? `${p.description}\n` : '',
+    entries.length ? `## ${t('Wichtigste Einträge', 'Most important entries')}\n\n${entries.join('\n')}` : '',
+    tasks.length ? `## ${t('Offene Aufgaben', 'Open tasks')}\n\n${tasks.join('\n')}\n` : '',
+  ].filter(Boolean).join('\n');
 }
 
 // Skills: entries of kind `skill`, their files are attachments named by their path.
@@ -691,6 +769,24 @@ function seed() {
   addEdge(ids[6].id, ids[5].id, 'depends_on', 'ai');
   const H = 3_600_000;
   const byTitle = (t: string) => ids.find((x) => x.title === t)!.id;
+
+  // Upkeep: a folder for the app's project, an entry with a gone and a changed
+  // file and a link to nothing, reads, and old notes nobody opened since.
+  projectFolders.set(bm.id, '/Users/alex/brainmatter');
+  n(
+    t('Sperren', 'Locking'),
+    t(
+      'Die Sperre steht in `app/src-tauri/src/session.rs`, früher in `app/src-tauri/src/lock.rs`. Den Schlüssel hält der [[Schlüsselbund]].',
+      'Locking lives in `app/src-tauri/src/session.rs`, formerly in `app/src-tauri/src/lock.rs`. The [[Keychain]] holds the key.',
+    ),
+    [core],
+  );
+  readsSince = now() - 120 * DAY;
+  reads.set(byTitle('SQLCipher'), { count: 14, last_at: now() - 26 * H, last_by: 'Claude Code' });
+  reads.set(byTitle('Touch ID'), { count: 3, last_at: now() - 3 * DAY, last_by: userName });
+  const trip = n(t('Reise nach Lissabon', 'Trip to Lisbon'), t('Unterkunft in der Alfama, drei Nächte.', 'A place in Alfama, three nights.'), [life]);
+  for (const old of [trip, nodes.get(byTitle(T.rye))!]) old.created_at = old.updated_at = now() - 140 * DAY;
+  clients.push({ id: id(), name: t('Test-Agent', 'Test agent'), scopes: ['read'], projects: [], created_at: now() - DAY, last_seen_at: now() - 2 * H, expires_at: now() + 6 * DAY });
   clients.push({ id: id(), name: 'Claude Code', scopes: ['read', 'write'], projects: [], created_at: now() - 72 * H, last_seen_at: now() - 6 * 60_000 });
   clients.push({ id: id(), name: 'Cursor', scopes: ['read'], projects: [core.id], created_at: now() - 50 * H, last_seen_at: null });
   // Summaries are stored German, as the core writes them; the interface translates them.
@@ -761,7 +857,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
   create_client: (a) => {
     if (!String(a.name).trim()) fail('invalid', t('Bitte einen Namen angeben.', 'Please enter a name.'));
     if (clients.some((c) => c.name.toLowerCase() === a.name.trim().toLowerCase())) fail('invalid', t(`Es gibt schon eine Verbindung namens „${a.name}“.`, `There is already a connection named “${a.name}”.`));
-    const client: AiClient = { id: id(), name: a.name.trim(), scopes: a.scopes, projects: a.projects, created_at: now(), last_seen_at: null };
+    const expires_at = a.expiresInDays ? now() + a.expiresInDays * DAY : null;
+    const client: AiClient = { id: id(), name: a.name.trim(), scopes: a.scopes, projects: a.projects, created_at: now(), last_seen_at: null, expires_at };
     clients.push(client);
     return { client, token: 'bm_mock_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg' };
   },
@@ -861,7 +958,11 @@ const handlers: Record<string, (a: Args) => unknown> = {
   save_layout: (a) => {
     for (const p of a.positions) layouts.set(`${a.view}|${p.node}`, p);
   },
-  node_detail: (a) => detail(a.id),
+  node_detail: (a) => {
+    const d = detail(a.id);
+    noteRead(a.id, userName);
+    return d;
+  },
   search: (a) => search(a.query),
   favorites: () =>
     [...favorites]
@@ -1182,6 +1283,34 @@ const handlers: Record<string, (a: Args) => unknown> = {
       .map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
   unreviewed: () =>
     [...nodes.values()].filter((n) => !n.deleted_at && !n.reviewed).map((n) => ({ id: n.id, title: n.title, kind: n.kind })),
+  unread: () => {
+    const cutoff = now() - 90 * DAY;
+    const used = (n: Node) => Math.max(reads.get(n.id)?.last_at ?? 0, n.updated_at);
+    const entries = readsSince >= cutoff ? [] : [...nodes.values()]
+      .filter((n) => !n.deleted_at && n.kind !== 'template' && n.kind !== 'skill' && used(n) < cutoff)
+      .sort((a, b) => used(a) - used(b))
+      .map(brief);
+    return { since: readsSince, entries };
+  },
+  outdated: (): OutdatedEntry[] =>
+    [...nodes.values()]
+      .filter((n) => !n.deleted_at)
+      .map((n) => ({ node: brief(n), issues: pathIssues(n) }))
+      .filter((e) => e.issues.length)
+      .sort((a, b) => b.issues.filter((i) => i.missing).length - a.issues.filter((i) => i.missing).length),
+  missing_links: () => missingLinks(),
+  confirm_current: (a) => {
+    checkedAt.set(a.id, now());
+  },
+  choose_project_folder: (a) => {
+    const folder = '/Users/alex/' + (projects.get(a.project)?.name.toLowerCase().replace(/\s+/g, '-') ?? 'projekt');
+    projectFolders.set(a.project, folder);
+    return folder;
+  },
+  clear_project_folder: (a) => {
+    projectFolders.delete(a.project);
+  },
+  project_context: (a) => projectContext(a.project),
   create_node: (a) => {
     const n = createNode(a.input);
     record(`„${n.title}“ erstellt`, [n.id]);

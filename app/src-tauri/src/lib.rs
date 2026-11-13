@@ -2,6 +2,7 @@
 //! macOS integrations into Tauri.
 
 mod commands;
+pub mod context;
 mod docs_watch;
 pub mod error;
 mod github;
@@ -421,6 +422,13 @@ pub fn run() {
             commands::export_attachment,
             commands::orphans,
             commands::unreviewed,
+            commands::unread,
+            commands::outdated,
+            commands::missing_links,
+            commands::confirm_current,
+            commands::choose_project_folder,
+            commands::clear_project_folder,
+            commands::project_context,
             commands::create_node,
             commands::update_node,
             commands::delete_node,

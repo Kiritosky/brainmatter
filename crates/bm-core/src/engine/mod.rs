@@ -21,6 +21,7 @@ mod rows;
 mod search;
 mod semantic;
 mod skills;
+mod upkeep;
 mod writer;
 
 pub use export::ExportSummary;
@@ -462,8 +463,10 @@ impl Engine {
         self.read(|c| rows::node(c, id))
     }
 
+    /// The entry with everything around it. Checks the paths it mentions against
+    /// its projects' folders, so it looks at the disk.
     pub fn node_detail(&self, id: &NodeId) -> Result<NodeDetail> {
-        self.read(|c| {
+        let (mut detail, check) = self.read(|c| {
             let node = rows::live_node(c, id)?;
             let projects = rows::projects_of(c, id)?;
             let view = |edge: Edge, other: &NodeId| -> Result<Option<EdgeView>> {
@@ -482,7 +485,9 @@ impl Engine {
             let attachments = attachments::of_node(c, id)?;
             let file_links = file_links::of_node(c, id)?;
             let read_only = docs::is_mirrored(c, id)?;
-            Ok(NodeDetail {
+            let reads = upkeep::read_stats(c, id)?;
+            let check = upkeep::PathCheck::load(c, id, &node.body, node.updated_at)?;
+            let detail = NodeDetail {
                 node,
                 projects,
                 outgoing,
@@ -490,8 +495,60 @@ impl Engine {
                 attachments,
                 file_links,
                 read_only,
-            })
-        })
+                reads,
+                path_issues: Vec::new(),
+            };
+            Ok((detail, check))
+        })?;
+        detail.path_issues = check.issues();
+        Ok(detail)
+    }
+
+    // ------------------------------------------------------------ upkeep ---
+
+    /// Counts a full read of an entry. Reading is no change: no history, no
+    /// event. Skipped while a long write holds the writer, so reads never wait.
+    pub fn note_read(&self, id: &NodeId, reader: &ActorId) -> Result<()> {
+        let Some(conn) = self.writer.try_lock_for(std::time::Duration::from_millis(50)) else {
+            return Ok(());
+        };
+        upkeep::note_read(&conn, id, reader, now_ms())
+    }
+
+    /// The user checked the entry: it is still current despite its paths.
+    pub fn confirm_current(&self, id: &NodeId) -> Result<()> {
+        self.read(|c| rows::live_node(c, id).map(|_| ()))?;
+        upkeep::confirm_current(&self.writer.lock(), id, now_ms())
+    }
+
+    /// Sets the folder that paths in the project's entries refer to, or removes
+    /// it. Only the user may: a folder decides which files get looked at.
+    pub fn set_project_folder(&self, project: &ProjectId, path: Option<&str>) -> Result<()> {
+        self.read(|c| rows::live_project(c, project).map(|_| ()))?;
+        let path = path.map(file_links::clean_path).transpose()?;
+        upkeep::set_folder(&self.writer.lock(), project, path.as_deref(), now_ms())
+    }
+
+    /// Entries whose paths are gone or changed, those with something gone first.
+    pub fn outdated(&self, limit: usize) -> Result<Vec<OutdatedEntry>> {
+        let checks = self.read(upkeep::path_checks)?;
+        Ok(upkeep::outdated(checks, limit))
+    }
+
+    /// Entries nobody read or changed since `cutoff`. Empty until reads have been
+    /// counted that long.
+    pub fn unread_since(&self, cutoff: i64, limit: usize) -> Result<Vec<NodeBrief>> {
+        self.read(|c| upkeep::unread_since(c, cutoff, limit))
+    }
+
+    /// Since when reads are counted.
+    pub fn reads_since(&self) -> Result<i64> {
+        self.read(upkeep::reads_since)
+    }
+
+    /// `[[Titles]]` no entry has, the most linked first.
+    pub fn missing_links(&self, limit: usize) -> Result<Vec<MissingLink>> {
+        self.read(|c| upkeep::missing_links(c, limit))
     }
 
     // -------------------------------------------------------- file links ---

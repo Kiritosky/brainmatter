@@ -7,6 +7,7 @@
   import { ws } from '#lib/workspace.svelte.ts';
   import Toggle from '#lib/ui/Toggle.svelte';
   import Checkbox from '#lib/ui/Checkbox.svelte';
+  import Segmented from '#lib/ui/Segmented.svelte';
   import { pop } from '#lib/ui/motion.ts';
   import { avatarStyle, tint } from '#lib/ui/tint.ts';
 
@@ -38,6 +39,15 @@
   let scopes = $state<Record<Scope, boolean>>({ read: true, write: true, delete: false });
   let limitProjects = $state(false);
   let projects = $state<string[]>([]);
+  /** Days until the token stops working; `never` for one that lasts. Only for hand-made connections. */
+  type Lifetime = 'never' | '1' | '7' | '30';
+  let lifetime = $state<Lifetime>('never');
+  const LIFETIMES: { value: Lifetime; label: string }[] = [
+    { value: 'never', label: t('Unbegrenzt', 'No limit') },
+    { value: '1', label: t('1 Tag', '1 day') },
+    { value: '7', label: t('7 Tage', '7 days') },
+    { value: '30', label: t('30 Tage', '30 days') },
+  ];
 
   let memory = $state(true);
   let skillMenu = $state(true);
@@ -76,6 +86,7 @@
     scopes = { read: true, write: true, delete: false };
     limitProjects = false;
     projects = [];
+    lifetime = 'never';
     memory = true;
     skillMenu = true;
     error = null;
@@ -117,7 +128,8 @@
     error = null;
     try {
       const chosen = (Object.keys(scopes) as Scope[]).filter((s) => scopes[s]);
-      const created = await api.createClient(name, chosen, limitProjects ? projects : []);
+      const days = lifetime === 'never' ? null : Number(lifetime);
+      const created = await api.createClient(name, chosen, limitProjects ? projects : [], days);
       token = created.token;
       copied = false;
       ruleCopied = false;
@@ -226,6 +238,16 @@
     setTimeout(() => (ruleCopied = false), 1600);
   }
 
+  /** `läuft in 3 Tagen ab`, or `abgelaufen` once the token no longer works. */
+  function expiry(at: number): { text: string; expired: boolean } {
+    const left = at - Date.now();
+    if (left <= 0) return { text: t('abgelaufen', 'expired'), expired: true };
+    const hours = Math.ceil(left / 3_600_000);
+    if (hours < 24) return { text: t(`läuft in ${hours} Std. ab`, `expires in ${hours} h`), expired: false };
+    const days = Math.ceil(left / 86_400_000);
+    return { text: days === 1 ? t('läuft morgen ab', 'expires tomorrow') : t(`läuft in ${days} Tagen ab`, `expires in ${days} days`), expired: false };
+  }
+
   function seen(ms: number | null) {
     if (!ms) return t('Noch nie verbunden', 'Never connected');
     const s = Math.round((Date.now() - ms) / 1000);
@@ -277,6 +299,10 @@
                 {c.scopes.map((s) => SCOPE_LABEL[s]).join(', ')}
                 · {c.projects.length ? c.projects.map(projectName).join(', ') : t('Alle Projekte', 'All projects')}
                 · {seen(c.last_seen_at)}
+                {#if c.expires_at}
+                  {@const e = expiry(c.expires_at)}
+                  · <span class={e.expired ? 'text-danger' : ''}>{e.text}</span>
+                {/if}
               </div>
               {#if menu?.skill_menu}
                 <div class="truncate text-xs text-faint" in:pop={{ duration: 140, y: -2 }}>{menuStatus(menu)}</div>
@@ -382,6 +408,15 @@
           {:else}
             <p class="text-xs text-faint">{t('Noch keine Projekte vorhanden.', 'No projects yet.')}</p>
           {/each}
+        </div>
+      {/if}
+      {#if !integration?.available}
+        <div class="row">
+          <div class="flex-1">
+            <div>{t('Gültig', 'Valid for')}</div>
+            <div class="text-xs text-faint">{t('Danach weist Brainmatter das Token ab, etwa nach einem Test', 'After that, Brainmatter turns the token away, say after a trial')}</div>
+          </div>
+          <div class="w-64 shrink-0"><Segmented bind:value={lifetime} options={LIFETIMES} label={t('Gültig', 'Valid for')} compact /></div>
         </div>
       {/if}
     </div>

@@ -278,10 +278,13 @@ pub fn save_layout(session: S<'_>, view: String, positions: Vec<LayoutPosition>)
     Ok(engine.save_layout(&view, &positions)?)
 }
 
+/// Opening an entry counts as reading it; reopening it soon after does not.
 #[tauri::command(async)]
 pub fn node_detail(session: S<'_>, id: NodeId) -> ApiResult<NodeDetail> {
-    let (engine, _) = session.engine()?;
-    Ok(engine.node_detail(&id)?)
+    let (engine, ctx) = session.engine()?;
+    let detail = engine.node_detail(&id)?;
+    let _ = engine.note_read(&id, &ctx.actor);
+    Ok(detail)
 }
 
 #[tauri::command(async)]
@@ -410,6 +413,97 @@ pub fn orphans(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
 pub fn unreviewed(session: S<'_>, limit: usize) -> ApiResult<Vec<NodeBrief>> {
     let (engine, _) = session.engine()?;
     Ok(engine.unreviewed(limit.min(500))?)
+}
+
+// ---------------------------------------------------------------- upkeep ---
+
+/// Entries nobody read or changed for this long count as rarely read.
+const UNREAD_AFTER_MS: i64 = 90 * 86_400_000;
+
+#[derive(Serialize)]
+pub struct Unread {
+    /// Since when reads are counted; before that, nothing can be rarely read.
+    since: i64,
+    entries: Vec<NodeBrief>,
+}
+
+#[tauri::command(async)]
+pub fn unread(session: S<'_>, limit: usize) -> ApiResult<Unread> {
+    let (engine, _) = session.engine()?;
+    let cutoff = bm_core::time::now_ms() - UNREAD_AFTER_MS;
+    Ok(Unread {
+        since: engine.reads_since()?,
+        entries: engine.unread_since(cutoff, limit.min(500))?,
+    })
+}
+
+#[tauri::command(async)]
+pub fn outdated(session: S<'_>, limit: usize) -> ApiResult<Vec<OutdatedEntry>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.outdated(limit.min(500))?)
+}
+
+#[tauri::command(async)]
+pub fn missing_links(session: S<'_>, limit: usize) -> ApiResult<Vec<MissingLink>> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.missing_links(limit.min(500))?)
+}
+
+#[tauri::command(async)]
+pub fn confirm_current(session: S<'_>, id: NodeId) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.confirm_current(&id)?)
+}
+
+/// Asks for the folder that paths in the project's entries refer to. Starts in
+/// the repository of a mirrored docs folder, if the project has one. `None` if
+/// the user cancels.
+#[tauri::command(async)]
+pub fn choose_project_folder(
+    app: tauri::AppHandle,
+    session: S<'_>,
+    project: ProjectId,
+) -> ApiResult<Option<String>> {
+    let (engine, _) = session.engine()?;
+    let mut dialog = app.dialog().file();
+    if let Some(start) = engine.doc_sources(&project)?.first().map(|s| repo_of(&s.path)) {
+        dialog = dialog.set_directory(start);
+    }
+    let Some(picked) = dialog.blocking_pick_folder() else { return Ok(None) };
+    let path = picked.into_path().map_err(ApiError::internal)?;
+    let text = path.to_str().ok_or_else(|| {
+        ApiError::new(
+            "invalid",
+            tr("Dieser Ordnername wird nicht unterstützt.", "This folder name is not supported."),
+        )
+    })?;
+    engine.set_project_folder(&project, Some(text))?;
+    Ok(Some(text.to_string()))
+}
+
+/// The repository a mirrored source lives in: the folder of a README, the
+/// parent of a `docs` folder.
+fn repo_of(source: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(source);
+    let is_file = path.extension().is_some();
+    let is_docs = path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("docs"));
+    match path.parent() {
+        Some(parent) if is_file || is_docs => parent.to_path_buf(),
+        _ => path.to_path_buf(),
+    }
+}
+
+#[tauri::command(async)]
+pub fn clear_project_folder(session: S<'_>, project: ProjectId) -> ApiResult<()> {
+    let (engine, _) = session.engine()?;
+    Ok(engine.set_project_folder(&project, None)?)
+}
+
+/// The project as Markdown for chat apps without MCP.
+#[tauri::command(async)]
+pub fn project_context(session: S<'_>, project: ProjectId) -> ApiResult<String> {
+    let (engine, _) = session.engine()?;
+    Ok(crate::context::project_context(&engine, &project)?)
 }
 
 /// A link as the inspector shows it, checked against the disk.
@@ -1136,9 +1230,14 @@ pub fn create_client(
     name: String,
     scopes: Vec<Scope>,
     projects: Vec<ProjectId>,
+    expires_in_days: Option<u32>,
 ) -> ApiResult<CreatedClient> {
     require_unlocked(&session)?;
-    let (client, token) = registry.create(&name, &scopes, &projects).map_err(registry_error)?;
+    let expires_at = expires_in_days
+        .filter(|days| *days > 0)
+        .map(|days| bm_core::time::now_ms() + i64::from(days) * 86_400_000);
+    let (client, token) =
+        registry.create_expiring(&name, &scopes, &projects, expires_at).map_err(registry_error)?;
     Ok(CreatedClient { client, token })
 }
 

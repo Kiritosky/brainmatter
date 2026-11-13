@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { locale, t } from '#lib/i18n.ts';
+  import { ago, locale, num, t } from '#lib/i18n.ts';
   import { onDestroy, untrack } from 'svelte';
-  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, FilePlus, FolderPlus, GitMerge, Link2, Paperclip, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
+  import { ArrowLeft, ArrowRight, Star, Crosshair, File as FileIcon, FileImage, FileText, FilePlus, FileExclamationPoint, FolderPlus, GitMerge, Link2, Paperclip, Trash2, Upload, X, Pencil, Eye, History, Bot, Check, Plus, Undo2 } from '@lucide/svelte';
   import { api, errorMessage, TEMPLATE_KIND, type Attachment, type EdgeView, type NodeRevision, type Similar } from '#lib/api.ts';
   import { MAX_ATTACHMENT_BYTES, attachmentUrl, formatSize, pastedAttachmentMarkdown, pastedFile, previewKind } from '#lib/attachments.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
@@ -257,6 +257,21 @@
       <TagInput exclude={node.tags} onadd={(tag) => act(() => api.updateNode(node.id, { tags_add: [tag] }))} />
     </div>
 
+    {#if detail.path_issues?.length}
+      {@const gone = detail.path_issues.filter((i) => i.missing)}
+      {@const changed = detail.path_issues.filter((i) => !i.missing)}
+      <div class="mb-5 rounded-lg bg-warn/8 px-3 py-2.5 text-xs ring-1 ring-warn/20" in:pop={{ duration: 200, y: 4 }}>
+        <div class="flex items-center gap-1.5 font-medium text-warn"><FileExclamationPoint size={13} /> {t('Vielleicht veraltet', 'Maybe out of date')}</div>
+        <p class="mt-1 leading-relaxed text-muted">
+          {#if gone.length}{t('Fehlt im Projekt-Ordner:', 'Gone from the project folder:')} {#each gone as i, n (i.path)}<code class="font-mono text-text">{i.path}</code>{n < gone.length - 1 ? ', ' : ''}{/each}.{/if}
+          {#if changed.length}{t('Seitdem geändert:', 'Changed since:')} {#each changed as i, n (i.path)}<code class="font-mono text-text">{i.path}</code>{n < changed.length - 1 ? ', ' : ''}{/each}.{/if}
+        </p>
+        <button class="btn-ghost mt-1.5 -ml-2 !h-6.5 text-xs" onclick={() => act(async () => { await api.confirmCurrent(node.id); ws.upkeep++; await ws.refreshDetail(); })}>
+          <Check size={13} /> {t('Stimmt noch', 'Still current')}
+        </button>
+      </div>
+    {/if}
+
     <div class="mb-1 flex h-7 items-center">
       <div class="section-title !mb-0">{t('Inhalt', 'Content')}</div>
       {#if draft.inFlight || draft.dirty}
@@ -399,6 +414,10 @@
   </div>
   <footer class="flex items-center gap-1.5 border-t border-line-soft px-5 py-2 text-[11px] text-faint tabular-nums">
     <span>{t('Geändert', 'Changed')} {fmt(node.updated_at)}</span><span aria-hidden="true">·</span><span>Rev. {node.rev}</span>
+    {#if detail.reads}
+      <span aria-hidden="true">·</span>
+      <span title={t(`Zuletzt ${ago(detail.reads.last_at)} von ${detail.reads.last_by}`, `Last read ${ago(detail.reads.last_at)} by ${detail.reads.last_by}`)}>{t(`${num(detail.reads.count)}× gelesen`, `read ${num(detail.reads.count)}×`)}</span>
+    {/if}
     <span class="selectable ml-auto font-mono">#{node.id.slice(-8)}</span>
   </footer>
 </aside>

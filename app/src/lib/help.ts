@@ -97,8 +97,8 @@ export const TOUR: TourStep[] = [
     target: 'review',
     title: t('Was KIs geschrieben haben', 'What AI clients wrote'),
     text: t(
-      'Landet hier zum Prüfen. Alles lässt sich rückgängig machen, und in der Aktivität siehst du, wer was getan hat.',
-      'Lands here for you to review. Everything can be undone, and the activity shows who did what.',
+      'Landet hier zum Prüfen, so wie Einträge, die veraltet sind, die keiner liest oder die noch fehlen. Alles lässt sich rückgängig machen, und in der Aktivität siehst du, wer was getan hat.',
+      'Lands here for you to review, as do entries that are out of date, that nobody reads or that are still missing. Everything can be undone, and the activity shows who did what.',
     ),
   },
   {

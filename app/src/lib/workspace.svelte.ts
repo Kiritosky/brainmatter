@@ -121,6 +121,8 @@ class Workspace {
   tourOpen = $state(false);
   /** Bumped after every coalesced refresh, for views that reload on change. */
   revision = $state(0);
+  /** Bumped when upkeep lists change without a change to the graph: a confirmed entry, a project folder. */
+  upkeep = $state(0);
   /** Increment to ask the graph to centre the selected node. */
   focusTick = $state(0);
   toast = $state<string | null>(null);

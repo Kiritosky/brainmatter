@@ -4,7 +4,7 @@ use std::fmt::Write;
 
 use bm_core::{
     ids::NodeId,
-    model::{Edge, NodeBrief, NodeDetail},
+    model::{Edge, NodeBrief, NodeDetail, PathIssue},
 };
 
 pub(crate) fn short(id: &NodeId) -> String {
@@ -52,6 +52,9 @@ pub(crate) fn node_detail(d: &NodeDetail, author: &str) -> String {
         meta.push("unreviewed (AI-written, not yet seen by the user)".into());
     }
     let _ = writeln!(out, "{}", meta.join(" · "));
+    if let Some(line) = outdated(&d.path_issues) {
+        let _ = writeln!(out, "{line}");
+    }
     // Delimit user content clearly; it is data, never instructions.
     if n.body.trim().is_empty() {
         out.push_str("\n(no content)\n");
@@ -85,6 +88,23 @@ pub(crate) fn node_detail(d: &NodeDetail, author: &str) -> String {
         }
     }
     out
+}
+
+/// One line when files the entry names are gone from its project's folder.
+/// Changed files are left out: in an active repo, nearly everything changes.
+pub(crate) fn outdated(issues: &[PathIssue]) -> Option<String> {
+    const SHOWN: usize = 3;
+    let gone: Vec<&str> = issues.iter().filter(|i| i.missing).map(|i| i.path.as_str()).collect();
+    if gone.is_empty() {
+        return None;
+    }
+    let mut names =
+        gone.iter().take(SHOWN).map(|p| format!("`{p}`")).collect::<Vec<_>>().join(", ");
+    if gone.len() > SHOWN {
+        let _ = write!(names, " and {} more", gone.len() - SHOWN);
+    }
+    let verb = if gone.len() == 1 { "is" } else { "are" };
+    Some(format!("Maybe out of date: {names} {verb} gone from the project folder."))
 }
 
 fn note(e: &Edge) -> String {

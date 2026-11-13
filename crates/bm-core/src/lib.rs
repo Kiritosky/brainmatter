@@ -13,6 +13,7 @@ pub mod ids;
 pub mod import;
 pub mod mirror;
 pub mod model;
+pub mod paths;
 pub mod semantic;
 pub mod skills;
 pub mod store;

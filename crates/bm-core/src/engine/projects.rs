@@ -243,13 +243,18 @@ pub(crate) fn list(conn: &Connection) -> Result<Vec<ProjectSummary>> {
                 (SELECT count(*) FROM project_members m
                   JOIN nodes n INDEXED BY nodes_graph_idx ON n.id = m.node_id
                   WHERE m.project_id = projects.id AND n.deleted_at IS NULL
-                    AND n.kind NOT IN ('template', 'doc', 'skill'))
+                    AND n.kind NOT IN ('template', 'doc', 'skill')),
+                (SELECT path FROM project_folders f WHERE f.project_id = projects.id)
          FROM projects WHERE deleted_at IS NULL ORDER BY sort, name"
     );
     let mut stmt = conn.prepare(&sql)?;
     let all: Vec<ProjectSummary> = stmt
         .query_map([], |r| {
-            Ok(ProjectSummary { project: project_from_row(r)?, node_count: r.get(10)? })
+            Ok(ProjectSummary {
+                project: project_from_row(r)?,
+                node_count: r.get(10)?,
+                folder: r.get(11)?,
+            })
         })?
         .collect::<rusqlite::Result<_>>()?;
 

@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::ClientRegistry;
+use crate::{ClientRegistry, clients::Denied};
 
 pub(crate) async fn require_bearer(
     State(registry): State<Arc<ClientRegistry>>,
@@ -21,18 +21,22 @@ pub(crate) async fn require_bearer(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .and_then(|token| registry.authenticate(token.trim()));
+        .map_or(Err(Denied::Unknown), |token| registry.authenticate(token.trim()));
 
-    match client {
-        Some(client) => {
+    let refused = match client {
+        Ok(client) => {
             req.extensions_mut().insert(client);
-            next.run(req).await
+            return next.run(req).await;
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            [(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"))],
-            "missing or invalid Brainmatter token",
-        )
-            .into_response(),
-    }
+        Err(Denied::Unknown) => "missing or invalid Brainmatter token",
+        Err(Denied::Expired) => {
+            "this Brainmatter token has expired; the user can create a new one in Brainmatter → Settings → AI clients"
+        }
+    };
+    (
+        StatusCode::UNAUTHORIZED,
+        [(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"))],
+        refused,
+    )
+        .into_response()
 }

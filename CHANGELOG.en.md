@@ -2,6 +2,18 @@
 
 This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
+## 1.5.0
+
+Brainmatter now notices which entries may no longer be true, which nobody reads any more and which are still missing. Tokens can expire, and you can copy a project's context for chat apps without MCP.
+
+### New
+- **Project folders:** In the project menu, give a project its folder on your Mac, such as the repo. Brainmatter then checks the file paths named in its entries and those of its subprojects. It only looks at whether a file is still there and when it changed, and never reads it.
+- **Maybe out of date:** When a named file is gone or has changed since the entry, the entry tells you so and appears in the review panel under “Outdated”. An AI client reading it is told which files are gone. “Still current” takes it off the list until the entry or one of its files changes again.
+- **Read counts:** Brainmatter counts, on your Mac, how often an entry is read, by you and by your AI clients. The foot of the entry shows how often, and on hover when it was last read and by whom. “Unread” lists entries nobody has read or changed for 90 days. Counting starts with this update, so the list fills after 90 days.
+- **Missing entries:** The review panel collects `[[links]]` to entries that do not exist yet under “Missing”. One click creates the entry, in the projects of the entry that links to it.
+- **Tokens that expire:** A token for a client of your own can be valid for just a day, 7 or 30 days, say for a test. After that, Brainmatter refuses it, and the list shows it as expired.
+- **Copy context:** In the project menu, “Copy context” puts what matters about a project on the clipboard as Markdown: its description, subprojects, doc pages, most important entries and open tasks, short enough for a chat. That way a chat app without MCP has your project in front of it too.
+
 ## 1.4.1 · 2026-11-13
 
 The password window for AI clients now closes after unlocking.

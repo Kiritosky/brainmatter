@@ -39,6 +39,9 @@ struct Stored {
     created_at: i64,
     #[serde(default)]
     last_seen_at: Option<i64>,
+    /// After this, the token no longer works. `None`: it never expires.
+    #[serde(default)]
+    expires_at: Option<i64>,
 }
 
 /// A client as the rest of the app sees it (no secrets).
@@ -52,12 +55,27 @@ pub struct Client {
     pub projects: Vec<ProjectId>,
     pub created_at: i64,
     pub last_seen_at: Option<i64>,
+    /// After this, the token no longer works. `None`: it never expires.
+    pub expires_at: Option<i64>,
 }
 
 impl Client {
     pub fn can(&self, scope: Scope) -> bool {
         self.scopes.contains(&scope)
     }
+
+    pub fn expired(&self, now: i64) -> bool {
+        self.expires_at.is_some_and(|at| at <= now)
+    }
+}
+
+/// Why a token was refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Denied {
+    /// No client has it, or it was revoked.
+    Unknown,
+    /// It belonged to a client whose time ran out.
+    Expired,
 }
 
 impl From<&Stored> for Client {
@@ -69,6 +87,7 @@ impl From<&Stored> for Client {
             projects: s.projects.clone(),
             created_at: s.created_at,
             last_seen_at: s.last_seen_at,
+            expires_at: s.expires_at,
         }
     }
 }
@@ -122,12 +141,25 @@ impl ClientRegistry {
         self.clients.read().iter().map(Client::from).collect()
     }
 
-    /// Registers a client. The returned token is shown once and never stored.
+    /// Registers a client whose token never expires. The returned token is shown
+    /// once and never stored.
     pub fn create(
         &self,
         name: &str,
         scopes: &[Scope],
         projects: &[ProjectId],
+    ) -> Result<(Client, String), RegistryError> {
+        self.create_expiring(name, scopes, projects, None)
+    }
+
+    /// Registers a client whose token stops working at `expires_at`, such as one
+    /// to try out a tool or for a single job.
+    pub fn create_expiring(
+        &self,
+        name: &str,
+        scopes: &[Scope],
+        projects: &[ProjectId],
+        expires_at: Option<i64>,
     ) -> Result<(Client, String), RegistryError> {
         let name = name.trim();
         if name.is_empty() {
@@ -148,6 +180,7 @@ impl ClientRegistry {
             projects: projects.to_vec(),
             created_at: now_ms(),
             last_seen_at: None,
+            expires_at,
         };
         {
             let mut clients = self.clients.write();
@@ -186,13 +219,17 @@ impl ClientRegistry {
         self.save()
     }
 
-    /// The client owning `token`, recording it as seen.
-    pub fn authenticate(&self, token: &str) -> Option<Client> {
+    /// The client owning `token`, recording it as seen. An expired client stays
+    /// in the list, so the user sees why it stopped working.
+    pub fn authenticate(&self, token: &str) -> Result<Client, Denied> {
         let h = hash(token);
         let now = now_ms();
         let client = {
             let mut clients = self.clients.write();
-            let c = clients.iter_mut().find(|c| c.token_hash == h)?;
+            let c = clients.iter_mut().find(|c| c.token_hash == h).ok_or(Denied::Unknown)?;
+            if c.expires_at.is_some_and(|at| at <= now) {
+                return Err(Denied::Expired);
+            }
             c.last_seen_at = Some(now);
             Client::from(&*c)
         };
@@ -201,7 +238,7 @@ impl ClientRegistry {
             *self.last_flush.write() = now;
             let _ = self.save();
         }
-        Some(client)
+        Ok(client)
     }
 
     fn save(&self) -> Result<(), RegistryError> {
@@ -245,7 +282,7 @@ mod tests {
         ));
 
         assert_eq!(reg.authenticate(&token).unwrap().id, client.id);
-        assert!(reg.authenticate("bm_wrong").is_none());
+        assert_eq!(reg.authenticate("bm_wrong").unwrap_err(), Denied::Unknown);
 
         let raw = std::fs::read_to_string(&path).unwrap();
         assert!(!raw.contains(&token), "token must never be stored");
@@ -253,6 +290,26 @@ mod tests {
         let reopened = ClientRegistry::open(&path);
         assert_eq!(reopened.authenticate(&token).unwrap().name, "Claude Code");
         reopened.revoke(&client.id).unwrap();
-        assert!(ClientRegistry::open(&path).authenticate(&token).is_none());
+        assert!(ClientRegistry::open(&path).authenticate(&token).is_err());
+    }
+
+    #[test]
+    fn an_expired_token_is_refused_but_its_client_stays_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clients.json");
+        let reg = ClientRegistry::open(&path);
+        let now = now_ms();
+        let (_, lasting) = reg
+            .create_expiring("Für eine Woche", &[Scope::Read], &[], Some(now + 7 * 86_400_000))
+            .unwrap();
+        let (gone, expired) =
+            reg.create_expiring("Abgelaufen", &[Scope::Read], &[], Some(now - 1)).unwrap();
+
+        assert_eq!(reg.authenticate(&lasting).unwrap().name, "Für eine Woche");
+        assert_eq!(reg.authenticate(&expired).unwrap_err(), Denied::Expired);
+        let reopened = ClientRegistry::open(&path);
+        assert_eq!(reopened.authenticate(&expired).unwrap_err(), Denied::Expired);
+        let listed = reopened.list().into_iter().find(|c| c.id == gone.id).unwrap();
+        assert!(listed.expired(now_ms()) && listed.last_seen_at.is_none());
     }
 }

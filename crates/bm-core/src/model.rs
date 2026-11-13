@@ -129,6 +129,49 @@ pub struct NodeDetail {
     pub file_links: Vec<FileLink>,
     /// A documentation page that mirrors a file and can only be changed there.
     pub read_only: bool,
+    /// How often it was read in full; `None` if never since reads are counted.
+    #[serde(default)]
+    pub reads: Option<ReadStats>,
+    /// Paths it mentions that are gone or changed since, within its projects'
+    /// folders. Empty once the user confirmed it is still current.
+    #[serde(default)]
+    pub path_issues: Vec<PathIssue>,
+}
+
+/// Reads of one entry, by AI clients through `get` and similar tools or by the
+/// user in the app. Repeated reads by the same reader within half an hour count
+/// once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadStats {
+    pub count: i64,
+    pub last_at: i64,
+    /// Name of the AI client or user who read it last.
+    pub last_by: String,
+}
+
+/// A path an entry mentions that no longer exists, or a file that changed after
+/// the entry was last edited.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathIssue {
+    /// As written in the entry.
+    pub path: String,
+    /// Gone; otherwise changed.
+    pub missing: bool,
+}
+
+/// An entry whose paths may be out of date.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutdatedEntry {
+    pub node: NodeBrief,
+    pub issues: Vec<PathIssue>,
+}
+
+/// A `[[title]]` no entry has, with the entries that link to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MissingLink {
+    /// As written in the first entry that links to it.
+    pub title: String,
+    pub sources: Vec<NodeBrief>,
 }
 
 /// A page in a project's documentation, in reading order.
@@ -302,6 +345,10 @@ pub struct ProjectSummary {
     pub project: Project,
     /// Live nodes directly in this project (not counting subprojects).
     pub node_count: i64,
+    /// The folder on the Mac that paths in its entries refer to, if the user set
+    /// one. Subprojects without their own use their parent's.
+    #[serde(default)]
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
