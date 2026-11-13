@@ -2,7 +2,7 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
-## 1.5.0
+## 1.5.0 · 2026-11-14
 
 Brainmatter merkt jetzt, welche Einträge vielleicht nicht mehr stimmen, welche keiner mehr liest und welche noch fehlen. Tokens können ablaufen, und den Kontext eines Projekts kopierst du für Chat-Apps ohne MCP.
 

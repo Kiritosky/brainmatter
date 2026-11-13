@@ -2,7 +2,7 @@
 
 This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
-## 1.5.0
+## 1.5.0 · 2026-11-14
 
 Brainmatter now notices which entries may no longer be true, which nobody reads any more and which are still missing. Tokens can expire, and you can copy a project's context for chat apps without MCP.
 
