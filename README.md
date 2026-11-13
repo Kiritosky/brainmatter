@@ -30,7 +30,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 - Type `/` to pick a heading, list, table or any other format, without knowing the Markdown for it
 - Full-text search in German and English, and optionally by meaning, with a local model that also flags likely duplicates and suggests links
 - Quick capture from anywhere with ⌥⇧Space, into the project of your choice
-- Lives in the menu bar while the window is closed: unlock, search, and see what the AI clients changed last
+- Lives in the menu bar while the window is closed: unlock, search, and see what the AI clients changed last. Started by an AI client, it stays there
 - Projects nested to any depth, an entry can be in several of them, and wherever you assign one you can search for it
 
 **See how it connects**
@@ -52,7 +52,7 @@ Brainmatter keeps simple entries, connects them by topic, and groups them into n
 
 **Encrypted, and yours to take along**
 - The database, search index, embeddings, attachments and backups are all encrypted at rest
-- Unlock with your password or Touch ID. While locked, an AI's request can ask you for Touch ID
+- Unlock with your password or Touch ID. While locked, an AI's request asks you for Touch ID or, without it, for the password in a small window, and the main window stays closed
 - Locks automatically after a set time, on sleep, or with the screen
 - Export everything as Markdown with front matter and wikilinks, whenever you like
 - Import a folder of Markdown notes from Obsidian, Logseq or a Brainmatter export: folders become projects, links become connections, and the whole import can be undone in one click

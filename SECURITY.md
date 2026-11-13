@@ -37,7 +37,7 @@ The plaintext `vault.header` holds the KDF parameters and the wrapped keys, neve
 - The MCP server listens on `127.0.0.1` only. Requests with a browser `Origin` header are rejected, against DNS rebinding.
 - Each client has its own token (`bm_…`, 256 bit). Only its SHA-256 hash is stored, and the app never shows it after setup.
 - Tokens are limited to `read`, `write` and `delete`, and optionally to certain projects.
-- While the vault is locked, a request can ask the user for Touch ID. Only one prompt is open at a time, and a declined client is not asked again for a while.
+- While the vault is locked, a request can ask the user for Touch ID or, without it or after the prompt's password button, for the master password in a window of the app. The Mac's login password never opens the vault. Only one request is open at a time, and a declined client is not asked again for a while.
 - Entry content is untrusted data. Markdown is sanitized before it is shown, and clients are told not to follow instructions inside entries.
 - What an AI writes is attributed to it and marked as unreviewed. Deleting is always a soft delete, and every change set can be undone.
 - A file link an AI creates stays unreadable until the user approves it. Clients can read only linked text files.
