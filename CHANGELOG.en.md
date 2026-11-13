@@ -2,6 +2,13 @@
 
 This text appears in the app when it runs in English, and above the German version in the release notes on GitHub. Every version in [CHANGELOG.md](CHANGELOG.md) needs its entry here too.
 
+## 1.4.1 · 2026-11-13
+
+The password window for AI clients now closes after unlocking.
+
+### Fixed
+- After unlocking, the password window for AI clients stayed open. Now it goes as soon as Brainmatter is unlocked, wherever that happens. It can also be moved now, and its height follows what it shows.
+
 ## 1.4.0 · 2026-11-13
 
 When an AI client needs Brainmatter, the main window stays closed. You type the password into a small window.

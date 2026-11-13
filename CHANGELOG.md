@@ -2,6 +2,13 @@
 
 Dieser Text erscheint in der App und auf GitHub. Ein Release ohne Eintrag für seine Version schlägt fehl. Die englische Fassung steht in [CHANGELOG.en.md](CHANGELOG.en.md).
 
+## 1.4.1 · 2026-11-13
+
+Das Passwort-Fenster für KIs schließt sich jetzt nach dem Entsperren.
+
+### Behoben
+- Nach dem Entsperren blieb das Passwort-Fenster für KIs offen. Jetzt verschwindet es, sobald Brainmatter entsperrt ist, egal wo. Es lässt sich nun auch verschieben und passt seine Höhe dem Inhalt an.
+
 ## 1.4.0 · 2026-11-13
 
 Braucht eine KI Brainmatter, bleibt das Hauptfenster zu. Das Passwort gibst du in einem kleinen Fenster ein.
